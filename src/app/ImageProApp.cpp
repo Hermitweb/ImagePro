@@ -6,6 +6,7 @@
 #include <QLibraryInfo>
 #include <QLocale>
 #include <QSettings>
+#include <QStandardPaths>
 #include <QTranslator>
 
 namespace yingtu {
@@ -20,7 +21,9 @@ ImageProApp::ImageProApp(int& argc, char** argv)
 
 static void logLanguageStep(const QString& step)
 {
-    QFile log(QStringLiteral("e:/Image one/imagepro/build/app_debug.log"));
+    const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    QDir().mkpath(dir);
+    QFile log(QDir(dir).absoluteFilePath(QStringLiteral("app_debug.log")));
     if (log.open(QIODevice::WriteOnly | QIODevice::Append)) {
         log.write(QDateTime::currentDateTime().toString(Qt::ISODate).toUtf8());
         log.write(" ");

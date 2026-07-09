@@ -19,9 +19,11 @@
 #include "utils/ImageLoader.h"
 #include <QApplication>
 #include <QCloseEvent>
+#include <QDir>
 #include <QDockWidget>
 #include <QFile>
 #include <QFileDialog>
+#include <QStandardPaths>
 #include <QFrame>
 #include <QLabel>
 #include <QMenu>
@@ -119,7 +121,9 @@ static PreviewTaskResult generatePreview(const PreviewTaskInput& input)
 
 static void mwLog(const QString& step)
 {
-    QFile log(QStringLiteral("e:/Image one/imagepro/build/app_debug.log"));
+    const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    QDir().mkpath(dir);
+    QFile log(QDir(dir).absoluteFilePath(QStringLiteral("app_debug.log")));
     if (log.open(QIODevice::WriteOnly | QIODevice::Append)) {
         log.write(QDateTime::currentDateTime().toString(Qt::ISODate).toUtf8());
         log.write(" MW ");
