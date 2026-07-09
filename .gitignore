@@ -1,0 +1,56 @@
+# Build directories
+build/
+build_*/
+build-*/
+cmake-build-*/
+out/
+
+# Deploy/runtime artifacts
+deploy/
+deploy_*/
+*.exe
+*.dll
+*.a
+*.lib
+*.qm
+*.log
+
+# Qt / CMake
+*.pro.user
+*.pro.user.*
+CMakeLists.txt.user
+CMakeCache.txt
+CMakeFiles/
+Makefile
+cmake_install.cmake
+CTestTestfile.cmake
+*.moc
+moc_*.cpp
+moc_*.h
+qrc_*.cpp
+ui_*.h
+*_autogen/
+*.autosave
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Backup
+backups/
+*.zip
+*.7z
+*.tar.gz
+
+# Third-party vendored dependencies (large, installed separately)
+third_party/
+
+# Test outputs
+test_*_output/
