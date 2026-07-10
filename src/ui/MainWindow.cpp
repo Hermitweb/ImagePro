@@ -296,29 +296,28 @@ void MainWindow::setupCentralWidget()
     splitter->setHandleWidth(6);
 
     m_listWidget = new ImageListWidget(m_model, splitter);
-    m_listWidget->setMinimumWidth(72);
-    m_listWidget->setMaximumWidth(120);
+    m_listWidget->setMinimumWidth(132);
+    m_listWidget->setMaximumWidth(180);
 
-    QStackedWidget* centerStack = new QStackedWidget(splitter);
-    centerStack->setMinimumSize(400, 300);
-    m_previewWidget = new PreviewWidget(centerStack);
+    m_centerStack = new QStackedWidget(splitter);
+    m_centerStack->setMinimumSize(400, 300);
+    m_previewWidget = new PreviewWidget(m_centerStack);
     m_previewWidget->setStitchImageListModel(m_model);
-    m_editorWidget = new ImageEditorWidget(centerStack);
-    m_editorWidget->setVisible(false);
-    centerStack->addWidget(m_previewWidget);
-    centerStack->addWidget(m_editorWidget);
-    centerStack->setCurrentWidget(m_previewWidget);
+    m_editorWidget = new ImageEditorWidget(m_centerStack);
+    m_centerStack->addWidget(m_previewWidget);
+    m_centerStack->addWidget(m_editorWidget);
+    m_centerStack->setCurrentWidget(m_previewWidget);
 
     m_propertyPanel = new PropertyPanel(splitter);
     m_propertyPanel->setImageModel(m_model);
 
     splitter->addWidget(m_listWidget);
-    splitter->addWidget(centerStack);
+    splitter->addWidget(m_centerStack);
     splitter->addWidget(m_propertyPanel);
     splitter->setStretchFactor(0, 0);
     splitter->setStretchFactor(1, 1);
     splitter->setStretchFactor(2, 0);
-    splitter->setSizes(QList<int>() << 96 << 800 << 240);
+    splitter->setSizes(QList<int>() << 156 << 740 << 240);
 
     if (m_previewToolBar)
         vlayout->addWidget(m_previewToolBar);
@@ -554,8 +553,7 @@ void MainWindow::onToolChanged(ToolType tool)
     m_previewWidget->setStitchMode(tool == ToolType::Stitch);
 
     if (tool == ToolType::Edit) {
-        m_editorWidget->setVisible(true);
-        m_previewWidget->setVisible(false);
+        m_centerStack->setCurrentWidget(m_editorWidget);
         m_editorWidget->setCurrentTool(m_propertyPanel->currentEditAction());
         if (m_currentImageRow >= 0) {
             const ImageItem* item = m_model->itemAt(m_currentImageRow);
@@ -576,16 +574,13 @@ void MainWindow::onToolChanged(ToolType tool)
             }
         }
     } else if (tool == ToolType::Batch) {
-        m_editorWidget->setVisible(false);
-        m_previewWidget->setVisible(true);
+        m_centerStack->setCurrentWidget(m_previewWidget);
         onBatchProcess();
     } else if (tool == ToolType::Pdf) {
-        m_editorWidget->setVisible(false);
-        m_previewWidget->setVisible(true);
+        m_centerStack->setCurrentWidget(m_previewWidget);
         updatePreview();
     } else {
-        m_editorWidget->setVisible(false);
-        m_previewWidget->setVisible(true);
+        m_centerStack->setCurrentWidget(m_previewWidget);
         updateToolPreview();
     }
 }
@@ -598,22 +593,24 @@ void MainWindow::onPreviewRequested()
 template<typename EngineType, typename SettingsType>
 void MainWindow::runEngineAsync(const SettingsType& settings, const QStringList& paths,
                                 const QString& progressTitle,
-                                std::function<void(const decltype(std::declval<EngineType>().process(std::declval<QStringList>()))&)> onFinished)
+                                std::function<void(const decltype(std::declval<EngineType>().process(std::declval<QStringList>()))&)> onFinished,
+                                bool showProgressDialog)
 {
     using ResultType = decltype(std::declval<EngineType>().process(std::declval<QStringList>()));
 
-    if (m_progressDialog) {
-        m_progressDialog->close();
-        m_progressDialog->deleteLater();
+    QProgressDialog* currentProgressDlg = nullptr;
+    if (showProgressDialog) {
+        if (m_progressDialog) {
+            m_progressDialog->close();
+            m_progressDialog->deleteLater();
+        }
+        m_progressDialog = new QProgressDialog(progressTitle, tr("Cancel"), 0, 100, this);
+        m_progressDialog->setWindowModality(Qt::WindowModal);
+        m_progressDialog->setMinimumDuration(0);
+        currentProgressDlg = m_progressDialog;
     }
-    m_progressDialog = new QProgressDialog(progressTitle, tr("Cancel"), 0, 100, this);
-    m_progressDialog->setWindowModality(Qt::WindowModal);
-    m_progressDialog->setMinimumDuration(0);
 
     m_statusBar->setState(StatusBarWidget::State::Processing);
-
-    // 固定当前进度对话框指针，避免连续点击时旧任务回调错误关闭新对话框
-    QProgressDialog* currentProgressDlg = m_progressDialog;
 
     auto* watcher = new QFutureWatcher<ResultType>(this);
     connect(watcher, &QFutureWatcher<ResultType>::finished, this, [this, watcher, onFinished, currentProgressDlg]() {
@@ -861,7 +858,7 @@ void MainWindow::onBatchProcess()
         runEngineAsync<ConvertEngine>(m_propertyPanel->convertSettings(), paths,
             tr("Batch converting..."), [this, copyToBatchDir](const QStringList& outs) {
                 copyToBatchDir(outs);
-            });
+            }, false);
         break;
     }
     case ToolType::Compress: {
@@ -873,21 +870,21 @@ void MainWindow::onBatchProcess()
                         outs.append(r.outputPath);
                 }
                 copyToBatchDir(outs);
-            });
+            }, false);
         break;
     }
     case ToolType::Watermark: {
         runEngineAsync<WatermarkEngine>(m_propertyPanel->watermarkSettings(), paths,
             tr("Batch watermarking..."), [this, copyToBatchDir](const QStringList& outs) {
                 copyToBatchDir(outs);
-            });
+            }, false);
         break;
     }
     case ToolType::Resize: {
         runEngineAsync<ResizeEngine>(m_propertyPanel->resizeSettings(), paths,
             tr("Batch resizing..."), [this, copyToBatchDir](const QStringList& outs) {
                 copyToBatchDir(outs);
-            });
+            }, false);
         break;
     }
     default:

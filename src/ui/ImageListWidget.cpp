@@ -35,11 +35,11 @@ namespace yingtu {
 
 namespace {
 
-constexpr int ThumbnailSize = 52;
-constexpr int GridCellWidth = 60;
-constexpr int GridCellHeight = 60;
-constexpr int MarginH = (GridCellWidth - ThumbnailSize) / 2; // 4
-constexpr int TopMargin = 4;
+constexpr int ThumbnailSize = 96;
+constexpr int GridCellWidth = 112;
+constexpr int GridCellHeight = 112;
+constexpr int MarginH = (GridCellWidth - ThumbnailSize) / 2; // 8
+constexpr int TopMargin = 8;
 constexpr int ItemSpacing = 4;
 constexpr int ToolTipDelayMs = 200;
 constexpr int LoadingIntervalMs = 50;
@@ -124,10 +124,10 @@ public:
         } else {
             QPixmap thumb = index.data(ImageListModel::ThumbnailRole).value<QPixmap>();
             if (!thumb.isNull()) {
-                QPixmap scaled = thumb.scaled(thumbRect.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
-                QPoint topLeft(thumbRect.center().x() - scaled.width() / 2,
-                               thumbRect.center().y() - scaled.height() / 2);
-                painter->drawPixmap(topLeft, scaled);
+                QPixmap scaled = thumb.scaled(thumbRect.size(), Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+                QRect srcRect(QPoint(), thumbRect.size());
+                srcRect.moveCenter(scaled.rect().center());
+                painter->drawPixmap(thumbRect, scaled, srcRect);
             } else {
                 painter->setPen(QColor(150, 150, 150));
                 painter->drawRect(thumbRect);
@@ -504,15 +504,15 @@ void ImageListWidget::updatePanelWidth()
 {
     QWidget* top = window();
     const int windowWidth = top ? top->width() : width();
-    int target = 72;
+    int target = 132;
     if (windowWidth >= 1920)
-        target = 120;
+        target = 176;
     else if (windowWidth >= 1280)
-        target = 96;
+        target = 156;
     else if (windowWidth >= 800)
-        target = 84;
-    setMinimumWidth(72);
-    setMaximumWidth(120);
+        target = 144;
+    setMinimumWidth(132);
+    setMaximumWidth(180);
     setFixedWidth(target);
 }
 
@@ -569,7 +569,7 @@ void ImageListWidget::buildMenu(QMenu& menu, const QModelIndex& index)
 
     if (!selected.isEmpty()) {
         const bool single = selected.size() == 1;
-        const int firstRow = selected.first().row();
+        Q_UNUSED(single)
 
         // 显示/隐藏
         bool allHidden = std::all_of(selected.begin(), selected.end(),

@@ -13,7 +13,7 @@ namespace yingtu {
 ImageListModel::ImageListModel(QObject* parent)
     : QAbstractListModel(parent)
 {
-    m_thumbnailSize = 52;
+    m_thumbnailSize = 120;
     m_imageDataWatcher = new QFutureWatcher<ImageLoadResult>(this);
     connect(m_imageDataWatcher, &QFutureWatcher<ImageLoadResult>::resultReadyAt,
             this, &ImageListModel::onImageDataLoaded);

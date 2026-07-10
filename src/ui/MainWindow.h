@@ -12,6 +12,7 @@
 class QSplitter;
 class QLabel;
 class QProgressDialog;
+class QStackedWidget;
 
 namespace yingtu {
 
@@ -51,7 +52,8 @@ private:
     template<typename EngineType, typename SettingsType>
     void runEngineAsync(const SettingsType& settings, const QStringList& paths,
                         const QString& progressTitle,
-                        std::function<void(const decltype(std::declval<EngineType>().process(std::declval<QStringList>()))&)> onFinished);
+                        std::function<void(const decltype(std::declval<EngineType>().process(std::declval<QStringList>()))&)> onFinished,
+                        bool showProgressDialog = true);
 
     void onImageDoubleClicked(int row);
     void onImageSelected(int row);
@@ -83,6 +85,7 @@ private:
     QWidget* m_previewToolBar = nullptr;
     QLabel* m_zoomLabel = nullptr;
     ImageEditorWidget* m_editorWidget = nullptr;
+    QStackedWidget* m_centerStack = nullptr;
 
     ToolType m_currentTool = ToolType::Stitch;
     int m_currentImageRow = -1;
