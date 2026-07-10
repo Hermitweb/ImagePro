@@ -185,6 +185,7 @@ MainWindow::MainWindow(QWidget* parent)
 {
     mwLog(QStringLiteral("constructor start"));
     setWindowTitle(tr("影图 ImagePro"));
+    setWindowIcon(QIcon(QStringLiteral(":/icons/app.svg")));
     resize(1280, 800);
     setMinimumSize(800, 600);
 

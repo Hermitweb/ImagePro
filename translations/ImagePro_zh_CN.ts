@@ -33,7 +33,7 @@
     </message>
     <message>
         <source>Text:</source>
-        <translation>文本：</translation>
+        <translation>文字：</translation>
     </message>
     <message>
         <source>Input Text</source>
@@ -44,66 +44,66 @@
     <name>yingtu::ImageItemDelegate</name>
     <message>
         <source>加载失败</source>
-        <translation type="unfinished" />
+        <translation>加载失败</translation>
     </message>
     <message>
         <source>重试</source>
-        <translation type="unfinished" />
+        <translation>重试</translation>
     </message>
 </context>
 <context>
     <name>yingtu::ImageListWidget</name>
     <message>
         <source>拖拽图片到此处或点击添加图片</source>
-        <translation type="unfinished" />
+        <translation>拖拽图片到此处或点击添加图片</translation>
     </message>
     <message>
         <source>显示</source>
-        <translation type="unfinished" />
+        <translation>显示</translation>
     </message>
     <message>
         <source>隐藏</source>
-        <translation type="unfinished" />
+        <translation>隐藏</translation>
     </message>
     <message>
         <source>复制</source>
-        <translation type="unfinished" />
+        <translation>复制</translation>
     </message>
     <message>
         <source>复制到剪贴板</source>
-        <translation type="unfinished" />
+        <translation>复制到剪贴板</translation>
     </message>
     <message>
         <source>移到最前</source>
-        <translation type="unfinished" />
+        <translation>移到最前</translation>
     </message>
     <message>
         <source>移到最后</source>
-        <translation type="unfinished" />
+        <translation>移到最后</translation>
     </message>
     <message>
         <source>在资源管理器中显示</source>
-        <translation type="unfinished" />
+        <translation>在资源管理器中显示</translation>
     </message>
     <message>
         <source>快速查看</source>
-        <translation type="unfinished" />
+        <translation>快速查看</translation>
     </message>
     <message>
         <source>移除</source>
-        <translation type="unfinished" />
+        <translation>移除</translation>
     </message>
     <message>
         <source>添加图片</source>
-        <translation type="unfinished" />
+        <translation>添加图片</translation>
     </message>
     <message>
         <source>全选</source>
-        <translation type="unfinished" />
+        <translation>全选</translation>
     </message>
     <message>
         <source>清空列表</source>
-        <translation type="unfinished" />
+        <translation>清空列表</translation>
     </message>
 </context>
 <context>
@@ -406,36 +406,37 @@
     </message>
     <message>
         <source>Image Info</source>
-        <translation type="unfinished" />
+        <translation>图片信息</translation>
     </message>
     <message>
         <source>File: %1
 Size: %2x%3</source>
-        <translation type="unfinished" />
+        <translation>文件：%1
+尺寸：%2x%3</translation>
     </message>
     <message>
         <source>Save PDF</source>
-        <translation type="unfinished" />
+        <translation>保存 PDF</translation>
     </message>
     <message>
         <source>PDF Files (*.pdf)</source>
-        <translation type="unfinished" />
+        <translation>PDF 文件 (*.pdf)</translation>
     </message>
     <message>
         <source>Exporting PDF...</source>
-        <translation type="unfinished" />
+        <translation>正在导出 PDF...</translation>
     </message>
     <message>
         <source>Exported PDF: %1</source>
-        <translation type="unfinished" />
+        <translation>已导出 PDF：%1</translation>
     </message>
     <message>
         <source>PDF Export Complete</source>
-        <translation type="unfinished" />
+        <translation>PDF 导出完成</translation>
     </message>
     <message>
         <source>Successfully exported %1 images to PDF</source>
-        <translation type="unfinished" />
+        <translation>成功导出 %1 张图片到 PDF</translation>
     </message>
 </context>
 <context>
@@ -453,7 +454,7 @@ Size: %2x%3</source>
     </message>
     <message>
         <source>Original</source>
-        <translation>原图</translation>
+        <translation>原格式</translation>
     </message>
     <message>
         <source>Processed</source>
@@ -599,7 +600,7 @@ Size: %2x%3</source>
     </message>
     <message>
         <source>&lt;b&gt;Convert Settings&lt;/b&gt;</source>
-        <translation>&amp;lt;b&amp;gt;Convert Settings&amp;lt;/b&amp;gt;</translation>
+        <translation>&lt;b&gt;转换设置&lt;/b&gt;</translation>
     </message>
     <message>
         <source>Target Format:</source>
@@ -615,7 +616,7 @@ Size: %2x%3</source>
     </message>
     <message>
         <source>&lt;b&gt;Compress Settings&lt;/b&gt;</source>
-        <translation>&amp;lt;b&amp;gt;Compress Settings&amp;lt;/b&amp;gt;</translation>
+        <translation>&lt;b&gt;压缩设置&lt;/b&gt;</translation>
     </message>
     <message>
         <source>Quality</source>
@@ -659,7 +660,7 @@ Size: %2x%3</source>
     </message>
     <message>
         <source>&lt;b&gt;Watermark Settings&lt;/b&gt;</source>
-        <translation>&amp;lt;b&amp;gt;Watermark Settings&amp;lt;/b&amp;gt;</translation>
+        <translation>&lt;b&gt;水印设置&lt;/b&gt;</translation>
     </message>
     <message>
         <source>Text</source>
@@ -675,7 +676,7 @@ Size: %2x%3</source>
     </message>
     <message>
         <source>Text:</source>
-        <translation>文本：</translation>
+        <translation>文字：</translation>
     </message>
     <message>
         <source>Image:</source>
@@ -763,7 +764,7 @@ Size: %2x%3</source>
     </message>
     <message>
         <source>Original</source>
-        <translation>原图</translation>
+        <translation>原格式</translation>
     </message>
     <message>
         <source>Output Format:</source>
@@ -779,7 +780,7 @@ Size: %2x%3</source>
     </message>
     <message>
         <source>&lt;b&gt;Edit Tools&lt;/b&gt;</source>
-        <translation>&amp;lt;b&amp;gt;Edit Tools&amp;lt;/b&amp;gt;</translation>
+        <translation>&lt;b&gt;编辑工具&lt;/b&gt;</translation>
     </message>
     <message>
         <source>Rectangle</source>
@@ -863,7 +864,7 @@ Size: %2x%3</source>
     </message>
     <message>
         <source>&lt;b&gt;Resize Settings&lt;/b&gt;</source>
-        <translation>&amp;lt;b&amp;gt;Resize Settings&amp;lt;/b&amp;gt;</translation>
+        <translation>&lt;b&gt;尺寸设置&lt;/b&gt;</translation>
     </message>
     <message>
         <source>Percentage</source>
@@ -883,7 +884,7 @@ Size: %2x%3</source>
     </message>
     <message>
         <source>Lock aspect ratio</source>
-        <translation>锁定宽高比</translation>
+        <translation>锁定比例</translation>
     </message>
     <message>
         <source>Size:</source>
@@ -967,7 +968,7 @@ Size: %2x%3</source>
     </message>
     <message>
         <source>&lt;b&gt;Batch Processing&lt;/b&gt;</source>
-        <translation>&amp;lt;b&amp;gt;Batch Processing&amp;lt;/b&amp;gt;</translation>
+        <translation>&lt;b&gt;批量处理&lt;/b&gt;</translation>
     </message>
     <message>
         <source>Convert</source>
@@ -1023,99 +1024,99 @@ Size: %2x%3</source>
     </message>
     <message>
         <source>Filter</source>
-        <translation type="unfinished" />
+        <translation>滤镜</translation>
     </message>
     <message>
         <source>Grayscale</source>
-        <translation type="unfinished" />
+        <translation>灰度</translation>
     </message>
     <message>
         <source>Sepia</source>
-        <translation type="unfinished" />
+        <translation>复古</translation>
     </message>
     <message>
         <source>Warm</source>
-        <translation type="unfinished" />
+        <translation>暖色</translation>
     </message>
     <message>
         <source>Cool</source>
-        <translation type="unfinished" />
+        <translation>冷色</translation>
     </message>
     <message>
         <source>High Contrast</source>
-        <translation type="unfinished" />
+        <translation>高对比</translation>
     </message>
     <message>
         <source>Blur</source>
-        <translation type="unfinished" />
+        <translation>模糊</translation>
     </message>
     <message>
         <source>Sharpen</source>
-        <translation type="unfinished" />
+        <translation>锐化</translation>
     </message>
     <message>
         <source>Filter:</source>
-        <translation type="unfinished" />
+        <translation>滤镜：</translation>
     </message>
     <message>
         <source>&lt;b&gt;PDF Export&lt;/b&gt;</source>
-        <translation type="unfinished" />
+        <translation>&lt;b&gt;PDF 导出&lt;/b&gt;</translation>
     </message>
     <message>
         <source>A4</source>
-        <translation type="unfinished" />
+        <translation>A4</translation>
     </message>
     <message>
         <source>A5</source>
-        <translation type="unfinished" />
+        <translation>A5</translation>
     </message>
     <message>
         <source>Letter</source>
-        <translation type="unfinished" />
+        <translation>Letter</translation>
     </message>
     <message>
         <source>Page Size:</source>
-        <translation type="unfinished" />
+        <translation>页面大小：</translation>
     </message>
     <message>
         <source>Single Per Page</source>
-        <translation type="unfinished" />
+        <translation>每页单张</translation>
     </message>
     <message>
         <source>Fit to Page</source>
-        <translation type="unfinished" />
+        <translation>适应页面</translation>
     </message>
     <message>
         <source>Grid 2x2</source>
-        <translation type="unfinished" />
+        <translation>网格 2x2</translation>
     </message>
     <message>
         <source>Grid 3x3</source>
-        <translation type="unfinished" />
+        <translation>网格 3x3</translation>
     </message>
     <message>
         <source>Layout:</source>
-        <translation type="unfinished" />
+        <translation>布局：</translation>
     </message>
     <message>
         <source>Resolution:</source>
-        <translation type="unfinished">分辨率：</translation>
+        <translation>分辨率：</translation>
     </message>
     <message>
         <source>Margins:</source>
-        <translation type="unfinished" />
+        <translation>边距：</translation>
     </message>
     <message>
         <source>Output:</source>
-        <translation type="unfinished" />
+        <translation>输出：</translation>
     </message>
     <message>
         <source>Save PDF</source>
-        <translation type="unfinished" />
+        <translation>保存 PDF</translation>
     </message>
     <message>
         <source>PDF Files (*.pdf)</source>
-        <translation type="unfinished" />
+        <translation>PDF 文件 (*.pdf)</translation>
     </message>
     <message>
         <source> [needs %1]</source>
@@ -1123,11 +1124,11 @@ Size: %2x%3</source>
     </message>
     <message>
         <source>Error</source>
-        <translation type="unfinished">错误</translation>
+        <translation>错误</translation>
     </message>
     <message>
         <source>Failed to create output directory.</source>
-        <translation type="unfinished">创建输出目录失败。</translation>
+        <translation>创建输出目录失败。</translation>
     </message>
     <message>
         <source>Preview: %1</source>
@@ -1167,11 +1168,11 @@ Size: %2x%3</source>
     </message>
     <message>
         <source>Ready</source>
-        <translation type="unfinished">就绪</translation>
+        <translation>就绪</translation>
     </message>
     <message>
         <source>e.g. {name}_{index}</source>
-        <translation type="unfinished" />
+        <translation>例如：{name}_{index}</translation>
     </message>
 </context>
 <context>
@@ -1228,7 +1229,7 @@ Size: %2x%3</source>
     </message>
     <message>
         <source>%1 images, %2 selected</source>
-        <translation>%1 张图片，已选中 %2 张</translation>
+        <translation>%1 张图片，已选择 %2 张</translation>
     </message>
     <message>
         <source>%1 images</source>
@@ -1255,43 +1256,43 @@ Size: %2x%3</source>
     </message>
     <message>
         <source>输入图 %1：%2×%3</source>
-        <translation type="unfinished" />
+        <translation>输入图 %1：%2×%3</translation>
     </message>
     <message>
         <source>释放以加入拼接</source>
-        <translation type="unfinished" />
+        <translation>释放以加入拼接</translation>
     </message>
     <message>
         <source>点击或拖入图片到合成图</source>
-        <translation type="unfinished" />
+        <translation>点击或拖入图片到合成图</translation>
     </message>
     <message>
         <source>左旋</source>
-        <translation type="unfinished" />
+        <translation>左旋</translation>
     </message>
     <message>
         <source>右旋</source>
-        <translation type="unfinished" />
+        <translation>右旋</translation>
     </message>
     <message>
         <source>水平翻转</source>
-        <translation type="unfinished" />
+        <translation>水平翻转</translation>
     </message>
     <message>
         <source>垂直翻转</source>
-        <translation type="unfinished" />
+        <translation>垂直翻转</translation>
     </message>
     <message>
         <source>移除</source>
-        <translation type="unfinished" />
+        <translation>移除</translation>
     </message>
     <message>
         <source>信息</source>
-        <translation type="unfinished" />
+        <translation>信息</translation>
     </message>
     <message>
         <source>输入图 %1</source>
-        <translation type="unfinished" />
+        <translation>输入图 %1</translation>
     </message>
 </context>
 <context>
@@ -1353,7 +1354,7 @@ Size: %2x%3</source>
     </message>
     <message>
         <source>PDF</source>
-        <translation type="unfinished" />
+        <translation>PDF</translation>
     </message>
 </context>
 <context>
