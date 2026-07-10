@@ -10,6 +10,7 @@ namespace yingtu {
 ImageItem::ImageItem(const QString& filePath, bool loadInfoImmediately)
     : m_id(QUuid::createUuid().toString(QUuid::WithoutBraces))
     , m_filePath(filePath)
+    , m_loadState(LoadState::Loading)
 {
     if (loadInfoImmediately && !filePath.isEmpty())
         reloadInfo();
@@ -18,6 +19,13 @@ ImageItem::ImageItem(const QString& filePath, bool loadInfoImmediately)
 QString ImageItem::displayName() const
 {
     return QFileInfo(m_filePath).fileName();
+}
+
+QString ImageItem::resolutionString() const
+{
+    if (m_width <= 0 || m_height <= 0)
+        return QString();
+    return QStringLiteral("%1×%2").arg(m_width).arg(m_height);
 }
 
 void ImageItem::setRotation(int deg)
@@ -105,6 +113,13 @@ void ImageItem::reloadInfo()
     setInfo(ImageLoader::loadInfo(m_filePath));
 }
 
+void ImageItem::retryLoad()
+{
+    m_loadState = LoadState::Loading;
+    m_thumbnailCache.clear();
+    reloadInfo();
+}
+
 void ImageItem::setInfo(const ImageInfo& info)
 {
     m_valid = info.valid;
@@ -112,6 +127,7 @@ void ImageItem::setInfo(const ImageInfo& info)
     m_height = info.height;
     m_fileSize = info.fileSize;
     m_format = info.format;
+    m_loadState = info.valid ? LoadState::Ready : LoadState::Failed;
 }
 
 } // namespace yingtu

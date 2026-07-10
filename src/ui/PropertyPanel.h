@@ -1,5 +1,6 @@
 #pragma once
 
+#include "CollapsibleSection.h"
 #include "ToolBarWidget.h"
 #include "core/StitchEngine.h"
 #include "core/ConvertEngine.h"
@@ -33,13 +34,17 @@ class QToolButton;
 
 namespace yingtu {
 
+class ImageListModel;
+
 class PropertyPanel : public QWidget
 {
     Q_OBJECT
 public:
     explicit PropertyPanel(QWidget* parent = nullptr);
+    ~PropertyPanel() override;
 
     void setToolType(ToolType tool);
+    void setImageModel(ImageListModel* model);
 
     StitchSettings stitchSettings() const;
     ConvertSettings convertSettings() const;
@@ -48,6 +53,7 @@ public:
     EditAction currentEditAction() const;
     ResizeSettings resizeSettings() const;
     PdfSettings pdfSettings() const;
+    QString outputFileNameTemplate() const;
 
     struct BatchSettings {
         ToolType targetTool = ToolType::Convert;
@@ -77,9 +83,14 @@ private slots:
     void onResizeDeletePreset();
     void requestDelayedPreview();
 
-    void onStitchPresetComboChanged(int index);
+    void onStitchCategoryChanged(int index);
+    void onStitchPresetChanged(int index);
     void onStitchAddPreset();
     void onStitchBgColorClicked();
+    void onStitchOutputDirChanged();
+    void onStitchCreateOutputDir();
+    void onStitchFileNameTemplateChanged();
+    void onStitchOutputFormatChanged(int index);
 
     void onConvertEstimateTimeout();
     void onConvertFormatChanged(int index);
@@ -99,8 +110,14 @@ private slots:
 
     void onResizeOutputFormatChanged(int index);
 
+    void onImageCountChanged(int count);
+    void validateAndUpdateUI();
+
 public slots:
     void refreshEditHistory(const QList<EditAction>& history, int currentIndex);
+
+protected:
+    void hideEvent(QHideEvent* event) override;
 
 private:
     void buildStitchPanel();
@@ -122,10 +139,32 @@ private:
 
     void loadStitchPresets();
     void applyStitchPreset(const StitchPreset& preset);
+    void selectStitchPresetById(const QString& presetId);
+    void clearStitchPresetSelection();
+    void refreshStitchPresetAvailability();
+    void rebuildStitchPresetDropdown();
+    QString stitchPresetDisplayText(const StitchPreset& preset) const;
+
+    void addOutputHistory(const QString& path);
+    void saveUiState();
+    void loadUiState();
+    QString uiStateFilePath() const;
+
+    bool validateStitchSettings(QString* errorMessage = nullptr, QString* warningMessage = nullptr) const;
+    bool canWriteToPath(const QString& path) const;
+    void setInputError(QWidget* widget, bool error);
+    void setInputWarning(QWidget* widget, bool warning);
+    QString previewFileNameFromTemplate(const QString& templ) const;
 
     QStackedWidget* m_stack = nullptr;
+    QPushButton* m_previewBtn = nullptr;
+    QPushButton* m_processBtn = nullptr;
 
     // Stitch
+    CollapsibleSection* m_stitchSectionSettings = nullptr;
+    CollapsibleSection* m_stitchSectionPresets = nullptr;
+    CollapsibleSection* m_stitchSectionOutput = nullptr;
+
     QComboBox* m_stitchDirection = nullptr;
     QSpinBox* m_stitchSpacing = nullptr;
     QComboBox* m_stitchBackground = nullptr;
@@ -134,13 +173,24 @@ private:
     QCheckBox* m_stitchUniformWidth = nullptr;
     QCheckBox* m_stitchRemoveWhiteEdges = nullptr;
     QCheckBox* m_stitchAutoCropEdges = nullptr;
-    QComboBox* m_stitchPresetCombo = nullptr;
-    QPushButton* m_stitchAddPresetBtn = nullptr;
-    QList<StitchPreset> m_stitchPresets;
     QSpinBox* m_stitchGridRows = nullptr;
     QSpinBox* m_stitchGridColumns = nullptr;
     QComboBox* m_stitchOutputFormat = nullptr;
     QSlider* m_stitchQuality = nullptr;
+
+    QComboBox* m_stitchPresetCategory = nullptr;
+    QComboBox* m_stitchPreset = nullptr;
+    QList<StitchPreset> m_stitchPresets;
+    QString m_currentStitchPresetId;
+    bool m_applyingStitchPreset = false;
+    bool m_rebuildingStitchPresets = false;
+
+    QComboBox* m_stitchOutputDir = nullptr;
+    QPushButton* m_stitchOutputBrowseBtn = nullptr;
+    QPushButton* m_stitchOutputCreateBtn = nullptr;
+    QLineEdit* m_stitchFileNameTemplate = nullptr;
+    QLabel* m_stitchFileNamePreview = nullptr;
+    QLabel* m_stitchValidationLabel = nullptr;
 
     // Convert
     QComboBox* m_convertFormat = nullptr;
@@ -227,7 +277,11 @@ private:
     QDoubleSpinBox* m_pdfMarginBottom = nullptr;
     QLineEdit* m_pdfOutputPath = nullptr;
 
+    // Shared
     QImage m_lastImage;
+    ImageListModel* m_imageModel = nullptr;
+    QStringList m_outputHistory;
+    bool m_validationEnabled = true;
 };
 
 } // namespace yingtu

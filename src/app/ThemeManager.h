@@ -28,9 +28,18 @@ signals:
     void themeChanged(Theme theme);
 
 private:
-    ThemeManager(QObject* parent = nullptr);
+    explicit ThemeManager(QObject* parent = nullptr);
+    ~ThemeManager() override;
+
+    Theme effectiveTheme() const;
     QString themeFilePath(Theme theme) const;
-    Theme m_theme = Theme::Light;
+    bool systemUsesLightTheme() const;
+    void updateSystemWatcher();
+    void onSystemThemeChanged();
+
+    Theme m_theme = Theme::System;
+    class SystemThemeWatcher;
+    SystemThemeWatcher* m_systemWatcher = nullptr;
 };
 
 } // namespace yingtu

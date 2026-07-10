@@ -14,6 +14,12 @@ struct ImageLoadResult {
     QPixmap thumbnail;
 };
 
+struct ImageDataTask {
+    int row = -1;
+    QString path;
+    int thumbnailSize = 120;
+};
+
 class ImageListModel : public QAbstractListModel
 {
     Q_OBJECT
@@ -29,7 +35,10 @@ public:
         FormatRole,
         ValidRole,
         SelectedRole,
-        RotationRole
+        RotationRole,
+        HiddenRole,
+        ResolutionRole,
+        LoadStateRole
     };
     Q_ENUM(Roles)
 
@@ -46,13 +55,28 @@ public:
     void flipVerticalItem(int row);
     void clear();
 
+    void setHidden(int row, bool hidden);
+    void toggleHidden(int row);
+    void setHiddenForRows(const QModelIndexList& indexes, bool hidden);
+    void moveToFront(const QModelIndexList& indexes);
+    void moveToBack(const QModelIndexList& indexes);
+    void duplicateItems(const QModelIndexList& indexes);
+    void reloadItem(int row);
+    void loadVisibleRange(int firstRow, int lastRow, int buffer = 5);
+
     QStringList filePaths() const;
+    QStringList allFilePaths() const;
+    QStringList visibleFilePaths() const;
     int selectedCount() const;
     int validCount() const;
+    int visibleCount() const;
+    int hiddenCount() const;
 
     ImageItem* itemAt(int row);
     const ImageItem* itemAt(int row) const;
     int indexOf(const QString& id) const;
+
+    int thumbnailSize() const { return m_thumbnailSize; }
 
     int rowCount(const QModelIndex& parent = QModelIndex()) const override;
     QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
@@ -79,10 +103,11 @@ private:
     void moveItem(int fromRow, int toRow);
 
     QList<ImageItem> m_items;
-    int m_thumbnailSize = 180;
+    int m_thumbnailSize = 120;
+    static constexpr int s_lazyLoadThreshold = 50;
 
     QList<int> m_imageDataQueue;
-    QList<QPair<int, QString>> m_pendingImageDataTasks;
+    QList<ImageDataTask> m_pendingImageDataTasks;
     QFutureWatcher<ImageLoadResult>* m_imageDataWatcher = nullptr;
     int m_imageDataLoadDone = 0;
     int m_imageDataLoadTotal = 0;

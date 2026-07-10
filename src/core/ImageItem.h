@@ -11,12 +11,19 @@ namespace yingtu {
 class ImageItem
 {
 public:
+    enum class LoadState {
+        Loading,
+        Ready,
+        Failed
+    };
+
     ImageItem() = default;
     explicit ImageItem(const QString& filePath, bool loadInfoImmediately = true);
 
     QString id() const { return m_id; }
     QString filePath() const { return m_filePath; }
     QString displayName() const;
+    QString resolutionString() const;
 
     bool isValid() const { return m_valid; }
     int width() const { return m_width; }
@@ -30,6 +37,12 @@ public:
     bool isSelected() const { return m_selected; }
     void setSelected(bool selected) { m_selected = selected; }
 
+    bool isHidden() const { return m_hidden; }
+    void setHidden(bool hidden) { m_hidden = hidden; }
+
+    LoadState loadState() const { return m_loadState; }
+    void setLoadState(LoadState state) { m_loadState = state; }
+
     void setInfo(const ImageInfo& info);
     void setThumbnail(const QPixmap& pixmap);
     void setThumbnail(int size, const QPixmap& pixmap);
@@ -42,6 +55,7 @@ public:
     void setFlippedVertical(bool flipped) { m_flippedVertical = flipped; }
 
     void reloadInfo();
+    void retryLoad();
     QImage loadPreviewImage(const QSize& maxSize) const;
     QImage loadImage() const;
 
@@ -60,6 +74,8 @@ private:
     bool m_flippedHorizontal = false;
     bool m_flippedVertical = false;
     bool m_selected = false;
+    bool m_hidden = false;
+    LoadState m_loadState = LoadState::Loading;
     mutable QHash<int, QPixmap> m_thumbnailCache;
     QDateTime m_lastModified;
 };

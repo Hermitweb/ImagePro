@@ -1,4 +1,6 @@
 #include "PreviewWidget.h"
+#include "StitchCanvas.h"
+#include "core/ImageListModel.h"
 #include "utils/ImageLoader.h"
 #include <QAction>
 #include <QApplication>
@@ -33,7 +35,28 @@ PreviewWidget::PreviewWidget(QWidget* parent)
     m_imageLabel->setContextMenuPolicy(Qt::NoContextMenu);
     m_scrollArea->setWidget(m_imageLabel);
 
+    m_stitchCanvas = new StitchCanvas(this);
+    m_stitchCanvas->setVisible(false);
+
+    connect(m_stitchCanvas, &StitchCanvas::inputImageClicked,
+            this, &PreviewWidget::stitchInputImageClicked);
+    connect(m_stitchCanvas, &StitchCanvas::inputImageDoubleClicked,
+            this, &PreviewWidget::stitchInputImageDoubleClicked);
+    connect(m_stitchCanvas, &StitchCanvas::rotateInputImageRequested,
+            this, &PreviewWidget::stitchRotateInputImageRequested);
+    connect(m_stitchCanvas, &StitchCanvas::flipInputImageHorizontalRequested,
+            this, &PreviewWidget::stitchFlipInputImageHorizontalRequested);
+    connect(m_stitchCanvas, &StitchCanvas::flipInputImageVerticalRequested,
+            this, &PreviewWidget::stitchFlipInputImageVerticalRequested);
+    connect(m_stitchCanvas, &StitchCanvas::removeInputImageRequested,
+            this, &PreviewWidget::stitchRemoveInputImageRequested);
+    connect(m_stitchCanvas, &StitchCanvas::inputImageInfoRequested,
+            this, &PreviewWidget::stitchInputImageInfoRequested);
+    connect(m_stitchCanvas, &StitchCanvas::imageDropped,
+            this, &PreviewWidget::stitchImageDropped);
+
     layout->addWidget(m_scrollArea);
+    layout->addWidget(m_stitchCanvas);
     setLayout(layout);
 }
 
@@ -84,10 +107,18 @@ void PreviewWidget::clear()
     m_imageLabel->setPixmap(QPixmap());
     m_imageLabel->setText(tr("No image to preview"));
     m_imageLabel->resize(m_scrollArea->viewport()->size());
+
+    if (m_stitchCanvas)
+        m_stitchCanvas->reset();
 }
 
 void PreviewWidget::setZoom(double factor)
 {
+    if (m_stitchMode && m_stitchCanvas) {
+        m_stitchCanvas->setZoom(factor);
+        emit zoomChanged(m_stitchCanvas->zoomFactor());
+        return;
+    }
     if (m_image.isNull() && m_sourcePath.isEmpty())
         return;
     m_fitToWindow = false;
@@ -98,22 +129,42 @@ void PreviewWidget::setZoom(double factor)
 
 void PreviewWidget::zoomIn()
 {
+    if (m_stitchMode && m_stitchCanvas) {
+        m_stitchCanvas->zoomIn();
+        emit zoomChanged(m_stitchCanvas->zoomFactor());
+        return;
+    }
     setZoom(m_zoomFactor * 1.2);
 }
 
 void PreviewWidget::zoomOut()
 {
+    if (m_stitchMode && m_stitchCanvas) {
+        m_stitchCanvas->zoomOut();
+        emit zoomChanged(m_stitchCanvas->zoomFactor());
+        return;
+    }
     setZoom(m_zoomFactor / 1.2);
 }
 
 void PreviewWidget::fitToWindow()
 {
+    if (m_stitchMode && m_stitchCanvas) {
+        m_stitchCanvas->fitToWindow();
+        emit zoomChanged(m_stitchCanvas->zoomFactor());
+        return;
+    }
     m_fitToWindow = true;
     updatePixmap();
 }
 
 void PreviewWidget::resetZoom()
 {
+    if (m_stitchMode && m_stitchCanvas) {
+        m_stitchCanvas->resetZoom();
+        emit zoomChanged(m_stitchCanvas->zoomFactor());
+        return;
+    }
     m_fitToWindow = false;
     m_zoomFactor = 1.0;
     updatePixmap();
@@ -121,30 +172,46 @@ void PreviewWidget::resetZoom()
 
 void PreviewWidget::rotateLeft()
 {
+    if (m_stitchMode && m_stitchCanvas) {
+        m_stitchCanvas->rotateLeft();
+        return;
+    }
     m_rotation = (m_rotation + 270) % 360;
     updatePixmap();
 }
 
 void PreviewWidget::rotateRight()
 {
+    if (m_stitchMode && m_stitchCanvas) {
+        m_stitchCanvas->rotateRight();
+        return;
+    }
     m_rotation = (m_rotation + 90) % 360;
     updatePixmap();
 }
 
 void PreviewWidget::flipHorizontal()
 {
+    if (m_stitchMode)
+        return;
     m_flippedH = !m_flippedH;
     updatePixmap();
 }
 
 void PreviewWidget::flipVertical()
 {
+    if (m_stitchMode)
+        return;
     m_flippedV = !m_flippedV;
     updatePixmap();
 }
 
 void PreviewWidget::resetTransform()
 {
+    if (m_stitchMode && m_stitchCanvas) {
+        m_stitchCanvas->resetZoom();
+        return;
+    }
     m_rotation = 0;
     m_flippedH = false;
     m_flippedV = false;
@@ -170,6 +237,51 @@ void PreviewWidget::setOriginalImage(const QImage& image)
         updatePixmap();
 }
 
+void PreviewWidget::setStitchMode(bool enabled)
+{
+    if (m_stitchMode == enabled)
+        return;
+    m_stitchMode = enabled;
+
+    if (m_stitchMode) {
+        m_scrollArea->setVisible(false);
+        if (m_stitchCanvas) {
+            m_stitchCanvas->setVisible(true);
+            m_stitchCanvas->setFocus(Qt::OtherFocusReason);
+            emit zoomChanged(m_stitchCanvas->zoomFactor());
+        }
+    } else {
+        if (m_stitchCanvas)
+            m_stitchCanvas->setVisible(false);
+        m_scrollArea->setVisible(true);
+        emit zoomChanged(m_zoomFactor);
+    }
+}
+
+void PreviewWidget::setStitchSynthesizedImage(const QImage& image)
+{
+    if (m_stitchCanvas)
+        m_stitchCanvas->setSynthesizedImage(image);
+}
+
+void PreviewWidget::setStitchInputRects(const QVector<QRect>& rects)
+{
+    if (m_stitchCanvas)
+        m_stitchCanvas->setInputRects(rects);
+}
+
+void PreviewWidget::resetStitchCanvas()
+{
+    if (m_stitchCanvas)
+        m_stitchCanvas->reset();
+}
+
+void PreviewWidget::setStitchImageListModel(ImageListModel* model)
+{
+    if (m_stitchCanvas)
+        m_stitchCanvas->setImageListModel(model);
+}
+
 QImage PreviewWidget::displayedImage()
 {
     return transformedImage();
@@ -184,6 +296,11 @@ QSize PreviewWidget::viewportSize() const
 
 void PreviewWidget::wheelEvent(QWheelEvent* event)
 {
+    if (m_stitchMode && m_stitchCanvas) {
+        QApplication::sendEvent(m_stitchCanvas, event);
+        return;
+    }
+
     if (m_image.isNull() && m_sourcePath.isEmpty())
         return;
 
@@ -199,6 +316,8 @@ void PreviewWidget::wheelEvent(QWheelEvent* event)
 void PreviewWidget::resizeEvent(QResizeEvent* event)
 {
     QWidget::resizeEvent(event);
+    if (m_stitchMode && m_stitchCanvas)
+        return;
     if (m_fitToWindow)
         updatePixmap();
 }

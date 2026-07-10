@@ -1,18 +1,29 @@
 #include "PropertyPanel.h"
+#include "core/ImageListModel.h"
 #include "utils/FileUtils.h"
 #include "utils/ResizePresetManager.h"
 #include "utils/StitchPresetManager.h"
+#include <QAbstractButton>
 #include <QCheckBox>
 #include <QColorDialog>
-#include <QDoubleSpinBox>
-#include <QFileDialog>
 #include <QComboBox>
+#include <QDateTime>
+#include <QDir>
+#include <QDoubleSpinBox>
+#include <QFile>
+#include <QFileDialog>
+#include <QFileInfo>
 #include <QFontDatabase>
 #include <QFormLayout>
 #include <QGridLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
+#include <QHideEvent>
 #include <QInputDialog>
+#include <QJsonArray>
+#include <QStandardItemModel>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -21,6 +32,7 @@
 #include <QSlider>
 #include <QSpinBox>
 #include <QStackedWidget>
+#include <QStandardPaths>
 #include <QTimer>
 #include <QToolButton>
 #include <QUuid>
@@ -36,7 +48,7 @@ PropertyPanel::PropertyPanel(QWidget* parent)
 
     QVBoxLayout* mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(6, 6, 6, 6);
-    mainLayout->setSpacing(6);
+    mainLayout->setSpacing(8);
 
     m_stack = new QStackedWidget(this);
     buildStitchPanel();
@@ -48,19 +60,19 @@ PropertyPanel::PropertyPanel(QWidget* parent)
     buildBatchPanel();
     buildPdfPanel();
 
-    mainLayout->addWidget(m_stack);
-
-    QPushButton* previewBtn = new QPushButton(tr("Preview"), this);
-    QPushButton* processBtn = new QPushButton(tr("Start"), this);
-    processBtn->setDefault(true);
+    mainLayout->addWidget(m_stack, 1);
 
     QHBoxLayout* btnLayout = new QHBoxLayout();
-    btnLayout->addWidget(previewBtn);
-    btnLayout->addWidget(processBtn);
+    btnLayout->setSpacing(8);
+    m_previewBtn = new QPushButton(tr("Preview"), this);
+    m_processBtn = new QPushButton(tr("Start"), this);
+    m_processBtn->setDefault(true);
+    btnLayout->addWidget(m_previewBtn);
+    btnLayout->addWidget(m_processBtn);
     mainLayout->addLayout(btnLayout);
 
-    connect(previewBtn, &QPushButton::clicked, this, &PropertyPanel::previewRequested);
-    connect(processBtn, &QPushButton::clicked, this, &PropertyPanel::processRequested);
+    connect(m_previewBtn, &QPushButton::clicked, this, &PropertyPanel::previewRequested);
+    connect(m_processBtn, &QPushButton::clicked, this, &PropertyPanel::processRequested);
 
     // 统一监听所有设置控件变化
     for (QComboBox* cb : findChildren<QComboBox*>())
@@ -74,60 +86,99 @@ PropertyPanel::PropertyPanel(QWidget* parent)
     for (QLineEdit* le : findChildren<QLineEdit*>())
         connect(le, &QLineEdit::textChanged, this, &PropertyPanel::onSettingsChanged);
 
+    // 输出路径的可编辑文本也需要实时响应
+    if (m_stitchOutputDir && m_stitchOutputDir->lineEdit())
+        connect(m_stitchOutputDir->lineEdit(), &QLineEdit::textChanged,
+                this, &PropertyPanel::onStitchOutputDirChanged);
+
+    loadUiState();
+    loadStitchPresets();
     setToolType(ToolType::Stitch);
+
+    QTimer::singleShot(0, this, [this]() { validateAndUpdateUI(); });
 }
 
-void PropertyPanel::onSettingsChanged()
+PropertyPanel::~PropertyPanel()
 {
-    emit settingsChanged();
+    saveUiState();
 }
 
 void PropertyPanel::setToolType(ToolType tool)
 {
     m_stack->setCurrentIndex(static_cast<int>(tool));
+    validateAndUpdateUI();
+}
+
+void PropertyPanel::setImageModel(ImageListModel* model)
+{
+    if (m_imageModel == model)
+        return;
+    if (m_imageModel)
+        disconnect(m_imageModel, nullptr, this, nullptr);
+    m_imageModel = model;
+    if (m_imageModel) {
+        connect(m_imageModel, &ImageListModel::countChanged,
+                this, &PropertyPanel::onImageCountChanged);
+        connect(m_imageModel, &ImageListModel::thumbnailLoadFinished,
+                this, &PropertyPanel::validateAndUpdateUI);
+    }
+    refreshStitchPresetAvailability();
+    validateAndUpdateUI();
 }
 
 QWidget* PropertyPanel::createFormRow(const QString& label, QWidget* widget)
 {
     QWidget* row = new QWidget(this);
     QHBoxLayout* layout = new QHBoxLayout(row);
-    layout->setContentsMargins(0, 1, 0, 1);
+    layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(4);
     layout->addWidget(new QLabel(label, row));
     layout->addWidget(widget, 1);
     return row;
 }
 
+QWidget* PropertyPanel::createFormRow(const QString& label, QWidget* widget, QWidget*& rowStorage)
+{
+    rowStorage = createFormRow(label, widget);
+    return rowStorage;
+}
+
 void PropertyPanel::buildStitchPanel()
 {
     QWidget* panel = new QWidget(this);
-    QVBoxLayout* layout = new QVBoxLayout(panel);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(6);
+    QVBoxLayout* panelLayout = new QVBoxLayout(panel);
+    panelLayout->setContentsMargins(0, 0, 0, 0);
+    panelLayout->setSpacing(10);
 
-    layout->addWidget(new QLabel(tr("<b>Stitch Settings</b>"), panel));
+    // 拼接设置
+    m_stitchSectionSettings = new CollapsibleSection(tr("Stitch Settings"), panel);
+    QWidget* settingsContent = new QWidget(m_stitchSectionSettings);
+    QVBoxLayout* settingsLayout = new QVBoxLayout(settingsContent);
+    settingsLayout->setContentsMargins(0, 0, 0, 0);
+    settingsLayout->setSpacing(8);
 
-    m_stitchDirection = new QComboBox(panel);
+    m_stitchDirection = new QComboBox(settingsContent);
     m_stitchDirection->addItem(tr("Vertical"), static_cast<int>(StitchSettings::Vertical));
     m_stitchDirection->addItem(tr("Horizontal"), static_cast<int>(StitchSettings::Horizontal));
     m_stitchDirection->addItem(tr("Grid"), static_cast<int>(StitchSettings::Grid));
-    layout->addWidget(createFormRow(tr("Direction:"), m_stitchDirection));
+    settingsLayout->addWidget(createFormRow(tr("Direction:"), m_stitchDirection));
 
-    m_stitchSpacing = new QSpinBox(panel);
+    m_stitchSpacing = new QSpinBox(settingsContent);
     m_stitchSpacing->setRange(0, 200);
     m_stitchSpacing->setSuffix(QStringLiteral(" px"));
     m_stitchSpacing->setValue(0);
-    layout->addWidget(createFormRow(tr("Spacing:"), m_stitchSpacing));
+    settingsLayout->addWidget(createFormRow(tr("Spacing:"), m_stitchSpacing));
 
-    m_stitchBackground = new QComboBox(panel);
+    m_stitchBackground = new QComboBox(settingsContent);
     m_stitchBackground->addItem(tr("Transparent"), QStringLiteral("transparent"));
     m_stitchBackground->addItem(tr("White"), QStringLiteral("white"));
     m_stitchBackground->addItem(tr("Custom"), QStringLiteral("custom"));
-    layout->addWidget(createFormRow(tr("Background:"), m_stitchBackground));
+    settingsLayout->addWidget(createFormRow(tr("Background:"), m_stitchBackground));
 
-    QWidget* bgColorRow = new QWidget(panel);
+    QWidget* bgColorRow = new QWidget(settingsContent);
     QHBoxLayout* bgColorLayout = new QHBoxLayout(bgColorRow);
     bgColorLayout->setContentsMargins(0, 2, 0, 2);
+    bgColorLayout->setSpacing(6);
     bgColorLayout->addWidget(new QLabel(tr("BG Color:"), bgColorRow));
     m_stitchBgColorBtn = new QPushButton(bgColorRow);
     m_stitchBgColorBtn->setFixedSize(QSize(28, 22));
@@ -137,54 +188,140 @@ void PropertyPanel::buildStitchPanel()
     m_stitchBgColorLabel = new QLabel(QStringLiteral("#FFFFFF"), bgColorRow);
     bgColorLayout->addWidget(m_stitchBgColorLabel, 1);
     bgColorLayout->addStretch();
-    layout->addWidget(bgColorRow);
+    settingsLayout->addWidget(bgColorRow);
 
-    m_stitchUniformWidth = new QCheckBox(tr("Uniform Width"), panel);
-    m_stitchRemoveWhiteEdges = new QCheckBox(tr("Remove White Edges"), panel);
-    m_stitchAutoCropEdges = new QCheckBox(tr("Auto Crop Edges"), panel);
-    layout->addWidget(m_stitchUniformWidth);
-    layout->addWidget(m_stitchRemoveWhiteEdges);
-    layout->addWidget(m_stitchAutoCropEdges);
+    m_stitchUniformWidth = new QCheckBox(tr("Uniform Width"), settingsContent);
+    m_stitchRemoveWhiteEdges = new QCheckBox(tr("Remove White Edges"), settingsContent);
+    m_stitchAutoCropEdges = new QCheckBox(tr("Auto Crop Edges"), settingsContent);
+    settingsLayout->addWidget(m_stitchUniformWidth);
+    settingsLayout->addWidget(m_stitchRemoveWhiteEdges);
+    settingsLayout->addWidget(m_stitchAutoCropEdges);
 
-    // 预设选择下拉框
-    m_stitchPresetCombo = new QComboBox(panel);
-    connect(m_stitchPresetCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, &PropertyPanel::onStitchPresetComboChanged);
-    layout->addWidget(createFormRow(tr("Preset:"), m_stitchPresetCombo));
-
-    // 添加预设按钮
-    m_stitchAddPresetBtn = new QPushButton(tr("+ Add Preset"), panel);
-    connect(m_stitchAddPresetBtn, &QPushButton::clicked, this, &PropertyPanel::onStitchAddPreset);
-    layout->addWidget(m_stitchAddPresetBtn);
-
-    loadStitchPresets();
-
-    m_stitchGridRows = new QSpinBox(panel);
+    QWidget* gridRow = new QWidget(settingsContent);
+    QHBoxLayout* gridLayout = new QHBoxLayout(gridRow);
+    gridLayout->setContentsMargins(0, 2, 0, 2);
+    gridLayout->setSpacing(6);
+    gridLayout->addWidget(new QLabel(tr("Grid:"), gridRow));
+    m_stitchGridRows = new QSpinBox(gridRow);
     m_stitchGridRows->setRange(1, 20);
     m_stitchGridRows->setValue(1);
-    m_stitchGridColumns = new QSpinBox(panel);
+    m_stitchGridColumns = new QSpinBox(gridRow);
     m_stitchGridColumns->setRange(1, 20);
     m_stitchGridColumns->setValue(1);
-
-    QHBoxLayout* gridLayout = new QHBoxLayout();
-    gridLayout->addWidget(new QLabel(tr("Grid:"), panel));
     gridLayout->addWidget(m_stitchGridRows);
-    gridLayout->addWidget(new QLabel(tr("x"), panel));
+    gridLayout->addWidget(new QLabel(tr("x"), gridRow));
     gridLayout->addWidget(m_stitchGridColumns);
-    layout->addLayout(gridLayout);
+    settingsLayout->addWidget(gridRow);
 
-    m_stitchOutputFormat = new QComboBox(panel);
+    m_stitchOutputFormat = new QComboBox(settingsContent);
     m_stitchOutputFormat->addItems(QStringList() << QStringLiteral("PNG") << QStringLiteral("JPG")
-                                                 << QStringLiteral("WebP") << QStringLiteral("BMP"));
-    layout->addWidget(createFormRow(tr("Format:"), m_stitchOutputFormat));
+                                                  << QStringLiteral("WebP") << QStringLiteral("BMP"));
+    settingsLayout->addWidget(createFormRow(tr("Format:"), m_stitchOutputFormat));
 
-    m_stitchQuality = new QSlider(Qt::Horizontal, panel);
+    m_stitchQuality = new QSlider(Qt::Horizontal, settingsContent);
     m_stitchQuality->setRange(1, 100);
     m_stitchQuality->setValue(90);
-    layout->addWidget(createFormRow(tr("Quality:"), m_stitchQuality));
+    settingsLayout->addWidget(createFormRow(tr("Quality:"), m_stitchQuality));
 
-    layout->addStretch();
+    settingsLayout->addStretch();
+    m_stitchSectionSettings->setContent(settingsContent);
+    panelLayout->addWidget(m_stitchSectionSettings);
+
+    // 拼接预设
+    m_stitchSectionPresets = new CollapsibleSection(tr("Grid Presets"), panel);
+    QWidget* presetsContent = new QWidget(m_stitchSectionPresets);
+    QVBoxLayout* presetsLayout = new QVBoxLayout(presetsContent);
+    presetsLayout->setContentsMargins(0, 0, 0, 0);
+    presetsLayout->setSpacing(6);
+
+    m_stitchPresetCategory = new QComboBox(presetsContent);
+    m_stitchPresetCategory->addItem(tr("All"), QStringLiteral("all"));
+    m_stitchPresetCategory->addItem(tr("Social"), QStringLiteral("社交分享"));
+    m_stitchPresetCategory->addItem(tr("ID Photo"), QStringLiteral("证件照片"));
+    m_stitchPresetCategory->addItem(tr("Custom"), QStringLiteral("自定义"));
+    presetsLayout->addWidget(createFormRow(tr("Category:"), m_stitchPresetCategory));
+
+    m_stitchPreset = new QComboBox(presetsContent);
+    presetsLayout->addWidget(createFormRow(tr("Preset:"), m_stitchPreset));
+
+    QPushButton* addPresetBtn = new QPushButton(tr("+ Add Preset"), presetsContent);
+    connect(addPresetBtn, &QPushButton::clicked, this, &PropertyPanel::onStitchAddPreset);
+    presetsLayout->addWidget(addPresetBtn);
+
+    m_stitchSectionPresets->setContent(presetsContent);
+    panelLayout->addWidget(m_stitchSectionPresets);
+
+    connect(m_stitchPresetCategory, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &PropertyPanel::onStitchCategoryChanged);
+    connect(m_stitchPreset, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &PropertyPanel::onStitchPresetChanged);
+
+    // 输出设置
+    m_stitchSectionOutput = new CollapsibleSection(tr("Output Settings"), panel);
+    QWidget* outputContent = new QWidget(m_stitchSectionOutput);
+    QVBoxLayout* outputLayout = new QVBoxLayout(outputContent);
+    outputLayout->setContentsMargins(0, 0, 0, 0);
+    outputLayout->setSpacing(8);
+
+    QWidget* dirRow = new QWidget(outputContent);
+    QHBoxLayout* dirLayout = new QHBoxLayout(dirRow);
+    dirLayout->setContentsMargins(0, 0, 0, 0);
+    dirLayout->setSpacing(6);
+    dirLayout->addWidget(new QLabel(tr("Output Dir:"), dirRow));
+    m_stitchOutputDir = new QComboBox(dirRow);
+    m_stitchOutputDir->setEditable(true);
+    m_stitchOutputDir->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    if (m_stitchOutputDir->lineEdit()) {
+        connect(m_stitchOutputDir->lineEdit(), &QLineEdit::editingFinished, this, [this]() {
+            QString path = m_stitchOutputDir->currentText();
+            if (!path.isEmpty() && QFileInfo::exists(path) && canWriteToPath(path))
+                addOutputHistory(path);
+        });
+    }
+    dirLayout->addWidget(m_stitchOutputDir, 1);
+    m_stitchOutputBrowseBtn = new QPushButton(tr("Browse..."), dirRow);
+    connect(m_stitchOutputBrowseBtn, &QPushButton::clicked, this, [this]() {
+        QString dir = QFileDialog::getExistingDirectory(this, tr("Select Output Directory"),
+                                                        m_stitchOutputDir->currentText());
+        if (!dir.isEmpty()) {
+            m_stitchOutputDir->setCurrentText(dir);
+            addOutputHistory(dir);
+            onStitchOutputDirChanged();
+        }
+    });
+    dirLayout->addWidget(m_stitchOutputBrowseBtn);
+    m_stitchOutputCreateBtn = new QPushButton(tr("Create"), dirRow);
+    connect(m_stitchOutputCreateBtn, &QPushButton::clicked, this, &PropertyPanel::onStitchCreateOutputDir);
+    m_stitchOutputCreateBtn->setVisible(false);
+    dirLayout->addWidget(m_stitchOutputCreateBtn);
+    outputLayout->addWidget(dirRow);
+
+    m_stitchFileNameTemplate = new QLineEdit(outputContent);
+    m_stitchFileNameTemplate->setText(QStringLiteral("{原名}_stitched_{时间}"));
+    m_stitchFileNameTemplate->setPlaceholderText(tr("e.g. {原名}_{序号}"));
+    connect(m_stitchFileNameTemplate, &QLineEdit::textChanged,
+            this, &PropertyPanel::onStitchFileNameTemplateChanged);
+    outputLayout->addWidget(createFormRow(tr("File Name:"), m_stitchFileNameTemplate));
+
+    m_stitchFileNamePreview = new QLabel(outputContent);
+    m_stitchFileNamePreview->setStyleSheet(QStringLiteral("color: gray; font-size: 12px;"));
+    m_stitchFileNamePreview->setWordWrap(true);
+    outputLayout->addWidget(m_stitchFileNamePreview);
+
+    m_stitchValidationLabel = new QLabel(outputContent);
+    m_stitchValidationLabel->setWordWrap(true);
+    m_stitchValidationLabel->setMinimumHeight(32);
+    outputLayout->addWidget(m_stitchValidationLabel);
+
+    m_stitchSectionOutput->setContent(outputContent);
+    panelLayout->addWidget(m_stitchSectionOutput);
+
+    panelLayout->addStretch();
     m_stack->addWidget(panel);
+
+    connect(m_stitchOutputFormat, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &PropertyPanel::onStitchOutputFormatChanged);
+    onStitchFileNameTemplateChanged();
 }
 
 void PropertyPanel::buildConvertPanel()
@@ -192,7 +329,7 @@ void PropertyPanel::buildConvertPanel()
     QWidget* panel = new QWidget(this);
     QVBoxLayout* layout = new QVBoxLayout(panel);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(6);
+    layout->setSpacing(8);
 
     layout->addWidget(new QLabel(tr("<b>Convert Settings</b>"), panel));
 
@@ -236,7 +373,7 @@ void PropertyPanel::buildCompressPanel()
     QWidget* panel = new QWidget(this);
     QVBoxLayout* layout = new QVBoxLayout(panel);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(6);
+    layout->setSpacing(8);
 
     layout->addWidget(new QLabel(tr("<b>Compress Settings</b>"), panel));
 
@@ -265,6 +402,7 @@ void PropertyPanel::buildCompressPanel()
     QWidget* targetSizeRow = new QWidget(panel);
     QHBoxLayout* targetSizeLayout = new QHBoxLayout(targetSizeRow);
     targetSizeLayout->setContentsMargins(0, 2, 0, 2);
+    targetSizeLayout->setSpacing(6);
     targetSizeLayout->addWidget(new QLabel(tr("Target Size:"), targetSizeRow));
     m_compressTargetSize = new QDoubleSpinBox(targetSizeRow);
     m_compressTargetSize->setRange(0.01, 1000.0);
@@ -299,7 +437,7 @@ void PropertyPanel::buildWatermarkPanel()
     QWidget* panel = new QWidget(this);
     QVBoxLayout* layout = new QVBoxLayout(panel);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(6);
+    layout->setSpacing(8);
 
     layout->addWidget(new QLabel(tr("<b>Watermark Settings</b>"), panel));
 
@@ -317,6 +455,7 @@ void PropertyPanel::buildWatermarkPanel()
     QWidget* wmImageRow = new QWidget(panel);
     QHBoxLayout* wmImageLayout = new QHBoxLayout(wmImageRow);
     wmImageLayout->setContentsMargins(0, 2, 0, 2);
+    wmImageLayout->setSpacing(6);
     wmImageLayout->addWidget(new QLabel(tr("Image:"), wmImageRow));
     m_watermarkImagePath = new QLineEdit(wmImageRow);
     wmImageLayout->addWidget(m_watermarkImagePath, 1);
@@ -350,6 +489,7 @@ void PropertyPanel::buildWatermarkPanel()
     QWidget* colorRow = new QWidget(panel);
     QHBoxLayout* colorLayout = new QHBoxLayout(colorRow);
     colorLayout->setContentsMargins(0, 2, 0, 2);
+    colorLayout->setSpacing(6);
     colorLayout->addWidget(new QLabel(tr("Color:"), colorRow));
     m_watermarkColorBtn = new QPushButton(colorRow);
     m_watermarkColorBtn->setFixedSize(QSize(28, 22));
@@ -412,6 +552,7 @@ void PropertyPanel::buildWatermarkPanel()
     QWidget* wmOutDirRow = new QWidget(panel);
     QHBoxLayout* wmOutDirLayout = new QHBoxLayout(wmOutDirRow);
     wmOutDirLayout->setContentsMargins(0, 2, 0, 2);
+    wmOutDirLayout->setSpacing(6);
     wmOutDirLayout->addWidget(new QLabel(tr("Output Dir:"), wmOutDirRow));
     m_watermarkOutputDir = new QLineEdit(wmOutDirRow);
     wmOutDirLayout->addWidget(m_watermarkOutputDir, 1);
@@ -436,7 +577,7 @@ void PropertyPanel::buildEditPanel()
     QWidget* panel = new QWidget(this);
     QVBoxLayout* layout = new QVBoxLayout(panel);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(6);
+    layout->setSpacing(8);
 
     layout->addWidget(new QLabel(tr("<b>Edit Tools</b>"), panel));
 
@@ -494,6 +635,7 @@ void PropertyPanel::buildEditPanel()
     layout->addWidget(createFormRow(tr("Font Size:"), m_editFontSize));
 
     QHBoxLayout* historyBtnLayout = new QHBoxLayout();
+    historyBtnLayout->setSpacing(6);
     m_editUndoBtn = new QPushButton(tr("Undo"), panel);
     m_editRedoBtn = new QPushButton(tr("Redo"), panel);
     m_editClearBtn = new QPushButton(tr("Clear"), panel);
@@ -524,7 +666,7 @@ void PropertyPanel::buildResizePanel()
     QWidget* panel = new QWidget(this);
     QVBoxLayout* layout = new QVBoxLayout(panel);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(6);
+    layout->setSpacing(8);
 
     layout->addWidget(new QLabel(tr("<b>Resize Settings</b>"), panel));
 
@@ -554,6 +696,7 @@ void PropertyPanel::buildResizePanel()
     m_resizeLockAspect->setToolTip(tr("Lock aspect ratio"));
 
     QHBoxLayout* sizeLayout = new QHBoxLayout();
+    sizeLayout->setSpacing(6);
     sizeLayout->addWidget(new QLabel(tr("Size:"), panel));
     sizeLayout->addWidget(m_resizeWidth);
     sizeLayout->addWidget(new QLabel(tr("x"), panel));
@@ -576,7 +719,6 @@ void PropertyPanel::buildResizePanel()
     m_resizeFitWithinOriginal = new QCheckBox(tr("Do not exceed original size"), panel);
     layout->addWidget(m_resizeFitWithinOriginal);
 
-    // Preset category & selection
     m_resizeCategory = new QComboBox(panel);
     m_resizeCategory->setEnabled(false);
     layout->addWidget(createFormRow(tr("Category:"), m_resizeCategory));
@@ -586,6 +728,7 @@ void PropertyPanel::buildResizePanel()
     layout->addWidget(createFormRow(tr("Preset:"), m_resizePreset));
 
     QHBoxLayout* presetBtnLayout = new QHBoxLayout();
+    presetBtnLayout->setSpacing(6);
     m_resizeAddPresetBtn = new QPushButton(tr("Add"), panel);
     m_resizeDeletePresetBtn = new QPushButton(tr("Delete"), panel);
     m_resizeAddPresetBtn->setEnabled(false);
@@ -609,6 +752,7 @@ void PropertyPanel::buildResizePanel()
     QWidget* resizeOutDirRow = new QWidget(panel);
     QHBoxLayout* resizeOutDirLayout = new QHBoxLayout(resizeOutDirRow);
     resizeOutDirLayout->setContentsMargins(0, 2, 0, 2);
+    resizeOutDirLayout->setSpacing(6);
     resizeOutDirLayout->addWidget(new QLabel(tr("Output Dir:"), resizeOutDirRow));
     m_resizeOutputDir = new QLineEdit(resizeOutDirRow);
     resizeOutDirLayout->addWidget(m_resizeOutputDir, 1);
@@ -649,6 +793,110 @@ void PropertyPanel::buildResizePanel()
     m_stack->addWidget(panel);
 }
 
+void PropertyPanel::buildBatchPanel()
+{
+    QWidget* panel = new QWidget(this);
+    QVBoxLayout* layout = new QVBoxLayout(panel);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(8);
+
+    layout->addWidget(new QLabel(tr("<b>Batch Processing</b>"), panel));
+
+    m_batchTargetTool = new QComboBox(panel);
+    m_batchTargetTool->addItem(tr("Convert"), static_cast<int>(ToolType::Convert));
+    m_batchTargetTool->addItem(tr("Compress"), static_cast<int>(ToolType::Compress));
+    m_batchTargetTool->addItem(tr("Watermark"), static_cast<int>(ToolType::Watermark));
+    m_batchTargetTool->addItem(tr("Resize"), static_cast<int>(ToolType::Resize));
+    layout->addWidget(createFormRow(tr("Target Tool:"), m_batchTargetTool));
+
+    m_batchOutputDir = new QLineEdit(panel);
+    QPushButton* browseBtn = new QPushButton(tr("Browse..."), panel);
+    connect(browseBtn, &QPushButton::clicked, this, [this]() {
+        QString dir = QFileDialog::getExistingDirectory(this, tr("Select Output Directory"),
+                                                        m_batchOutputDir->text());
+        if (!dir.isEmpty())
+            m_batchOutputDir->setText(dir);
+    });
+
+    QHBoxLayout* dirLayout = new QHBoxLayout();
+    dirLayout->setSpacing(6);
+    dirLayout->addWidget(new QLabel(tr("Output Dir:"), panel));
+    dirLayout->addWidget(m_batchOutputDir, 1);
+    dirLayout->addWidget(browseBtn);
+    layout->addLayout(dirLayout);
+
+    layout->addStretch();
+    m_stack->addWidget(panel);
+}
+
+void PropertyPanel::buildPdfPanel()
+{
+    QWidget* panel = new QWidget(this);
+    QVBoxLayout* layout = new QVBoxLayout(panel);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(8);
+
+    layout->addWidget(new QLabel(tr("<b>PDF Export</b>"), panel));
+
+    m_pdfPageSize = new QComboBox(panel);
+    m_pdfPageSize->addItem(tr("A4"), static_cast<int>(PdfSettings::A4));
+    m_pdfPageSize->addItem(tr("A5"), static_cast<int>(PdfSettings::A5));
+    m_pdfPageSize->addItem(tr("Letter"), static_cast<int>(PdfSettings::Letter));
+    layout->addWidget(createFormRow(tr("Page Size:"), m_pdfPageSize));
+
+    m_pdfLayout = new QComboBox(panel);
+    m_pdfLayout->addItem(tr("Single Per Page"), static_cast<int>(PdfSettings::SinglePerPage));
+    m_pdfLayout->addItem(tr("Fit to Page"), static_cast<int>(PdfSettings::FitToPage));
+    m_pdfLayout->addItem(tr("Grid 2x2"), static_cast<int>(PdfSettings::Grid2x2));
+    m_pdfLayout->addItem(tr("Grid 3x3"), static_cast<int>(PdfSettings::Grid3x3));
+    layout->addWidget(createFormRow(tr("Layout:"), m_pdfLayout));
+
+    m_pdfDpi = new QSpinBox(panel);
+    m_pdfDpi->setRange(72, 600);
+    m_pdfDpi->setValue(150);
+    m_pdfDpi->setSuffix(QStringLiteral(" dpi"));
+    layout->addWidget(createFormRow(tr("Resolution:"), m_pdfDpi));
+
+    QWidget* marginRow = new QWidget(panel);
+    QHBoxLayout* marginLayout = new QHBoxLayout(marginRow);
+    marginLayout->setContentsMargins(0, 2, 0, 2);
+    marginLayout->setSpacing(6);
+    marginLayout->addWidget(new QLabel(tr("Margins:"), marginRow));
+    m_pdfMarginLeft = new QDoubleSpinBox(marginRow);
+    m_pdfMarginTop = new QDoubleSpinBox(marginRow);
+    m_pdfMarginRight = new QDoubleSpinBox(marginRow);
+    m_pdfMarginBottom = new QDoubleSpinBox(marginRow);
+    for (auto* sb : { m_pdfMarginLeft, m_pdfMarginTop, m_pdfMarginRight, m_pdfMarginBottom }) {
+        sb->setRange(0, 100);
+        sb->setValue(20.0);
+        sb->setDecimals(1);
+        sb->setSuffix(QStringLiteral(" mm"));
+        marginLayout->addWidget(sb);
+    }
+    layout->addWidget(marginRow);
+
+    QWidget* outRow = new QWidget(panel);
+    QHBoxLayout* outLayout = new QHBoxLayout(outRow);
+    outLayout->setContentsMargins(0, 2, 0, 2);
+    outLayout->setSpacing(6);
+    outLayout->addWidget(new QLabel(tr("Output:"), outRow));
+    m_pdfOutputPath = new QLineEdit(outRow);
+    outLayout->addWidget(m_pdfOutputPath, 1);
+    QPushButton* browseBtn = new QPushButton(tr("Browse..."), outRow);
+    connect(browseBtn, &QPushButton::clicked, this, [this]() {
+        QString path = QFileDialog::getSaveFileName(this, tr("Save PDF"),
+                                                    m_pdfOutputPath->text(),
+                                                    tr("PDF Files (*.pdf)"));
+        if (!path.isEmpty())
+            m_pdfOutputPath->setText(path);
+    });
+    outLayout->addWidget(browseBtn);
+    layout->addWidget(outRow);
+
+    layout->addStretch();
+    m_stack->addWidget(panel);
+}
+
 StitchSettings PropertyPanel::stitchSettings() const
 {
     StitchSettings s;
@@ -663,6 +911,7 @@ StitchSettings PropertyPanel::stitchSettings() const
     s.gridColumns = m_stitchGridColumns->value();
     s.outputFormat = m_stitchOutputFormat->currentText().toLower();
     s.quality = m_stitchQuality->value();
+    s.outputDir = m_stitchOutputDir ? m_stitchOutputDir->currentText() : QString();
     return s;
 }
 
@@ -769,9 +1018,529 @@ ResizeSettings PropertyPanel::resizeSettings() const
     return s;
 }
 
+QString PropertyPanel::outputFileNameTemplate() const
+{
+    return m_stitchFileNameTemplate ? m_stitchFileNameTemplate->text() : QString();
+}
+
+PropertyPanel::BatchSettings PropertyPanel::batchSettings() const
+{
+    BatchSettings settings;
+    settings.targetTool = static_cast<ToolType>(m_batchTargetTool->currentData().toInt());
+    settings.outputDir = m_batchOutputDir->text();
+    return settings;
+}
+
 void PropertyPanel::updatePreview(const QImage& image)
 {
     m_lastImage = image;
+}
+
+void PropertyPanel::onSettingsChanged()
+{
+    if (!m_applyingStitchPreset && m_stack->currentIndex() == static_cast<int>(ToolType::Stitch)) {
+        if (!m_currentStitchPresetId.isEmpty())
+            clearStitchPresetSelection();
+    }
+
+    emit settingsChanged();
+    validateAndUpdateUI();
+}
+
+void PropertyPanel::hideEvent(QHideEvent* event)
+{
+    saveUiState();
+    QWidget::hideEvent(event);
+}
+
+void PropertyPanel::loadStitchPresets()
+{
+    m_stitchPresets = StitchPresetManager::instance().loadPresets();
+    rebuildStitchPresetDropdown();
+}
+
+QString PropertyPanel::stitchPresetDisplayText(const StitchPreset& preset) const
+{
+    return QStringLiteral("%1 (%2x%3)").arg(preset.name).arg(preset.rows).arg(preset.columns);
+}
+
+void PropertyPanel::rebuildStitchPresetDropdown()
+{
+    if (!m_stitchPreset || !m_stitchPresetCategory)
+        return;
+
+    m_rebuildingStitchPresets = true;
+    QString selectedId = m_currentStitchPresetId;
+
+    m_stitchPreset->blockSignals(true);
+    m_stitchPreset->clear();
+    m_stitchPreset->addItem(tr("Custom"), QString());
+
+    QString catData = m_stitchPresetCategory->currentData().toString();
+    int imageCount = m_imageModel ? m_imageModel->validCount() : 9999;
+
+    int selectIndex = 0;
+    for (const auto& p : m_stitchPresets) {
+        bool show = (catData == QStringLiteral("all")) || (p.category == catData);
+        if (!show)
+            continue;
+
+        int required = p.rows * p.columns;
+        bool available = imageCount >= required;
+        QString text = stitchPresetDisplayText(p);
+        if (!available)
+            text += tr(" [needs %1]").arg(required);
+
+        int idx = m_stitchPreset->count();
+        m_stitchPreset->addItem(text, p.id);
+        if (p.id == selectedId)
+            selectIndex = idx;
+
+        // 禁用不可用的内置预设项
+        if (!available) {
+            QStandardItemModel* model = qobject_cast<QStandardItemModel*>(m_stitchPreset->model());
+            if (model) {
+                QStandardItem* item = model->item(idx);
+                if (item)
+                    item->setEnabled(false);
+            }
+        }
+    }
+
+    m_stitchPreset->setCurrentIndex(selectIndex);
+    m_stitchPreset->blockSignals(false);
+    m_rebuildingStitchPresets = false;
+}
+
+void PropertyPanel::onStitchCategoryChanged(int /*index*/)
+{
+    rebuildStitchPresetDropdown();
+}
+
+void PropertyPanel::onStitchPresetChanged(int index)
+{
+    if (m_rebuildingStitchPresets || m_applyingStitchPreset)
+        return;
+
+    if (index <= 0) {
+        if (!m_currentStitchPresetId.isEmpty()) {
+            m_currentStitchPresetId.clear();
+            emit settingsChanged();
+        }
+        return;
+    }
+
+    QString presetId = m_stitchPreset->itemData(index).toString();
+    if (m_currentStitchPresetId == presetId)
+        return;
+
+    m_currentStitchPresetId = presetId;
+
+    if (m_stitchSectionSettings)
+        m_stitchSectionSettings->setExpanded(true);
+
+    for (const auto& p : m_stitchPresets) {
+        if (p.id == presetId) {
+            applyStitchPreset(p);
+            break;
+        }
+    }
+
+    emit settingsChanged();
+}
+
+void PropertyPanel::selectStitchPresetById(const QString& presetId)
+{
+    m_currentStitchPresetId = presetId;
+    if (!m_stitchPreset)
+        return;
+    for (int i = 0; i < m_stitchPreset->count(); ++i) {
+        if (m_stitchPreset->itemData(i).toString() == presetId) {
+            m_stitchPreset->setCurrentIndex(i);
+            return;
+        }
+    }
+    m_stitchPreset->setCurrentIndex(0);
+}
+
+void PropertyPanel::clearStitchPresetSelection()
+{
+    m_currentStitchPresetId.clear();
+    if (m_stitchPreset)
+        m_stitchPreset->setCurrentIndex(0);
+}
+
+void PropertyPanel::refreshStitchPresetAvailability()
+{
+    rebuildStitchPresetDropdown();
+}
+
+void PropertyPanel::applyStitchPreset(const StitchPreset& preset)
+{
+    if (preset.isBuiltIn && preset.name == QStringLiteral("Custom"))
+        return;
+
+    m_applyingStitchPreset = true;
+    m_stitchDirection->blockSignals(true);
+    m_stitchGridRows->blockSignals(true);
+    m_stitchGridColumns->blockSignals(true);
+    m_stitchSpacing->blockSignals(true);
+    m_stitchUniformWidth->blockSignals(true);
+
+    m_stitchDirection->setCurrentIndex(m_stitchDirection->findData(static_cast<int>(StitchSettings::Grid)));
+    m_stitchGridRows->setValue(preset.rows);
+    m_stitchGridColumns->setValue(preset.columns);
+    m_stitchSpacing->setValue(0);
+    m_stitchUniformWidth->setChecked(true);
+
+    m_stitchDirection->blockSignals(false);
+    m_stitchGridRows->blockSignals(false);
+    m_stitchGridColumns->blockSignals(false);
+    m_stitchSpacing->blockSignals(false);
+    m_stitchUniformWidth->blockSignals(false);
+    m_applyingStitchPreset = false;
+
+    validateAndUpdateUI();
+}
+
+void PropertyPanel::onStitchAddPreset()
+{
+    bool ok = false;
+    QString name = QInputDialog::getText(this, tr("Add Stitch Preset"), tr("Preset name:"),
+                                         QLineEdit::Normal, QString(), &ok);
+    if (!ok || name.isEmpty())
+        return;
+
+    StitchPreset p;
+    p.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    p.name = name;
+    p.rows = m_stitchGridRows->value();
+    p.columns = m_stitchGridColumns->value();
+    p.category = QStringLiteral("自定义");
+    p.isBuiltIn = false;
+    p.description = QStringLiteral("%1 x %2").arg(p.rows).arg(p.columns);
+
+    if (StitchPresetManager::instance().savePreset(p)) {
+        loadStitchPresets();
+        m_currentStitchPresetId = p.id;
+        selectStitchPresetById(p.id);
+        applyStitchPreset(p);
+        emit settingsChanged();
+    }
+}
+
+void PropertyPanel::onStitchBgColorClicked()
+{
+    QColor c = QColorDialog::getColor(QColor(m_stitchBgColorLabel->text()), this, tr("Select Background Color"));
+    if (!c.isValid())
+        return;
+    m_stitchBgColorBtn->setStyleSheet(QStringLiteral("background-color: %1; border: 1px solid gray;").arg(c.name()));
+    m_stitchBgColorLabel->setText(c.name().toUpper());
+    emit settingsChanged();
+}
+
+void PropertyPanel::onStitchOutputDirChanged()
+{
+    if (!m_stitchOutputDir || !m_stitchOutputCreateBtn)
+        return;
+    QString path = m_stitchOutputDir->currentText();
+    bool exists = QFileInfo::exists(path);
+    m_stitchOutputCreateBtn->setVisible(!exists && !path.isEmpty());
+    validateAndUpdateUI();
+}
+
+void PropertyPanel::onStitchCreateOutputDir()
+{
+    QString path = m_stitchOutputDir->currentText();
+    if (path.isEmpty())
+        return;
+    if (QDir().mkpath(path)) {
+        addOutputHistory(path);
+        onStitchOutputDirChanged();
+    } else {
+        QMessageBox::warning(this, tr("Error"), tr("Failed to create output directory."));
+    }
+}
+
+void PropertyPanel::onStitchFileNameTemplateChanged()
+{
+    if (m_stitchFileNamePreview)
+        m_stitchFileNamePreview->setText(previewFileNameFromTemplate(m_stitchFileNameTemplate->text()));
+    validateAndUpdateUI();
+}
+
+void PropertyPanel::onStitchOutputFormatChanged(int index)
+{
+    Q_UNUSED(index)
+    if (!m_stitchOutputFormat || !m_stitchQuality)
+        return;
+    QString fmt = m_stitchOutputFormat->currentText().toLower();
+    if (fmt == QStringLiteral("png"))
+        m_stitchQuality->setValue(100);
+    else if (fmt == QStringLiteral("jpg") || fmt == QStringLiteral("webp"))
+        m_stitchQuality->setValue(90);
+}
+
+QString PropertyPanel::previewFileNameFromTemplate(const QString& templ) const
+{
+    QString result = templ;
+    QDateTime now = QDateTime::currentDateTime();
+    result.replace(QStringLiteral("{原名}"), QStringLiteral("微信截图_001"));
+    result.replace(QStringLiteral("{扩展}"), QStringLiteral("png"));
+    result.replace(QStringLiteral("{时间}"), now.toString(QStringLiteral("yyyyMMdd_HHmmss")));
+    result.replace(QStringLiteral("{日期}"), now.toString(QStringLiteral("yyyy-MM-dd")));
+    result.replace(QStringLiteral("{序号}"), QStringLiteral("001"));
+    result.replace(QStringLiteral("{尺寸}"), QStringLiteral("1920x1080"));
+    if (result.isEmpty())
+        result = QStringLiteral("微信截图_001.png");
+    else if (!result.endsWith(QStringLiteral(".png"), Qt::CaseInsensitive))
+        result += QStringLiteral(".png");
+    return tr("Preview: %1").arg(result);
+}
+
+void PropertyPanel::addOutputHistory(const QString& path)
+{
+    if (path.isEmpty())
+        return;
+    m_outputHistory.removeAll(path);
+    m_outputHistory.prepend(path);
+    while (m_outputHistory.size() > 5)
+        m_outputHistory.removeLast();
+
+    if (m_stitchOutputDir) {
+        m_stitchOutputDir->blockSignals(true);
+        QString current = m_stitchOutputDir->currentText();
+        m_stitchOutputDir->clear();
+        m_stitchOutputDir->addItems(m_outputHistory);
+        m_stitchOutputDir->setCurrentText(current);
+        m_stitchOutputDir->blockSignals(false);
+    }
+}
+
+QString PropertyPanel::uiStateFilePath() const
+{
+    QString dir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+    QDir().mkpath(dir);
+    return dir + QStringLiteral("/ui-state.json");
+}
+
+void PropertyPanel::saveUiState()
+{
+    QJsonObject root;
+    QJsonObject sections;
+    if (m_stitchSectionSettings)
+        sections[QStringLiteral("stitchSettings")] = m_stitchSectionSettings->expanded();
+    if (m_stitchSectionPresets)
+        sections[QStringLiteral("stitchPresets")] = m_stitchSectionPresets->expanded();
+    if (m_stitchSectionOutput)
+        sections[QStringLiteral("stitchOutput")] = m_stitchSectionOutput->expanded();
+    root[QStringLiteral("sections")] = sections;
+
+    QJsonArray history;
+    for (const QString& path : m_outputHistory)
+        history.append(path);
+    root[QStringLiteral("outputHistory")] = history;
+
+    QFile file(uiStateFilePath());
+    if (file.open(QIODevice::WriteOnly))
+        file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+}
+
+void PropertyPanel::loadUiState()
+{
+    QFile file(uiStateFilePath());
+    if (!file.open(QIODevice::ReadOnly))
+        return;
+
+    QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
+    if (!doc.isObject())
+        return;
+
+    QJsonObject root = doc.object();
+    QJsonObject sections = root.value(QStringLiteral("sections")).toObject();
+
+    auto applySection = [&sections](CollapsibleSection* section, const QString& key) {
+        if (!section)
+            return;
+        if (sections.contains(key))
+            section->setExpanded(sections.value(key).toBool(true));
+    };
+    applySection(m_stitchSectionSettings, QStringLiteral("stitchSettings"));
+    applySection(m_stitchSectionPresets, QStringLiteral("stitchPresets"));
+    applySection(m_stitchSectionOutput, QStringLiteral("stitchOutput"));
+
+    QJsonArray history = root.value(QStringLiteral("outputHistory")).toArray();
+    for (const QJsonValue& v : history)
+        m_outputHistory.append(v.toString());
+    while (m_outputHistory.size() > 5)
+        m_outputHistory.removeLast();
+
+    if (m_stitchOutputDir) {
+        m_stitchOutputDir->blockSignals(true);
+        m_stitchOutputDir->addItems(m_outputHistory);
+        if (!m_outputHistory.isEmpty())
+            m_stitchOutputDir->setCurrentText(m_outputHistory.first());
+        m_stitchOutputDir->blockSignals(false);
+    }
+}
+
+bool PropertyPanel::canWriteToPath(const QString& path) const
+{
+    if (path.isEmpty())
+        return false;
+    QFileInfo info(path);
+    if (!info.exists()) {
+        QDir parentDir = info.dir();
+        if (!parentDir.exists())
+            return false;
+        return QFileInfo(parentDir.absolutePath()).isWritable();
+    }
+    return info.isDir() && info.isWritable();
+}
+
+bool PropertyPanel::validateStitchSettings(QString* errorMessage, QString* warningMessage) const
+{
+    bool ok = true;
+    QStringList errors;
+    QStringList warnings;
+
+    int imageCount = m_imageModel ? m_imageModel->validCount() : 0;
+    if (imageCount < 2) {
+        errors.append(tr("At least 2 images are required"));
+        ok = false;
+    }
+
+    int spacing = m_stitchSpacing ? m_stitchSpacing->value() : 0;
+    if (spacing < 0 || spacing > 200) {
+        errors.append(tr("Spacing is out of range"));
+        ok = false;
+    }
+
+    QString outputDir = m_stitchOutputDir ? m_stitchOutputDir->currentText() : QString();
+    if (outputDir.isEmpty()) {
+        errors.append(tr("Output directory is empty"));
+        ok = false;
+    } else {
+        if (!QFileInfo::exists(outputDir)) {
+            errors.append(tr("Output directory does not exist"));
+            ok = false;
+        } else if (!canWriteToPath(outputDir)) {
+            errors.append(tr("Output directory is not writable"));
+            ok = false;
+        } else if (outputDir.length() > 260) {
+            warnings.append(tr("Output path is too long"));
+        }
+    }
+
+    QString templ = m_stitchFileNameTemplate ? m_stitchFileNameTemplate->text() : QString();
+    if (templ.isEmpty()) {
+        errors.append(tr("File name template is empty"));
+        ok = false;
+    }
+
+    if (m_imageModel && imageCount >= 2 && m_stitchUniformWidth && m_stitchUniformWidth->isChecked()) {
+        int firstW = -1;
+        bool inconsistent = false;
+        int count = m_imageModel->rowCount(QModelIndex());
+        for (int i = 0; i < count; ++i) {
+            const ImageItem* item = m_imageModel->itemAt(i);
+            if (!item || !item->isValid() || item->isHidden())
+                continue;
+            if (firstW < 0)
+                firstW = item->width();
+            else if (item->width() != firstW) {
+                inconsistent = true;
+                break;
+            }
+        }
+        if (inconsistent)
+            warnings.append(tr("Image widths are inconsistent"));
+    }
+
+    if (errorMessage)
+        *errorMessage = errors.join(QStringLiteral("; "));
+    if (warningMessage)
+        *warningMessage = warnings.join(QStringLiteral("; "));
+
+    return ok;
+}
+
+void PropertyPanel::setInputError(QWidget* widget, bool error)
+{
+    if (!widget)
+        return;
+    if (error)
+        widget->setStyleSheet(QStringLiteral("border: 1px solid #E81123;"));
+    else
+        widget->setStyleSheet(QString());
+}
+
+void PropertyPanel::setInputWarning(QWidget* widget, bool warning)
+{
+    if (!widget)
+        return;
+    if (warning)
+        widget->setStyleSheet(QStringLiteral("border: 1px solid #FFC107;"));
+    else
+        widget->setStyleSheet(QString());
+}
+
+void PropertyPanel::validateAndUpdateUI()
+{
+    if (!m_processBtn)
+        return;
+
+    ToolType currentTool = static_cast<ToolType>(m_stack->currentIndex());
+
+    if (currentTool != ToolType::Stitch) {
+        m_processBtn->setEnabled(true);
+        m_processBtn->setToolTip(QString());
+        return;
+    }
+
+    QString error, warning;
+    bool ok = validateStitchSettings(&error, &warning);
+
+    if (m_stitchOutputDir) {
+        QString path = m_stitchOutputDir->currentText();
+        bool pathError = !path.isEmpty() && (!QFileInfo::exists(path) || !canWriteToPath(path));
+        setInputError(m_stitchOutputDir, pathError);
+        if (!pathError && path.length() > 260)
+            setInputWarning(m_stitchOutputDir, true);
+        else if (!pathError)
+            setInputWarning(m_stitchOutputDir, false);
+    }
+
+    if (m_stitchFileNameTemplate)
+        setInputError(m_stitchFileNameTemplate, m_stitchFileNameTemplate->text().isEmpty());
+
+    if (m_stitchSpacing) {
+        int spacing = m_stitchSpacing->value();
+        setInputError(m_stitchSpacing, spacing < 0 || spacing > 200);
+    }
+
+    if (m_stitchValidationLabel) {
+        if (!error.isEmpty()) {
+            m_stitchValidationLabel->setText(QStringLiteral("🔴 ") + error);
+            m_stitchValidationLabel->setStyleSheet(QStringLiteral("color: #E81123; font-size: 12px;"));
+        } else if (!warning.isEmpty()) {
+            m_stitchValidationLabel->setText(QStringLiteral("⚠️ ") + warning);
+            m_stitchValidationLabel->setStyleSheet(QStringLiteral("color: #FFC107; font-size: 12px;"));
+        } else {
+            m_stitchValidationLabel->setText(QStringLiteral("✅ ") + tr("Ready"));
+            m_stitchValidationLabel->setStyleSheet(QStringLiteral("color: #107C10; font-size: 12px;"));
+        }
+    }
+
+    m_processBtn->setEnabled(ok);
+    m_processBtn->setToolTip(ok ? QString() : error);
+}
+
+void PropertyPanel::onImageCountChanged(int count)
+{
+    Q_UNUSED(count)
+    refreshStitchPresetAvailability();
+    validateAndUpdateUI();
 }
 
 void PropertyPanel::loadResizePresetCategories()
@@ -824,35 +1593,6 @@ QString PropertyPanel::aspectRatioString(int w, int h) const
     }
     gcd = a;
     return QStringLiteral("%1:%2").arg(w / gcd).arg(h / gcd);
-}
-
-void PropertyPanel::loadStitchPresets()
-{
-    m_stitchPresets = StitchPresetManager::instance().loadPresets();
-
-    m_stitchPresetCombo->blockSignals(true);
-    m_stitchPresetCombo->clear();
-    for (const auto& p : m_stitchPresets) {
-        QString text = QStringLiteral("[%1] %2 (%3x%4)")
-                           .arg(p.category)
-                           .arg(p.isBuiltIn && p.name == QStringLiteral("Custom") ? tr("Custom") : p.name)
-                           .arg(p.rows)
-                           .arg(p.columns);
-        m_stitchPresetCombo->addItem(text, p.id);
-    }
-    m_stitchPresetCombo->blockSignals(false);
-}
-
-void PropertyPanel::applyStitchPreset(const StitchPreset& preset)
-{
-    if (preset.isBuiltIn && preset.name == QStringLiteral("Custom"))
-        return;
-    m_stitchGridRows->blockSignals(true);
-    m_stitchGridColumns->blockSignals(true);
-    m_stitchGridRows->setValue(preset.rows);
-    m_stitchGridColumns->setValue(preset.columns);
-    m_stitchGridRows->blockSignals(false);
-    m_stitchGridColumns->blockSignals(false);
 }
 
 void PropertyPanel::onResizeModeChanged(int index)
@@ -979,61 +1719,6 @@ void PropertyPanel::onResizeDeletePreset()
     }
 }
 
-void PropertyPanel::onStitchPresetComboChanged(int index)
-{
-    if (index < 0)
-        return;
-    QString presetId = m_stitchPresetCombo->itemData(index).toString();
-    for (const auto& p : m_stitchPresets) {
-        if (p.id == presetId) {
-            applyStitchPreset(p);
-            emit settingsChanged();
-            break;
-        }
-    }
-}
-
-void PropertyPanel::onStitchAddPreset()
-{
-    bool ok = false;
-    QString name = QInputDialog::getText(this, tr("Add Stitch Preset"), tr("Preset name:"),
-                                         QLineEdit::Normal, QString(), &ok);
-    if (!ok || name.isEmpty())
-        return;
-
-    StitchPreset p;
-    p.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
-    p.name = name;
-    p.rows = m_stitchGridRows->value();
-    p.columns = m_stitchGridColumns->value();
-    p.category = QStringLiteral("自定义");
-    p.isBuiltIn = false;
-    p.description = QStringLiteral("%1 x %2").arg(p.rows).arg(p.columns);
-
-    if (StitchPresetManager::instance().savePreset(p)) {
-        loadStitchPresets();
-        int idx = m_stitchPresetCombo->findData(p.id);
-        if (idx >= 0)
-            m_stitchPresetCombo->setCurrentIndex(idx);
-    }
-}
-
-void PropertyPanel::onStitchBgColorClicked()
-{
-    QColor c = QColorDialog::getColor(QColor(m_stitchBgColorLabel->text()), this, tr("Select Background Color"));
-    if (!c.isValid())
-        return;
-    m_stitchBgColorBtn->setStyleSheet(QStringLiteral("background-color: %1; border: 1px solid gray;").arg(c.name()));
-    m_stitchBgColorLabel->setText(c.name().toUpper());
-    emit settingsChanged();
-}
-
-void PropertyPanel::requestDelayedPreview()
-{
-    if (m_resizeDelayTimer)
-        m_resizeDelayTimer->start();
-}
-
 void PropertyPanel::onCompressModeChanged(int index)
 {
     Q_UNUSED(index)
@@ -1052,6 +1737,16 @@ void PropertyPanel::onConvertFormatChanged(int index)
     Q_UNUSED(index)
     if (m_convertEstimateTimer)
         m_convertEstimateTimer->start();
+}
+
+void PropertyPanel::onConvertEstimateTimeout()
+{
+    if (m_lastImage.isNull()) {
+        m_convertEstimateLabel->setText(QString());
+        return;
+    }
+    qint64 bytes = ConvertEngine::estimateSize(m_lastImage, convertSettings());
+    m_convertEstimateLabel->setText(tr("Estimated size: %1").arg(FileUtils::formatFileSize(bytes)));
 }
 
 void PropertyPanel::onWatermarkColorClicked()
@@ -1073,122 +1768,25 @@ void PropertyPanel::onWatermarkTypeChanged(int index)
     m_watermarkFontSize->setEnabled(isText);
     m_watermarkColorBtn->setEnabled(isText);
     m_watermarkImagePath->setEnabled(!isText);
-    // 让图像选择控件的父行也相应启用/禁用
     QWidget* imageRow = m_watermarkImagePath->parentWidget();
-    if (imageRow) {
+    if (imageRow)
         imageRow->setEnabled(!isText);
-    }
 }
 
-void PropertyPanel::onConvertEstimateTimeout()
+void PropertyPanel::requestDelayedPreview()
+{
+    if (m_resizeDelayTimer)
+        m_resizeDelayTimer->start();
+}
+
+void PropertyPanel::onCompressEstimateRequested()
 {
     if (m_lastImage.isNull()) {
-        m_convertEstimateLabel->setText(QString());
+        m_compressEstimateLabel->setText(QString());
         return;
     }
-    qint64 bytes = ConvertEngine::estimateSize(m_lastImage, convertSettings());
-    m_convertEstimateLabel->setText(tr("Estimated size: %1").arg(FileUtils::formatFileSize(bytes)));
-}
-
-void PropertyPanel::buildBatchPanel()
-{
-    QWidget* panel = new QWidget(this);
-    QVBoxLayout* layout = new QVBoxLayout(panel);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(6);
-
-    layout->addWidget(new QLabel(tr("<b>Batch Processing</b>"), panel));
-
-    m_batchTargetTool = new QComboBox(panel);
-    m_batchTargetTool->addItem(tr("Convert"), static_cast<int>(ToolType::Convert));
-    m_batchTargetTool->addItem(tr("Compress"), static_cast<int>(ToolType::Compress));
-    m_batchTargetTool->addItem(tr("Watermark"), static_cast<int>(ToolType::Watermark));
-    m_batchTargetTool->addItem(tr("Resize"), static_cast<int>(ToolType::Resize));
-    layout->addWidget(createFormRow(tr("Target Tool:"), m_batchTargetTool));
-
-    m_batchOutputDir = new QLineEdit(panel);
-    QPushButton* browseBtn = new QPushButton(tr("Browse..."), panel);
-    connect(browseBtn, &QPushButton::clicked, this, [this]() {
-        QString dir = QFileDialog::getExistingDirectory(this, tr("Select Output Directory"),
-                                                        m_batchOutputDir->text());
-        if (!dir.isEmpty())
-            m_batchOutputDir->setText(dir);
-    });
-
-    QHBoxLayout* dirLayout = new QHBoxLayout();
-    dirLayout->addWidget(new QLabel(tr("Output Dir:"), panel));
-    dirLayout->addWidget(m_batchOutputDir, 1);
-    dirLayout->addWidget(browseBtn);
-    layout->addLayout(dirLayout);
-
-    layout->addStretch();
-    m_stack->addWidget(panel);
-}
-
-void PropertyPanel::buildPdfPanel()
-{
-    QWidget* panel = new QWidget(this);
-    QVBoxLayout* layout = new QVBoxLayout(panel);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(6);
-
-    layout->addWidget(new QLabel(tr("<b>PDF Export</b>"), panel));
-
-    m_pdfPageSize = new QComboBox(panel);
-    m_pdfPageSize->addItem(tr("A4"), static_cast<int>(PdfSettings::A4));
-    m_pdfPageSize->addItem(tr("A5"), static_cast<int>(PdfSettings::A5));
-    m_pdfPageSize->addItem(tr("Letter"), static_cast<int>(PdfSettings::Letter));
-    layout->addWidget(createFormRow(tr("Page Size:"), m_pdfPageSize));
-
-    m_pdfLayout = new QComboBox(panel);
-    m_pdfLayout->addItem(tr("Single Per Page"), static_cast<int>(PdfSettings::SinglePerPage));
-    m_pdfLayout->addItem(tr("Fit to Page"), static_cast<int>(PdfSettings::FitToPage));
-    m_pdfLayout->addItem(tr("Grid 2x2"), static_cast<int>(PdfSettings::Grid2x2));
-    m_pdfLayout->addItem(tr("Grid 3x3"), static_cast<int>(PdfSettings::Grid3x3));
-    layout->addWidget(createFormRow(tr("Layout:"), m_pdfLayout));
-
-    m_pdfDpi = new QSpinBox(panel);
-    m_pdfDpi->setRange(72, 600);
-    m_pdfDpi->setValue(150);
-    m_pdfDpi->setSuffix(QStringLiteral(" dpi"));
-    layout->addWidget(createFormRow(tr("Resolution:"), m_pdfDpi));
-
-    QWidget* marginRow = new QWidget(panel);
-    QHBoxLayout* marginLayout = new QHBoxLayout(marginRow);
-    marginLayout->setContentsMargins(0, 2, 0, 2);
-    marginLayout->addWidget(new QLabel(tr("Margins:"), marginRow));
-    m_pdfMarginLeft = new QDoubleSpinBox(marginRow);
-    m_pdfMarginTop = new QDoubleSpinBox(marginRow);
-    m_pdfMarginRight = new QDoubleSpinBox(marginRow);
-    m_pdfMarginBottom = new QDoubleSpinBox(marginRow);
-    for (auto* sb : { m_pdfMarginLeft, m_pdfMarginTop, m_pdfMarginRight, m_pdfMarginBottom }) {
-        sb->setRange(0, 100);
-        sb->setValue(20.0);
-        sb->setDecimals(1);
-        sb->setSuffix(QStringLiteral(" mm"));
-        marginLayout->addWidget(sb);
-    }
-    layout->addWidget(marginRow);
-
-    QWidget* outRow = new QWidget(panel);
-    QHBoxLayout* outLayout = new QHBoxLayout(outRow);
-    outLayout->setContentsMargins(0, 2, 0, 2);
-    outLayout->addWidget(new QLabel(tr("Output:"), outRow));
-    m_pdfOutputPath = new QLineEdit(outRow);
-    outLayout->addWidget(m_pdfOutputPath, 1);
-    QPushButton* browseBtn = new QPushButton(tr("Browse..."), outRow);
-    connect(browseBtn, &QPushButton::clicked, this, [this]() {
-        QString path = QFileDialog::getSaveFileName(this, tr("Save PDF"),
-                                                    m_pdfOutputPath->text(),
-                                                    tr("PDF Files (*.pdf)"));
-        if (!path.isEmpty())
-            m_pdfOutputPath->setText(path);
-    });
-    outLayout->addWidget(browseBtn);
-    layout->addWidget(outRow);
-
-    layout->addStretch();
-    m_stack->addWidget(panel);
+    qint64 bytes = CompressEngine::estimateSize(m_lastImage, compressSettings());
+    m_compressEstimateLabel->setText(tr("Estimated size: %1").arg(FileUtils::formatFileSize(bytes)));
 }
 
 void PropertyPanel::onEditToolChanged(int index)
@@ -1247,7 +1845,6 @@ void PropertyPanel::onEditHistoryItemClicked(QListWidgetItem* item)
 void PropertyPanel::onEditActionAdded(const EditAction& action)
 {
     Q_UNUSED(action)
-    // historyChanged 信号会统一刷新列表
 }
 
 void PropertyPanel::refreshEditHistory(const QList<EditAction>& history, int currentIndex)
@@ -1294,28 +1891,10 @@ void PropertyPanel::refreshEditHistory(const QList<EditAction>& history, int cur
     m_editClearBtn->setEnabled(!history.isEmpty());
 }
 
-PropertyPanel::BatchSettings PropertyPanel::batchSettings() const
-{
-    BatchSettings settings;
-    settings.targetTool = static_cast<ToolType>(m_batchTargetTool->currentData().toInt());
-    settings.outputDir = m_batchOutputDir->text();
-    return settings;
-}
-
 void PropertyPanel::onResizeOutputFormatChanged(int index)
 {
     Q_UNUSED(index)
     onSettingsChanged();
-}
-
-void PropertyPanel::onCompressEstimateRequested()
-{
-    if (m_lastImage.isNull()) {
-        m_compressEstimateLabel->setText(QString());
-        return;
-    }
-    qint64 bytes = CompressEngine::estimateSize(m_lastImage, compressSettings());
-    m_compressEstimateLabel->setText(tr("Estimated size: %1").arg(FileUtils::formatFileSize(bytes)));
 }
 
 } // namespace yingtu

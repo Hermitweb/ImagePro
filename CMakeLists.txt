@@ -18,8 +18,13 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(VIPS REQUIRED vips-cpp)
 
 set(LIB_SOURCES
+    src/app/ApplicationState.cpp
     src/app/ImageProApp.cpp
+    src/app/ListSelectionState.cpp
+    src/app/PreviewInteractionState.cpp
+    src/app/StitchPreviewState.cpp
     src/app/ThemeManager.cpp
+    src/app/ToastManager.cpp
     src/core/CompressEngine.cpp
     src/core/ConvertEngine.cpp
     src/core/EditEngine.cpp
@@ -37,12 +42,17 @@ set(LIB_SOURCES
     src/ui/MainWindow.cpp
     src/ui/PreviewWidget.cpp
     src/ui/PropertyPanel.cpp
+    src/ui/StitchCanvas.cpp
     src/ui/StatusBarWidget.cpp
     src/ui/ToolBarWidget.cpp
     src/utils/EditAction.cpp
+    src/utils/ErrorHandler.cpp
+    src/utils/ErrorLevel.cpp
     src/utils/FileUtils.cpp
     src/utils/FlowLayout.cpp
     src/utils/ImageLoader.cpp
+    src/utils/ImageProError.cpp
+    src/utils/Logger.cpp
     src/utils/PresetData.cpp
     src/utils/PresetManager.cpp
     src/utils/ResizePresetManager.cpp
@@ -51,8 +61,13 @@ set(LIB_SOURCES
 )
 
 set(HEADERS
+    src/app/ApplicationState.h
     src/app/ImageProApp.h
+    src/app/ListSelectionState.h
+    src/app/PreviewInteractionState.h
+    src/app/StitchPreviewState.h
     src/app/ThemeManager.h
+    src/app/ToastManager.h
     src/core/CompressEngine.h
     src/core/ConvertEngine.h
     src/core/EditEngine.h
@@ -63,6 +78,7 @@ set(HEADERS
     src/core/ResizeEngine.h
     src/core/StitchEngine.h
     src/core/WatermarkEngine.h
+    src/ui/CollapsibleSection.h
     src/ui/dialogs/ProgressDialog.h
     src/ui/dialogs/ResultDialog.h
     src/ui/ImageEditorWidget.h
@@ -70,12 +86,17 @@ set(HEADERS
     src/ui/MainWindow.h
     src/ui/PreviewWidget.h
     src/ui/PropertyPanel.h
+    src/ui/StitchCanvas.h
     src/ui/StatusBarWidget.h
     src/ui/ToolBarWidget.h
     src/utils/EditAction.h
+    src/utils/ErrorHandler.h
+    src/utils/ErrorLevel.h
     src/utils/FileUtils.h
     src/utils/FlowLayout.h
     src/utils/ImageLoader.h
+    src/utils/ImageProError.h
+    src/utils/Logger.h
     src/utils/PresetData.h
     src/utils/PresetManager.h
     src/utils/ResizePresetManager.h

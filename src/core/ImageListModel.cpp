@@ -1,17 +1,19 @@
 #include "ImageListModel.h"
 #include "utils/FileUtils.h"
 #include "utils/ImageLoader.h"
+#include <QDataStream>
 #include <QFileInfo>
 #include <QMimeData>
 #include <QtConcurrent>
 #include <QUrl>
-#include <functional>
+#include <algorithm>
 
 namespace yingtu {
 
 ImageListModel::ImageListModel(QObject* parent)
     : QAbstractListModel(parent)
 {
+    m_thumbnailSize = 52;
     m_imageDataWatcher = new QFutureWatcher<ImageLoadResult>(this);
     connect(m_imageDataWatcher, &QFutureWatcher<ImageLoadResult>::resultReadyAt,
             this, &ImageListModel::onImageDataLoaded);
@@ -36,10 +38,10 @@ QVariant ImageListModel::data(const QModelIndex& index, int role) const
     case Qt::DisplayRole:
     case DisplayNameRole:
         return item.displayName();
-    case Qt::ToolTipRole:
-        return QStringLiteral("%1\n%2")
-            .arg(item.displayName())
-            .arg(FileUtils::formatFileSize(item.fileSize()));
+    case Qt::ToolTipRole: {
+        QString sizeStr = FileUtils::formatFileSize(item.fileSize());
+        return QStringLiteral("%1\n%2").arg(item.displayName()).arg(sizeStr);
+    }
     case IdRole:
         return item.id();
     case FilePathRole:
@@ -58,6 +60,12 @@ QVariant ImageListModel::data(const QModelIndex& index, int role) const
         return item.isSelected();
     case RotationRole:
         return item.rotation();
+    case HiddenRole:
+        return item.isHidden();
+    case ResolutionRole:
+        return item.resolutionString();
+    case LoadStateRole:
+        return static_cast<int>(item.loadState());
     case ThumbnailRole:
         return item.thumbnail(m_thumbnailSize);
     default:
@@ -75,6 +83,11 @@ bool ImageListModel::setData(const QModelIndex& index, const QVariant& value, in
         item.setSelected(value.toBool());
         emit dataChanged(index, index, { SelectedRole });
         emit selectionChanged();
+        return true;
+    }
+    if (role == HiddenRole) {
+        item.setHidden(value.toBool());
+        emit dataChanged(index, index, { HiddenRole, ThumbnailRole });
         return true;
     }
     return false;
@@ -100,6 +113,9 @@ QHash<int, QByteArray> ImageListModel::roleNames() const
     roles[ValidRole] = "valid";
     roles[SelectedRole] = "selected";
     roles[RotationRole] = "rotation";
+    roles[HiddenRole] = "hidden";
+    roles[ResolutionRole] = "resolution";
+    roles[LoadStateRole] = "loadState";
     roles[ThumbnailRole] = "thumbnail";
     return roles;
 }
@@ -184,7 +200,8 @@ void ImageListModel::addImage(const QString& filePath)
     endInsertRows();
     emit countChanged(m_items.size());
 
-    loadImageDataAsync({ row });
+    if (m_items.size() <= s_lazyLoadThreshold)
+        loadImageDataAsync({ row });
 }
 
 void ImageListModel::addImages(const QStringList& filePaths)
@@ -212,7 +229,8 @@ void ImageListModel::addImages(const QStringList& filePaths)
     endInsertRows();
     emit countChanged(m_items.size());
 
-    loadImageDataAsync(newRows);
+    if (m_items.size() <= s_lazyLoadThreshold)
+        loadImageDataAsync(newRows);
 }
 
 void ImageListModel::removeImage(int row)
@@ -250,6 +268,117 @@ void ImageListModel::clear()
     emit selectionChanged();
 }
 
+void ImageListModel::setHidden(int row, bool hidden)
+{
+    if (row < 0 || row >= m_items.size())
+        return;
+    m_items[row].setHidden(hidden);
+    emit dataChanged(index(row), index(row), { HiddenRole, ThumbnailRole });
+}
+
+void ImageListModel::toggleHidden(int row)
+{
+    if (row < 0 || row >= m_items.size())
+        return;
+    setHidden(row, !m_items[row].isHidden());
+}
+
+void ImageListModel::setHiddenForRows(const QModelIndexList& indexes, bool hidden)
+{
+    for (const QModelIndex& idx : indexes) {
+        if (idx.isValid())
+            setHidden(idx.row(), hidden);
+    }
+}
+
+void ImageListModel::moveToFront(const QModelIndexList& indexes)
+{
+    QList<int> rows;
+    for (const QModelIndex& idx : indexes) {
+        if (idx.isValid())
+            rows.append(idx.row());
+    }
+    if (rows.isEmpty())
+        return;
+    std::sort(rows.begin(), rows.end(), std::greater<int>());
+    for (int row : rows)
+        moveItem(row, 0);
+}
+
+void ImageListModel::moveToBack(const QModelIndexList& indexes)
+{
+    QList<int> rows;
+    for (const QModelIndex& idx : indexes) {
+        if (idx.isValid())
+            rows.append(idx.row());
+    }
+    if (rows.isEmpty())
+        return;
+    std::sort(rows.begin(), rows.end());
+    int moved = 0;
+    for (int row : rows) {
+        int current = row - moved;
+        if (current >= 0 && current < m_items.size())
+            moveItem(current, m_items.size() - 1);
+        ++moved;
+    }
+}
+
+void ImageListModel::duplicateItems(const QModelIndexList& indexes)
+{
+    QList<int> rows;
+    for (const QModelIndex& idx : indexes) {
+        if (idx.isValid())
+            rows.append(idx.row());
+    }
+    std::sort(rows.begin(), rows.end());
+    int inserted = 0;
+    for (int row : rows) {
+        int insertPos = row + 1 + inserted;
+        if (insertPos < 0 || insertPos > m_items.size())
+            continue;
+        const ImageItem& src = m_items.at(row + inserted);
+        beginInsertRows(QModelIndex(), insertPos, insertPos);
+        ImageItem copy(src.filePath(), false);
+        copy.setHidden(src.isHidden());
+        copy.setInfo(ImageLoader::loadInfo(src.filePath()));
+        if (src.hasThumbnail(m_thumbnailSize))
+            copy.setThumbnail(m_thumbnailSize, src.thumbnail(m_thumbnailSize));
+        m_items.insert(insertPos, copy);
+        endInsertRows();
+        ++inserted;
+    }
+    if (inserted > 0)
+        emit countChanged(m_items.size());
+}
+
+void ImageListModel::reloadItem(int row)
+{
+    if (row < 0 || row >= m_items.size())
+        return;
+    m_items[row].setLoadState(ImageItem::LoadState::Loading);
+    m_items[row].setThumbnail(m_thumbnailSize, QPixmap());
+    emit dataChanged(index(row), index(row), { LoadStateRole, ThumbnailRole });
+    loadImageDataAsync({ row });
+}
+
+void ImageListModel::loadVisibleRange(int firstRow, int lastRow, int buffer)
+{
+    if (m_items.isEmpty())
+        return;
+    int first = qMax(0, firstRow - buffer);
+    int last = qMin(m_items.size() - 1, lastRow + buffer);
+    QList<int> rows;
+    for (int i = first; i <= last; ++i) {
+        if (!m_items.at(i).isValid()
+            && m_items.at(i).loadState() == ImageItem::LoadState::Loading
+            && !m_imageDataQueue.contains(i)) {
+            rows.append(i);
+        }
+    }
+    loadImageDataAsync(rows);
+}
+
 ImageItem* ImageListModel::itemAt(int row)
 {
     if (row < 0 || row >= m_items.size())
@@ -261,7 +390,7 @@ const ImageItem* ImageListModel::itemAt(int row) const
 {
     if (row < 0 || row >= m_items.size())
         return nullptr;
-    return &m_items[row];
+    return &m_items.at(row);
 }
 
 int ImageListModel::indexOf(const QString& id) const
@@ -323,9 +452,24 @@ void ImageListModel::flipVerticalItem(int row)
 
 QStringList ImageListModel::filePaths() const
 {
+    return visibleFilePaths();
+}
+
+QStringList ImageListModel::allFilePaths() const
+{
     QStringList paths;
     for (const auto& item : m_items)
         paths.append(item.filePath());
+    return paths;
+}
+
+QStringList ImageListModel::visibleFilePaths() const
+{
+    QStringList paths;
+    for (const auto& item : m_items) {
+        if (!item.isHidden())
+            paths.append(item.filePath());
+    }
     return paths;
 }
 
@@ -349,13 +493,33 @@ int ImageListModel::validCount() const
     return count;
 }
 
-static ImageLoadResult loadImageDataTask(const QPair<int, QString>& task)
+int ImageListModel::visibleCount() const
+{
+    int count = 0;
+    for (const auto& item : m_items) {
+        if (!item.isHidden())
+            ++count;
+    }
+    return count;
+}
+
+int ImageListModel::hiddenCount() const
+{
+    int count = 0;
+    for (const auto& item : m_items) {
+        if (item.isHidden())
+            ++count;
+    }
+    return count;
+}
+
+static ImageLoadResult loadImageDataTask(const ImageDataTask& task)
 {
     ImageLoadResult result;
-    result.row = task.first;
-    result.info = ImageLoader::loadInfo(task.second);
+    result.row = task.row;
+    result.info = ImageLoader::loadInfo(task.path);
     if (result.info.valid)
-        result.thumbnail = ImageLoader::loadThumbnail(task.second, 64);
+        result.thumbnail = ImageLoader::loadThumbnail(task.path, task.thumbnailSize);
     return result;
 }
 
@@ -368,6 +532,7 @@ void ImageListModel::loadImageDataAsync(const QList<int>& rows)
     for (int row : rows) {
         if (row >= 0 && row < m_items.size()
             && !m_items.at(row).isValid()
+            && m_items.at(row).loadState() == ImageItem::LoadState::Loading
             && !m_imageDataQueue.contains(row)) {
             m_imageDataQueue.append(row);
         }
@@ -392,8 +557,13 @@ void ImageListModel::processImageDataQueue()
 
     m_pendingImageDataTasks.clear();
     for (int row : m_imageDataQueue) {
-        if (row >= 0 && row < m_items.size() && !m_items.at(row).isValid())
-            m_pendingImageDataTasks.append(qMakePair(row, m_items.at(row).filePath()));
+        if (row >= 0 && row < m_items.size() && !m_items.at(row).isValid()) {
+            ImageDataTask task;
+            task.row = row;
+            task.path = m_items.at(row).filePath();
+            task.thumbnailSize = m_thumbnailSize;
+            m_pendingImageDataTasks.append(task);
+        }
     }
     m_imageDataQueue.clear();
 
@@ -424,10 +594,11 @@ void ImageListModel::onImageDataLoaded(int index)
     ImageItem& item = m_items[row];
     item.setInfo(result.info);
     if (!result.thumbnail.isNull())
-        item.setThumbnail(result.thumbnail);
+        item.setThumbnail(m_thumbnailSize, result.thumbnail);
 
     emit dataChanged(this->index(row), this->index(row),
-                     { WidthRole, HeightRole, FileSizeRole, FormatRole, ValidRole, ThumbnailRole });
+                     { WidthRole, HeightRole, FileSizeRole, FormatRole, ValidRole,
+                       ThumbnailRole, ResolutionRole, LoadStateRole });
 
     ++m_imageDataLoadDone;
     emit thumbnailLoadProgress(m_imageDataLoadDone, m_imageDataLoadTotal);

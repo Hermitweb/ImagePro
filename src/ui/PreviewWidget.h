@@ -8,6 +8,9 @@ class QScrollArea;
 
 namespace yingtu {
 
+class ImageListModel;
+class StitchCanvas;
+
 class PreviewWidget : public QWidget
 {
     Q_OBJECT
@@ -35,6 +38,13 @@ public:
     bool comparisonMode() const { return m_comparisonMode; }
     void setOriginalImage(const QImage& image);
 
+    void setStitchMode(bool enabled);
+    bool stitchMode() const { return m_stitchMode; }
+    void setStitchSynthesizedImage(const QImage& image);
+    void setStitchInputRects(const QVector<QRect>& rects);
+    void resetStitchCanvas();
+    void setStitchImageListModel(ImageListModel* model);
+
     QImage currentImage() const { return m_image; }
     QImage displayedImage();
     QSize viewportSize() const;
@@ -44,6 +54,16 @@ signals:
     void deleteCurrentRequested();
     void rotateCurrentRequested();
     void rotateCurrentRightRequested();
+
+    // 转发 StitchCanvas 信号
+    void stitchInputImageClicked(int index);
+    void stitchInputImageDoubleClicked(int index);
+    void stitchRotateInputImageRequested(int index, bool left);
+    void stitchFlipInputImageHorizontalRequested(int index);
+    void stitchFlipInputImageVerticalRequested(int index);
+    void stitchRemoveInputImageRequested(int index);
+    void stitchInputImageInfoRequested(int index);
+    void stitchImageDropped(const QStringList& paths);
 
 protected:
     void wheelEvent(QWheelEvent* event) override;
@@ -60,6 +80,7 @@ private:
 
     QScrollArea* m_scrollArea = nullptr;
     QLabel* m_imageLabel = nullptr;
+    StitchCanvas* m_stitchCanvas = nullptr;
     QImage m_image;
     QImage m_originalImage;
     QString m_sourcePath;
@@ -70,6 +91,7 @@ private:
     double m_zoomFactor = 1.0;
     bool m_fitToWindow = true;
     bool m_comparisonMode = false;
+    bool m_stitchMode = false;
     int m_rotation = 0;
     bool m_flippedH = false;
     bool m_flippedV = false;

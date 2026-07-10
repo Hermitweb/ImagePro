@@ -33,9 +33,11 @@
 #include <QProgressDialog>
 #include <QSettings>
 #include <QSplitter>
+#include <QRect>
 #include <QStackedWidget>
 #include <QStatusBar>
 #include <QToolBar>
+#include <QVector>
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <QtConcurrent>
@@ -62,6 +64,7 @@ struct PreviewTaskResult {
     int sourceRotation = 0;
     bool sourceFlippedH = false;
     bool sourceFlippedV = false;
+    QVector<QRect> stitchInputRects;
 };
 
 static PreviewTaskResult generatePreview(const PreviewTaskInput& input)
@@ -81,9 +84,53 @@ static PreviewTaskResult generatePreview(const PreviewTaskInput& input)
     }
 
     switch (input.tool) {
-    case ToolType::Stitch:
+    case ToolType::Stitch: {
         result.image = StitchEngine::preview(input.allFilePaths, input.stitchSettings);
+        const int count = input.allFilePaths.size();
+        if (count > 0 && !result.image.isNull()) {
+            const int w = result.image.width();
+            const int h = result.image.height();
+            switch (input.stitchSettings.direction) {
+            case StitchSettings::Vertical: {
+                const int rh = h / count;
+                for (int i = 0; i < count; ++i) {
+                    const int y = i * rh;
+                    const int y2 = (i == count - 1) ? h : (i + 1) * rh;
+                    result.stitchInputRects.append(QRect(0, y, w, y2 - y));
+                }
+                break;
+            }
+            case StitchSettings::Horizontal: {
+                const int rw = w / count;
+                for (int i = 0; i < count; ++i) {
+                    const int x = i * rw;
+                    const int x2 = (i == count - 1) ? w : (i + 1) * rw;
+                    result.stitchInputRects.append(QRect(x, 0, x2 - x, h));
+                }
+                break;
+            }
+            case StitchSettings::Grid: {
+                const int rows = qMax(1, input.stitchSettings.gridRows);
+                const int cols = qMax(1, input.stitchSettings.gridColumns);
+                const int cw = w / cols;
+                const int rh = h / rows;
+                for (int r = 0; r < rows; ++r) {
+                    for (int c = 0; c < cols; ++c) {
+                        if (result.stitchInputRects.size() >= count)
+                            break;
+                        const int x = c * cw;
+                        const int x2 = (c == cols - 1) ? w : (c + 1) * cw;
+                        const int y = r * rh;
+                        const int y2 = (r == rows - 1) ? h : (r + 1) * rh;
+                        result.stitchInputRects.append(QRect(x, y, x2 - x, y2 - y));
+                    }
+                }
+                break;
+            }
+            }
+        }
         break;
+    }
     case ToolType::Compress: {
         ImageItem item(input.currentFilePath, false);
         item.reloadInfo();
@@ -139,7 +186,7 @@ MainWindow::MainWindow(QWidget* parent)
     mwLog(QStringLiteral("constructor start"));
     setWindowTitle(tr("影图 ImagePro"));
     resize(1280, 800);
-    setMinimumSize(960, 680);
+    setMinimumSize(800, 600);
 
     m_model = new ImageListModel(this);
 
@@ -245,14 +292,16 @@ void MainWindow::setupCentralWidget()
     vlayout->setSpacing(0);
 
     QSplitter* splitter = new QSplitter(Qt::Horizontal, central);
+    splitter->setHandleWidth(6);
 
     m_listWidget = new ImageListWidget(m_model, splitter);
     m_listWidget->setMinimumWidth(72);
     m_listWidget->setMaximumWidth(120);
 
     QStackedWidget* centerStack = new QStackedWidget(splitter);
-    centerStack->setMinimumWidth(360);
+    centerStack->setMinimumSize(400, 300);
     m_previewWidget = new PreviewWidget(centerStack);
+    m_previewWidget->setStitchImageListModel(m_model);
     m_editorWidget = new ImageEditorWidget(centerStack);
     m_editorWidget->setVisible(false);
     centerStack->addWidget(m_previewWidget);
@@ -260,13 +309,15 @@ void MainWindow::setupCentralWidget()
     centerStack->setCurrentWidget(m_previewWidget);
 
     m_propertyPanel = new PropertyPanel(splitter);
+    m_propertyPanel->setImageModel(m_model);
 
     splitter->addWidget(m_listWidget);
     splitter->addWidget(centerStack);
     splitter->addWidget(m_propertyPanel);
-    splitter->setStretchFactor(0, 1);
-    splitter->setStretchFactor(1, 4);
-    splitter->setStretchFactor(2, 1);
+    splitter->setStretchFactor(0, 0);
+    splitter->setStretchFactor(1, 1);
+    splitter->setStretchFactor(2, 0);
+    splitter->setSizes(QList<int>() << 96 << 800 << 240);
 
     if (m_previewToolBar)
         vlayout->addWidget(m_previewToolBar);
@@ -399,6 +450,70 @@ void MainWindow::connectSignals()
         }
     });
 
+    connect(m_previewWidget, &PreviewWidget::stitchInputImageClicked, this, [this](int index) {
+        if (index >= 0 && index < m_model->rowCount())
+            onImageSelected(index);
+    });
+    connect(m_previewWidget, &PreviewWidget::stitchInputImageDoubleClicked, this, [this](int index) {
+        if (index >= 0 && index < m_model->rowCount())
+            onImageSelected(index);
+    });
+    connect(m_previewWidget, &PreviewWidget::stitchRotateInputImageRequested,
+            this, [this](int index, bool left) {
+        if (index < 0 || index >= m_model->rowCount())
+            return;
+        if (left) {
+            m_model->rotateItem(index);
+        } else {
+            m_model->rotateItem(index);
+            m_model->rotateItem(index);
+            m_model->rotateItem(index);
+        }
+        updateToolPreview();
+    });
+    connect(m_previewWidget, &PreviewWidget::stitchFlipInputImageHorizontalRequested,
+            this, [this](int index) {
+        if (index >= 0 && index < m_model->rowCount()) {
+            m_model->flipHorizontalItem(index);
+            updateToolPreview();
+        }
+    });
+    connect(m_previewWidget, &PreviewWidget::stitchFlipInputImageVerticalRequested,
+            this, [this](int index) {
+        if (index >= 0 && index < m_model->rowCount()) {
+            m_model->flipVerticalItem(index);
+            updateToolPreview();
+        }
+    });
+    connect(m_previewWidget, &PreviewWidget::stitchRemoveInputImageRequested,
+            this, [this](int index) {
+        if (index >= 0 && index < m_model->rowCount()) {
+            m_model->removeImage(index);
+            if (m_currentImageRow >= m_model->rowCount())
+                m_currentImageRow = m_model->rowCount() - 1;
+            updateToolPreview();
+        }
+    });
+    connect(m_previewWidget, &PreviewWidget::stitchInputImageInfoRequested,
+            this, [this](int index) {
+        if (index < 0 || index >= m_model->rowCount())
+            return;
+        const ImageItem* item = m_model->itemAt(index);
+        if (!item)
+            return;
+        QSize size(item->width(), item->height());
+        QMessageBox::information(this, tr("Image Info"),
+            tr("File: %1\nSize: %2x%3").arg(item->displayName()).arg(size.width()).arg(size.height()));
+    });
+    connect(m_previewWidget, &PreviewWidget::stitchImageDropped,
+            this, [this](const QStringList& paths) {
+        if (!paths.isEmpty()) {
+            m_model->addImages(paths);
+            if (m_currentTool == ToolType::Stitch)
+                updateToolPreview();
+        }
+    });
+
     connect(m_editorWidget, &ImageEditorWidget::historyChanged,
             m_propertyPanel, &PropertyPanel::refreshEditHistory);
     connect(m_propertyPanel, &PropertyPanel::editUndoRequested, m_editorWidget, &ImageEditorWidget::undo);
@@ -435,7 +550,8 @@ void MainWindow::onToolChanged(ToolType tool)
     m_currentTool = tool;
     m_propertyPanel->setToolType(tool);
 
-    QWidget* center = m_previewWidget->parentWidget();
+    m_previewWidget->setStitchMode(tool == ToolType::Stitch);
+
     if (tool == ToolType::Edit) {
         m_editorWidget->setVisible(true);
         m_previewWidget->setVisible(false);
@@ -795,13 +911,15 @@ void MainWindow::onImageSelected(int row)
 
 void MainWindow::updatePreview(bool applyToolEffect)
 {
-    if (m_currentImageRow < 0 || m_currentImageRow >= m_model->rowCount()) {
+    const bool hasImages = m_model->rowCount() > 0;
+    if (!hasImages) {
         m_previewWidget->clear();
         return;
     }
 
-    const ImageItem* item = m_model->itemAt(m_currentImageRow);
-    if (!item || !item->isValid()) {
+    const bool hasCurrentRow = m_currentImageRow >= 0 && m_currentImageRow < m_model->rowCount();
+    const ImageItem* item = hasCurrentRow ? m_model->itemAt(m_currentImageRow) : nullptr;
+    if (m_currentTool != ToolType::Stitch && (!hasCurrentRow || !item || !item->isValid())) {
         m_previewWidget->clear();
         return;
     }
@@ -816,7 +934,7 @@ void MainWindow::updatePreview(bool applyToolEffect)
 
     PreviewTaskInput input;
     input.tool = m_currentTool;
-    input.currentFilePath = item->filePath();
+    input.currentFilePath = item ? item->filePath() : QString();
     input.allFilePaths = m_model->filePaths();
     input.previewSize = m_previewWidget->viewportSize();
     if (input.previewSize.isEmpty())
@@ -938,6 +1056,14 @@ void MainWindow::onPreviewFinished()
 
     if (m_currentTool == ToolType::Edit) {
         m_editorWidget->setBaseImage(result.image);
+        return;
+    }
+
+    if (m_currentTool == ToolType::Stitch) {
+        m_previewWidget->setComparisonMode(false);
+        m_previewWidget->setStitchSynthesizedImage(result.image);
+        m_previewWidget->setStitchInputRects(result.stitchInputRects);
+        m_propertyPanel->updatePreview(result.image);
         return;
     }
 
