@@ -15,6 +15,10 @@ deploy_*/
 *.qm
 *.log
 
+# Test fixtures (keep generated sample images)
+!tests/fixtures/**/*.png
+!tests/fixtures/**/*.jpg
+
 # Qt / CMake
 *.pro.user
 *.pro.user.*
