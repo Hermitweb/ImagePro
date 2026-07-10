@@ -315,22 +315,16 @@ QDoubleSpinBox::down-button:hover {
 
 QSpinBox::up-arrow,
 QDoubleSpinBox::up-arrow {
-    width: 8px;
-    height: 8px;
-    image: none;
-    border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
-    border-bottom: 5px solid #A0A0A0;
+    width: 10px;
+    height: 6px;
+    image: url(:/icons/icons/arrow-up-light.svg);
 }
 
 QSpinBox::down-arrow,
 QDoubleSpinBox::down-arrow {
-    width: 8px;
-    height: 8px;
-    image: none;
-    border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
-    border-top: 5px solid #A0A0A0;
+    width: 10px;
+    height: 6px;
+    image: url(:/icons/icons/arrow-down-light.svg);
 }
 
 /* Group box */
