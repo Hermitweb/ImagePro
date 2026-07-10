@@ -35,22 +35,9 @@ namespace yingtu {
 
 namespace {
 
-constexpr int ThumbnailSize = 96;
-constexpr int GridCellWidth = 112;
-constexpr int GridCellHeight = 112;
-constexpr int MarginH = (GridCellWidth - ThumbnailSize) / 2; // 8
-constexpr int TopMargin = 8;
 constexpr int ItemSpacing = 4;
 constexpr int ToolTipDelayMs = 200;
 constexpr int LoadingIntervalMs = 50;
-
-QRect thumbnailRect(const QRect& cellRect)
-{
-    return QRect(cellRect.left() + MarginH,
-                 cellRect.top() + TopMargin,
-                 ThumbnailSize,
-                 ThumbnailSize);
-}
 
 QRect failedRetryRect(const QRect& thumbRect)
 {
@@ -83,7 +70,8 @@ public:
         initStyleOption(&opt, index);
 
         const QRect cellRect = opt.rect;
-        const QRect thumbRect = thumbnailRect(cellRect);
+        const QRect thumbRect = m_widget ? m_widget->thumbnailRect(cellRect)
+                                         : QRect(cellRect.center() - QPoint(48, 48), QSize(96, 96));
         const bool selected = opt.state & QStyle::State_Selected;
         const bool hover = opt.state & QStyle::State_MouseOver;
         const bool hidden = index.data(ImageListModel::HiddenRole).toBool();
@@ -157,7 +145,7 @@ public:
     {
         Q_UNUSED(option)
         Q_UNUSED(index)
-        return QSize(GridCellWidth, GridCellHeight);
+        return m_widget ? m_widget->cellSize() : QSize(112, 112);
     }
 
 private:
@@ -189,7 +177,10 @@ public:
         setMouseTracking(true);
         setSelectionMode(QAbstractItemView::ExtendedSelection);
         setViewMode(QListView::IconMode);
-        setGridSize(QSize(GridCellWidth, GridCellHeight));
+        if (widget)
+            setGridSize(widget->cellSize());
+        else
+            setGridSize(QSize(112, 112));
         setSpacing(ItemSpacing);
         setResizeMode(QListView::Adjust);
         setUniformItemSizes(true);
@@ -198,6 +189,8 @@ public:
         setDropIndicatorShown(true);
         setDragDropMode(QAbstractItemView::InternalMove);
         setContextMenuPolicy(Qt::CustomContextMenu);
+        setFrameStyle(QFrame::NoFrame);
+        setViewportMargins(0, 0, 0, 0);
 
         m_tooltipTimer = new QTimer(this);
         m_tooltipTimer->setSingleShot(true);
@@ -514,6 +507,32 @@ void ImageListWidget::updatePanelWidth()
     setMinimumWidth(132);
     setMaximumWidth(180);
     setFixedWidth(target);
+
+    int viewportW = target;
+    if (m_view && m_view->viewport())
+        viewportW = m_view->viewport()->width();
+    updateGridMetrics(viewportW);
+}
+
+void ImageListWidget::updateGridMetrics(int panelWidth)
+{
+    constexpr int OuterMargin = 2;
+    constexpr int InnerMargin = 2;
+    m_cellWidth = qMax(96, panelWidth - 2 * OuterMargin);
+    m_cellHeight = m_cellWidth;
+    m_thumbSize = qMax(80, m_cellWidth - 2 * InnerMargin);
+    m_thumbMarginH = (m_cellWidth - m_thumbSize) / 2;
+    m_topMargin = (m_cellHeight - m_thumbSize) / 2;
+    if (m_view)
+        m_view->setGridSize(QSize(m_cellWidth, m_cellHeight));
+}
+
+QRect ImageListWidget::thumbnailRect(const QRect& cellRect) const
+{
+    return QRect(cellRect.left() + m_thumbMarginH,
+                 cellRect.top() + m_topMargin,
+                 m_thumbSize,
+                 m_thumbSize);
 }
 
 void ImageListWidget::loadVisibleRange()

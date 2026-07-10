@@ -810,6 +810,10 @@ void MainWindow::onProcessRequested()
         }
         break;
     }
+    case ToolType::Batch: {
+        onBatchProcess();
+        break;
+    }
     default:
         break;
     }

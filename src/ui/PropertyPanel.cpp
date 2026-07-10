@@ -29,6 +29,7 @@
 #include <QListWidget>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QScopedValueRollback>
 #include <QSlider>
 #include <QSpinBox>
 #include <QStackedWidget>
@@ -74,9 +75,12 @@ PropertyPanel::PropertyPanel(QWidget* parent)
     connect(m_previewBtn, &QPushButton::clicked, this, &PropertyPanel::previewRequested);
     connect(m_processBtn, &QPushButton::clicked, this, &PropertyPanel::processRequested);
 
-    // 统一监听所有设置控件变化
-    for (QComboBox* cb : findChildren<QComboBox*>())
+    // 统一监听所有设置控件变化（拼接预设下拉框由专有槽处理，避免双重触发）
+    for (QComboBox* cb : findChildren<QComboBox*>()) {
+        if (cb == m_stitchPresetCategory || cb == m_stitchPreset)
+            continue;
         connect(cb, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &PropertyPanel::onSettingsChanged);
+    }
     for (QSpinBox* sb : findChildren<QSpinBox*>())
         connect(sb, QOverload<int>::of(&QSpinBox::valueChanged), this, &PropertyPanel::onSettingsChanged);
     for (QSlider* sl : findChildren<QSlider*>())
@@ -95,6 +99,7 @@ PropertyPanel::PropertyPanel(QWidget* parent)
     loadStitchPresets();
     setToolType(ToolType::Stitch);
 
+    m_initializing = false;
     QTimer::singleShot(0, this, [this]() { validateAndUpdateUI(); });
 }
 
@@ -1038,6 +1043,9 @@ void PropertyPanel::updatePreview(const QImage& image)
 
 void PropertyPanel::onSettingsChanged()
 {
+    if (m_initializing || m_validating)
+        return;
+
     if (!m_applyingStitchPreset && m_stack->currentIndex() == static_cast<int>(ToolType::Stitch)) {
         if (!m_currentStitchPresetId.isEmpty())
             clearStitchPresetSelection();
@@ -1114,12 +1122,14 @@ void PropertyPanel::rebuildStitchPresetDropdown()
 
 void PropertyPanel::onStitchCategoryChanged(int /*index*/)
 {
+    if (m_initializing)
+        return;
     rebuildStitchPresetDropdown();
 }
 
 void PropertyPanel::onStitchPresetChanged(int index)
 {
-    if (m_rebuildingStitchPresets || m_applyingStitchPreset)
+    if (m_initializing || m_rebuildingStitchPresets || m_applyingStitchPreset)
         return;
 
     if (index <= 0) {
@@ -1166,7 +1176,7 @@ void PropertyPanel::selectStitchPresetById(const QString& presetId)
 void PropertyPanel::clearStitchPresetSelection()
 {
     m_currentStitchPresetId.clear();
-    if (m_stitchPreset)
+    if (m_stitchPreset && m_stitchPreset->currentIndex() != 0)
         m_stitchPreset->setCurrentIndex(0);
 }
 
@@ -1494,9 +1504,10 @@ void PropertyPanel::setInputWarning(QWidget* widget, bool warning)
 
 void PropertyPanel::validateAndUpdateUI()
 {
-    if (!m_processBtn)
+    if (!m_processBtn || m_validating)
         return;
 
+    QScopedValueRollback<bool> guard(m_validating, true);
     ToolType currentTool = static_cast<ToolType>(m_stack->currentIndex());
 
     if (currentTool != ToolType::Stitch) {

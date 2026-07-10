@@ -282,6 +282,8 @@ private:
     ImageListModel* m_imageModel = nullptr;
     QStringList m_outputHistory;
     bool m_validationEnabled = true;
+    bool m_initializing = true;
+    bool m_validating = false;
 };
 
 } // namespace yingtu

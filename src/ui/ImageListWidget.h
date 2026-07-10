@@ -21,6 +21,8 @@ public:
 
     ImageListModel* model() const { return m_model; }
     int loadingAngle() const { return m_loadingAngle; }
+    QSize cellSize() const { return QSize(m_cellWidth, m_cellHeight); }
+    QRect thumbnailRect(const QRect& cellRect) const;
 
 signals:
     void imageDoubleClicked(int row);
@@ -54,6 +56,7 @@ private:
     void updateEmptyState();
     void buildMenu(QMenu& menu, const QModelIndex& index);
     void updatePanelWidth();
+    void updateGridMetrics(int panelWidth);
     void loadVisibleRange();
 
     ImageListModel* m_model = nullptr;
@@ -62,6 +65,12 @@ private:
     QTimer* m_loadingTimer = nullptr;
     int m_loadingAngle = 0;
     bool m_windowFilterInstalled = false;
+
+    int m_cellWidth = 112;
+    int m_cellHeight = 112;
+    int m_thumbSize = 96;
+    int m_thumbMarginH = 8;
+    int m_topMargin = 8;
 };
 
 } // namespace yingtu
