@@ -100,67 +100,67 @@
     </message>
     <message>
         <source>&amp;File</source>
-        <translation>&amp;amp;File</translation>
+        <translation>&amp;File</translation>
     </message>
     <message>
         <source>&amp;Add Images</source>
-        <translation>&amp;amp;Add Images</translation>
+        <translation>&amp;Add Images</translation>
     </message>
     <message>
         <source>E&amp;xit</source>
-        <translation>E&amp;amp;xit</translation>
+        <translation>E&amp;xit</translation>
     </message>
     <message>
         <source>&amp;Edit</source>
-        <translation>&amp;amp;Edit</translation>
+        <translation>&amp;Edit</translation>
     </message>
     <message>
         <source>&amp;Undo</source>
-        <translation>&amp;amp;Undo</translation>
+        <translation>&amp;Undo</translation>
     </message>
     <message>
         <source>&amp;Redo</source>
-        <translation>&amp;amp;Redo</translation>
+        <translation>&amp;Redo</translation>
     </message>
     <message>
         <source>&amp;Tools</source>
-        <translation>&amp;amp;Tools</translation>
+        <translation>&amp;Tools</translation>
     </message>
     <message>
         <source>&amp;Stitch</source>
-        <translation>&amp;amp;Stitch</translation>
+        <translation>&amp;Stitch</translation>
     </message>
     <message>
         <source>&amp;Convert</source>
-        <translation>&amp;amp;Convert</translation>
+        <translation>&amp;Convert</translation>
     </message>
     <message>
         <source>&amp;Compress</source>
-        <translation>&amp;amp;Compress</translation>
+        <translation>&amp;Compress</translation>
     </message>
     <message>
         <source>&amp;Watermark</source>
-        <translation>&amp;amp;Watermark</translation>
+        <translation>&amp;Watermark</translation>
     </message>
     <message>
         <source>&amp;Resize</source>
-        <translation>&amp;amp;Resize</translation>
+        <translation>&amp;Resize</translation>
     </message>
     <message>
         <source>&amp;Batch</source>
-        <translation>&amp;amp;Batch</translation>
+        <translation>&amp;Batch</translation>
     </message>
     <message>
         <source>&amp;View</source>
-        <translation>&amp;amp;View</translation>
+        <translation>&amp;View</translation>
     </message>
     <message>
         <source>Toggle &amp;Theme</source>
-        <translation>Toggle &amp;amp;Theme</translation>
+        <translation>Toggle &amp;Theme</translation>
     </message>
     <message>
         <source>&amp;Language</source>
-        <translation>&amp;amp;Language</translation>
+        <translation>&amp;Language</translation>
     </message>
     <message>
         <source>Language Changed</source>
@@ -172,11 +172,11 @@
     </message>
     <message>
         <source>&amp;Help</source>
-        <translation>&amp;amp;Help</translation>
+        <translation>&amp;Help</translation>
     </message>
     <message>
         <source>&amp;About</source>
-        <translation>&amp;amp;About</translation>
+        <translation>&amp;About</translation>
     </message>
     <message>
         <source>About 影图 ImagePro</source>

@@ -100,67 +100,67 @@
     </message>
     <message>
         <source>&amp;File</source>
-        <translation>&amp;amp;File</translation>
+        <translation>文件(&amp;F)</translation>
     </message>
     <message>
         <source>&amp;Add Images</source>
-        <translation>&amp;amp;Add Images</translation>
+        <translation>添加图片(&amp;A)</translation>
     </message>
     <message>
         <source>E&amp;xit</source>
-        <translation>E&amp;amp;xit</translation>
+        <translation>退出(&amp;X)</translation>
     </message>
     <message>
         <source>&amp;Edit</source>
-        <translation>&amp;amp;Edit</translation>
+        <translation>编辑(&amp;E)</translation>
     </message>
     <message>
         <source>&amp;Undo</source>
-        <translation>&amp;amp;Undo</translation>
+        <translation>撤销(&amp;U)</translation>
     </message>
     <message>
         <source>&amp;Redo</source>
-        <translation>&amp;amp;Redo</translation>
+        <translation>重做(&amp;R)</translation>
     </message>
     <message>
         <source>&amp;Tools</source>
-        <translation>&amp;amp;Tools</translation>
+        <translation>工具(&amp;T)</translation>
     </message>
     <message>
         <source>&amp;Stitch</source>
-        <translation>&amp;amp;Stitch</translation>
+        <translation>拼接(&amp;S)</translation>
     </message>
     <message>
         <source>&amp;Convert</source>
-        <translation>&amp;amp;Convert</translation>
+        <translation>转换(&amp;C)</translation>
     </message>
     <message>
         <source>&amp;Compress</source>
-        <translation>&amp;amp;Compress</translation>
+        <translation>压缩(&amp;M)</translation>
     </message>
     <message>
         <source>&amp;Watermark</source>
-        <translation>&amp;amp;Watermark</translation>
+        <translation>水印(&amp;W)</translation>
     </message>
     <message>
         <source>&amp;Resize</source>
-        <translation>&amp;amp;Resize</translation>
+        <translation>尺寸(&amp;I)</translation>
     </message>
     <message>
         <source>&amp;Batch</source>
-        <translation>&amp;amp;Batch</translation>
+        <translation>批处理(&amp;B)</translation>
     </message>
     <message>
         <source>&amp;View</source>
-        <translation>&amp;amp;View</translation>
+        <translation>视图(&amp;V)</translation>
     </message>
     <message>
         <source>Toggle &amp;Theme</source>
-        <translation>Toggle &amp;amp;Theme</translation>
+        <translation>切换主题(&amp;H)</translation>
     </message>
     <message>
         <source>&amp;Language</source>
-        <translation>&amp;amp;Language</translation>
+        <translation>语言(&amp;L)</translation>
     </message>
     <message>
         <source>Language Changed</source>
@@ -172,11 +172,11 @@
     </message>
     <message>
         <source>&amp;Help</source>
-        <translation>&amp;amp;Help</translation>
+        <translation>帮助(&amp;H)</translation>
     </message>
     <message>
         <source>&amp;About</source>
-        <translation>&amp;amp;About</translation>
+        <translation>关于(&amp;A)</translation>
     </message>
     <message>
         <source>About 影图 ImagePro</source>
