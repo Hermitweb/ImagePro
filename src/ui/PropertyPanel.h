@@ -6,6 +6,7 @@
 #include "core/CompressEngine.h"
 #include "core/WatermarkEngine.h"
 #include "core/ResizeEngine.h"
+#include "core/PdfEngine.h"
 #include "utils/EditAction.h"
 #include "utils/ResizePresetManager.h"
 #include "utils/ResizeSettings.h"
@@ -46,6 +47,7 @@ public:
     WatermarkSettings watermarkSettings() const;
     EditAction currentEditAction() const;
     ResizeSettings resizeSettings() const;
+    PdfSettings pdfSettings() const;
 
     struct BatchSettings {
         ToolType targetTool = ToolType::Convert;
@@ -108,6 +110,7 @@ private:
     void buildEditPanel();
     void buildResizePanel();
     void buildBatchPanel();
+    void buildPdfPanel();
 
     QWidget* createFormRow(const QString& label, QWidget* widget);
     QWidget* createFormRow(const QString& label, QWidget* widget, QWidget*& rowStorage);
@@ -178,6 +181,7 @@ private:
 
     // Edit
     QComboBox* m_editTool = nullptr;
+    QComboBox* m_editFilterType = nullptr;
     QComboBox* m_editColor = nullptr;
     QSpinBox* m_editLineWidth = nullptr;
     QSlider* m_editOpacity = nullptr;
@@ -212,6 +216,16 @@ private:
     // Batch
     QComboBox* m_batchTargetTool = nullptr;
     QLineEdit* m_batchOutputDir = nullptr;
+
+    // PDF
+    QComboBox* m_pdfPageSize = nullptr;
+    QComboBox* m_pdfLayout = nullptr;
+    QSpinBox* m_pdfDpi = nullptr;
+    QDoubleSpinBox* m_pdfMarginLeft = nullptr;
+    QDoubleSpinBox* m_pdfMarginTop = nullptr;
+    QDoubleSpinBox* m_pdfMarginRight = nullptr;
+    QDoubleSpinBox* m_pdfMarginBottom = nullptr;
+    QLineEdit* m_pdfOutputPath = nullptr;
 
     QImage m_lastImage;
 };

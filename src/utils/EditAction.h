@@ -16,7 +16,8 @@ enum class EditToolType {
     Pen,
     Mosaic,
     Text,
-    Crop
+    Crop,
+    Filter
 };
 
 enum class EditFillStyle {
@@ -25,9 +26,20 @@ enum class EditFillStyle {
     SolidFill
 };
 
+enum class FilterType {
+    Grayscale,
+    Sepia,
+    Warm,
+    Cool,
+    HighContrast,
+    Blur,
+    Sharpen
+};
+
 struct EditAction {
     QString id;
     EditToolType toolType = EditToolType::Rectangle;
+    FilterType filterType = FilterType::Grayscale;
     QColor color = Qt::red;
     int lineWidth = 3;
     int opacity = 80; // 0~100
@@ -45,6 +57,10 @@ struct EditAction {
                toolType == EditToolType::Arrow ||
                toolType == EditToolType::Text ||
                toolType == EditToolType::Crop;
+    }
+
+    bool isFilter() const {
+        return toolType == EditToolType::Filter;
     }
 };
 

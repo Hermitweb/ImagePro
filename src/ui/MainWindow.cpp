@@ -11,6 +11,7 @@
 #include "core/CompressEngine.h"
 #include "core/ConvertEngine.h"
 #include "core/ExportManager.h"
+#include "core/PdfEngine.h"
 #include "core/ResizeEngine.h"
 #include "core/StitchEngine.h"
 #include "core/WatermarkEngine.h"
@@ -195,6 +196,7 @@ void MainWindow::setupMenuBar()
     toolMenu->addAction(tr("&Edit"), this, [this]() { m_toolBar->setCurrentTool(ToolType::Edit); }, Qt::Key_F5);
     toolMenu->addAction(tr("&Resize"), this, [this]() { m_toolBar->setCurrentTool(ToolType::Resize); }, Qt::Key_F6);
     toolMenu->addAction(tr("&Batch"), this, [this]() { m_toolBar->setCurrentTool(ToolType::Batch); }, Qt::Key_F7);
+    toolMenu->addAction(tr("&PDF"), this, [this]() { m_toolBar->setCurrentTool(ToolType::Pdf); }, Qt::Key_F8);
 
     QMenu* viewMenu = bar->addMenu(tr("&View"));
     viewMenu->addAction(tr("Toggle &Theme"), this, []() {
@@ -460,6 +462,10 @@ void MainWindow::onToolChanged(ToolType tool)
         m_editorWidget->setVisible(false);
         m_previewWidget->setVisible(true);
         onBatchProcess();
+    } else if (tool == ToolType::Pdf) {
+        m_editorWidget->setVisible(false);
+        m_previewWidget->setVisible(true);
+        updatePreview();
     } else {
         m_editorWidget->setVisible(false);
         m_previewWidget->setVisible(true);
@@ -635,6 +641,36 @@ void MainWindow::onProcessRequested()
                 }
                 info.totalFileSize = totalSize;
                 info.resolution = resolution;
+                ResultDialog dialog(info, this);
+                dialog.exec();
+            });
+        break;
+    }
+    case ToolType::Pdf: {
+        PdfSettings settings = m_propertyPanel->pdfSettings();
+        if (settings.outputPath.isEmpty()) {
+            QString defaultPath;
+            if (selectedPaths.size() == 1) {
+                QFileInfo fi(selectedPaths.first());
+                defaultPath = fi.absolutePath() + QStringLiteral("/") + fi.completeBaseName() + QStringLiteral(".pdf");
+            } else {
+                QFileInfo fi(selectedPaths.first());
+                defaultPath = fi.absolutePath() + QStringLiteral("/output.pdf");
+            }
+            settings.outputPath = QFileDialog::getSaveFileName(this, tr("Save PDF"), defaultPath,
+                                                               tr("PDF Files (*.pdf)"));
+            if (settings.outputPath.isEmpty())
+                break;
+        }
+        runEngineAsync<PdfEngine>(settings, selectedPaths,
+            tr("Exporting PDF..."), [this, selectedPaths](const QString& out) {
+                if (out.isEmpty()) return;
+                m_statusBar->setMessage(tr("Exported PDF: %1").arg(out));
+                ResultInfo info;
+                info.title = tr("PDF Export Complete");
+                info.message = tr("Successfully exported %1 images to PDF").arg(selectedPaths.size());
+                info.files << out;
+                info.totalFileSize = QFileInfo(out).size();
                 ResultDialog dialog(info, this);
                 dialog.exec();
             });

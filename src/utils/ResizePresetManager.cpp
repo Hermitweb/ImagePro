@@ -39,32 +39,61 @@ QList<ResizePreset> ResizePresetManager::builtInPresets() const
     };
 
     // 社交媒体
+    add(QStringLiteral("微信头像"), 200, 200, QStringLiteral("社交媒体"), QStringLiteral("1:1"));
     add(QStringLiteral("微信朋友圈"), 1080, 1080, QStringLiteral("社交媒体"), QStringLiteral("1:1"));
-    add(QStringLiteral("微博头条"), 1000, 1000, QStringLiteral("社交媒体"), QStringLiteral("1:1"));
-    add(QStringLiteral("小红书封面"), 1242, 1660, QStringLiteral("社交媒体"), QStringLiteral("3:4"));
-    add(QStringLiteral("Instagram"), 1080, 1080, QStringLiteral("社交媒体"), QStringLiteral("1:1"));
+    add(QStringLiteral("微信朋友圈封面"), 750, 400, QStringLiteral("社交媒体"), QStringLiteral("15:8"));
+    add(QStringLiteral("微信公众号封面"), 900, 383, QStringLiteral("社交媒体"), QStringLiteral("900x383"));
+    add(QStringLiteral("微博头像"), 400, 400, QStringLiteral("社交媒体"), QStringLiteral("1:1"));
+    add(QStringLiteral("微博封面"), 920, 300, QStringLiteral("社交媒体"), QStringLiteral("46:15"));
+    add(QStringLiteral("抖音头像"), 500, 500, QStringLiteral("社交媒体"), QStringLiteral("1:1"));
+    add(QStringLiteral("抖音视频封面"), 1080, 1920, QStringLiteral("社交媒体"), QStringLiteral("9:16"));
+    add(QStringLiteral("小红书封面"), 1080, 1440, QStringLiteral("社交媒体"), QStringLiteral("3:4"));
+    add(QStringLiteral("Instagram头像"), 180, 180, QStringLiteral("社交媒体"), QStringLiteral("1:1"));
+    add(QStringLiteral("Instagram帖子"), 1080, 1080, QStringLiteral("社交媒体"), QStringLiteral("1:1"));
 
     // 证件照
-    add(QStringLiteral("一寸"), 295, 413, QStringLiteral("证件照"), QStringLiteral("295x413"));
-    add(QStringLiteral("二寸"), 413, 626, QStringLiteral("证件照"), QStringLiteral("413x626"));
-    add(QStringLiteral("小一寸"), 260, 378, QStringLiteral("证件照"), QStringLiteral("260x378"));
+    add(QStringLiteral("一寸"), 295, 413, QStringLiteral("证件照"), QStringLiteral("25x35mm"));
+    add(QStringLiteral("二寸"), 413, 579, QStringLiteral("证件照"), QStringLiteral("35x49mm"));
+    add(QStringLiteral("小一寸"), 260, 378, QStringLiteral("证件照"), QStringLiteral("22x32mm"));
+    add(QStringLiteral("小二寸"), 389, 567, QStringLiteral("证件照"), QStringLiteral("33x48mm"));
+    add(QStringLiteral("大一寸"), 339, 567, QStringLiteral("证件照"), QStringLiteral("28x48mm"));
+    add(QStringLiteral("大二寸"), 358, 531, QStringLiteral("证件照"), QStringLiteral("30x45mm"));
+    add(QStringLiteral("简历照片"), 358, 441, QStringLiteral("证件照"), QStringLiteral("30x37mm"));
+    add(QStringLiteral("学生证照片"), 260, 378, QStringLiteral("证件照"), QStringLiteral("22x32mm"));
 
     // 电商
     add(QStringLiteral("淘宝主图"), 800, 800, QStringLiteral("电商"), QStringLiteral("1:1"));
+    add(QStringLiteral("淘宝详情图"), 750, 1000, QStringLiteral("电商"), QStringLiteral("3:4"));
     add(QStringLiteral("京东主图"), 800, 800, QStringLiteral("电商"), QStringLiteral("1:1"));
-    add(QStringLiteral("详情页"), 790, 1000, QStringLiteral("电商"), QStringLiteral("790x1000"));
+    add(QStringLiteral("拼多多主图"), 750, 750, QStringLiteral("电商"), QStringLiteral("1:1"));
+    add(QStringLiteral("横幅广告"), 728, 90, QStringLiteral("电商"), QStringLiteral("728x90"));
+    add(QStringLiteral("竖版海报"), 600, 900, QStringLiteral("电商"), QStringLiteral("2:3"));
+    add(QStringLiteral("横版海报"), 900, 600, QStringLiteral("电商"), QStringLiteral("3:2"));
+
+    // 网站/应用
+    add(QStringLiteral("网站Logo"), 80, 80, QStringLiteral("网站应用"), QStringLiteral("1:1"));
+    add(QStringLiteral("Favicon"), 32, 32, QStringLiteral("网站应用"), QStringLiteral("1:1"));
+    add(QStringLiteral("App图标"), 1024, 1024, QStringLiteral("网站应用"), QStringLiteral("1:1"));
+    add(QStringLiteral("启动页"), 1080, 1920, QStringLiteral("网站应用"), QStringLiteral("9:16"));
 
     // 屏幕壁纸
     add(QStringLiteral("1080P"), 1920, 1080, QStringLiteral("屏幕壁纸"), QStringLiteral("16:9"));
     add(QStringLiteral("2K"), 2560, 1440, QStringLiteral("屏幕壁纸"), QStringLiteral("16:9"));
     add(QStringLiteral("4K"), 3840, 2160, QStringLiteral("屏幕壁纸"), QStringLiteral("16:9"));
+    add(QStringLiteral("笔记本壁纸"), 1366, 768, QStringLiteral("屏幕壁纸"), QStringLiteral("16:9"));
     add(QStringLiteral("手机壁纸"), 1080, 1920, QStringLiteral("屏幕壁纸"), QStringLiteral("9:16"));
+
+    // 视频
+    add(QStringLiteral("视频缩略图"), 1280, 720, QStringLiteral("视频"), QStringLiteral("16:9"));
+    add(QStringLiteral("YouTube封面"), 2560, 1440, QStringLiteral("视频"), QStringLiteral("16:9"));
+    add(QStringLiteral("B站封面"), 1146, 717, QStringLiteral("视频"), QStringLiteral("1146x717"));
 
     // 打印
     add(QStringLiteral("A4 (150dpi)"), 1240, 1754, QStringLiteral("打印"), QStringLiteral("A4"));
     add(QStringLiteral("A4 (300dpi)"), 2480, 3508, QStringLiteral("打印"), QStringLiteral("A4"));
     add(QStringLiteral("5寸照片"), 1500, 1050, QStringLiteral("打印"), QStringLiteral("5寸"));
     add(QStringLiteral("6寸照片"), 1800, 1200, QStringLiteral("打印"), QStringLiteral("6寸"));
+    add(QStringLiteral("名片"), 1063, 626, QStringLiteral("打印"), QStringLiteral("90x54mm"));
 
     return result;
 }

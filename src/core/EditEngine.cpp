@@ -1,8 +1,153 @@
 #include "EditEngine.h"
 #include <QPainter>
 #include <QtMath>
+#include <functional>
 
 namespace yingtu {
+
+namespace {
+
+QImage applyFilter(const QImage& source, FilterType type)
+{
+    if (source.isNull())
+        return source;
+
+    QImage img = source.convertToFormat(QImage::Format_ARGB32);
+    const int w = img.width();
+    const int h = img.height();
+
+    switch (type) {
+    case FilterType::Grayscale: {
+        for (int y = 0; y < h; ++y) {
+            QRgb* line = reinterpret_cast<QRgb*>(img.scanLine(y));
+            for (int x = 0; x < w; ++x) {
+                QRgb p = line[x];
+                int gray = qRound(0.299 * qRed(p) + 0.587 * qGreen(p) + 0.114 * qBlue(p));
+                line[x] = qRgba(gray, gray, gray, qAlpha(p));
+            }
+        }
+        break;
+    }
+    case FilterType::Sepia: {
+        for (int y = 0; y < h; ++y) {
+            QRgb* line = reinterpret_cast<QRgb*>(img.scanLine(y));
+            for (int x = 0; x < w; ++x) {
+                QRgb p = line[x];
+                int r = qRed(p), g = qGreen(p), b = qBlue(p);
+                int tr = qMin(255, qRound(0.393 * r + 0.769 * g + 0.189 * b));
+                int tg = qMin(255, qRound(0.349 * r + 0.686 * g + 0.168 * b));
+                int tb = qMin(255, qRound(0.272 * r + 0.534 * g + 0.131 * b));
+                line[x] = qRgba(tr, tg, tb, qAlpha(p));
+            }
+        }
+        break;
+    }
+    case FilterType::Warm: {
+        for (int y = 0; y < h; ++y) {
+            QRgb* line = reinterpret_cast<QRgb*>(img.scanLine(y));
+            for (int x = 0; x < w; ++x) {
+                QRgb p = line[x];
+                int r = qMin(255, qRed(p) + 30);
+                int g = qGreen(p);
+                int b = qMax(0, qBlue(p) - 20);
+                line[x] = qRgba(r, g, b, qAlpha(p));
+            }
+        }
+        break;
+    }
+    case FilterType::Cool: {
+        for (int y = 0; y < h; ++y) {
+            QRgb* line = reinterpret_cast<QRgb*>(img.scanLine(y));
+            for (int x = 0; x < w; ++x) {
+                QRgb p = line[x];
+                int r = qMax(0, qRed(p) - 20);
+                int g = qGreen(p);
+                int b = qMin(255, qBlue(p) + 30);
+                line[x] = qRgba(r, g, b, qAlpha(p));
+            }
+        }
+        break;
+    }
+    case FilterType::HighContrast: {
+        for (int y = 0; y < h; ++y) {
+            QRgb* line = reinterpret_cast<QRgb*>(img.scanLine(y));
+            for (int x = 0; x < w; ++x) {
+                QRgb p = line[x];
+                auto adjust = [](int v) {
+                    double d = (v - 128) * 1.5 + 128;
+                    return qBound(0, qRound(d), 255);
+                };
+                line[x] = qRgba(adjust(qRed(p)), adjust(qGreen(p)), adjust(qBlue(p)), qAlpha(p));
+            }
+        }
+        break;
+    }
+    case FilterType::Blur: {
+        img = source.convertToFormat(QImage::Format_ARGB32);
+        // Use QPainter blur effect via convolution approximation is complex;
+        // fallback to a simple box blur on a copy.
+        QImage blurred(w, h, QImage::Format_ARGB32);
+        for (int y = 0; y < h; ++y) {
+            QRgb* out = reinterpret_cast<QRgb*>(blurred.scanLine(y));
+            for (int x = 0; x < w; ++x) {
+                int r = 0, g = 0, b = 0, a = 0, count = 0;
+                for (int dy = -1; dy <= 1; ++dy) {
+                    int yy = y + dy;
+                    if (yy < 0 || yy >= h) continue;
+                    const QRgb* in = reinterpret_cast<const QRgb*>(img.constScanLine(yy));
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        int xx = x + dx;
+                        if (xx < 0 || xx >= w) continue;
+                        QRgb p = in[xx];
+                        r += qRed(p); g += qGreen(p); b += qBlue(p); a += qAlpha(p);
+                        ++count;
+                    }
+                }
+                out[x] = qRgba(r / count, g / count, b / count, a / count);
+            }
+        }
+        img = blurred;
+        break;
+    }
+    case FilterType::Sharpen: {
+        QImage base = source.convertToFormat(QImage::Format_ARGB32);
+        img = base.copy();
+        for (int y = 1; y < h - 1; ++y) {
+            QRgb* out = reinterpret_cast<QRgb*>(img.scanLine(y));
+            for (int x = 1; x < w - 1; ++x) {
+                auto pixel = [&base, w, h](int xx, int yy) -> QRgb {
+                    xx = qBound(0, xx, w - 1);
+                    yy = qBound(0, yy, h - 1);
+                    return reinterpret_cast<const QRgb*>(base.constScanLine(yy))[xx];
+                };
+                auto conv = [&pixel](std::function<int(QRgb)> channel, int cx, int cy) {
+                    int v = 0;
+                    v += -1 * channel(pixel(cx - 1, cy - 1));
+                    v += -1 * channel(pixel(cx, cy - 1));
+                    v += -1 * channel(pixel(cx + 1, cy - 1));
+                    v += -1 * channel(pixel(cx - 1, cy));
+                    v +=  9 * channel(pixel(cx, cy));
+                    v += -1 * channel(pixel(cx + 1, cy));
+                    v += -1 * channel(pixel(cx - 1, cy + 1));
+                    v += -1 * channel(pixel(cx, cy + 1));
+                    v += -1 * channel(pixel(cx + 1, cy + 1));
+                    return qBound(0, v, 255);
+                };
+                QRgb p = pixel(x, y);
+                int r = conv([](QRgb p) { return qRed(p); }, x, y);
+                int g = conv([](QRgb p) { return qGreen(p); }, x, y);
+                int b = conv([](QRgb p) { return qBlue(p); }, x, y);
+                out[x] = qRgba(r, g, b, qAlpha(p));
+            }
+        }
+        break;
+    }
+    }
+
+    return img;
+}
+
+} // namespace
 
 EditEngine::EditEngine(QObject* parent)
     : QObject(parent)
@@ -62,10 +207,18 @@ QImage EditEngine::renderWithSelection(const QString& selectedId) const
     if (result.isNull())
         result.fill(Qt::white);
 
+    // Apply filter actions to the base image before drawing annotations
+    for (const auto& action : m_actions) {
+        if (action.isFilter())
+            result = applyFilter(result, action.filterType);
+    }
+
     QPainter painter(&result);
     painter.setRenderHint(QPainter::Antialiasing);
 
     for (const auto& action : m_actions) {
+        if (action.isFilter())
+            continue;
         drawAction(&painter, action);
         if (action.id == selectedId && action.isMovable()) {
             QPen pen(Qt::white);
@@ -152,6 +305,9 @@ void EditEngine::drawAction(QPainter* painter, const EditAction& action) const
         painter->drawRect(action.bounds);
         break;
     }
+    case EditToolType::Filter:
+        // Filters are applied to the base image before annotations are drawn
+        break;
     }
 }
 

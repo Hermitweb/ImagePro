@@ -43,6 +43,7 @@ ToolBarWidget::ToolBarWidget(QWidget* parent)
     createButton(ToolType::Edit, tr("Edit"), QStringLiteral("F5"));
     createButton(ToolType::Resize, tr("Resize"), QStringLiteral("F6"));
     createButton(ToolType::Batch, tr("Batch"), QStringLiteral("F7"));
+    createButton(ToolType::Pdf, tr("PDF"), QStringLiteral("F8"));
 
     layout->addStretch();
     setLayout(layout);

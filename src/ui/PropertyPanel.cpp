@@ -46,6 +46,7 @@ PropertyPanel::PropertyPanel(QWidget* parent)
     buildEditPanel();
     buildResizePanel();
     buildBatchPanel();
+    buildPdfPanel();
 
     mainLayout->addWidget(m_stack);
 
@@ -447,7 +448,18 @@ void PropertyPanel::buildEditPanel()
     m_editTool->addItem(tr("Mosaic"), static_cast<int>(EditToolType::Mosaic));
     m_editTool->addItem(tr("Text"), static_cast<int>(EditToolType::Text));
     m_editTool->addItem(tr("Crop"), static_cast<int>(EditToolType::Crop));
+    m_editTool->addItem(tr("Filter"), static_cast<int>(EditToolType::Filter));
     layout->addWidget(createFormRow(tr("Tool:"), m_editTool));
+
+    m_editFilterType = new QComboBox(panel);
+    m_editFilterType->addItem(tr("Grayscale"), static_cast<int>(FilterType::Grayscale));
+    m_editFilterType->addItem(tr("Sepia"), static_cast<int>(FilterType::Sepia));
+    m_editFilterType->addItem(tr("Warm"), static_cast<int>(FilterType::Warm));
+    m_editFilterType->addItem(tr("Cool"), static_cast<int>(FilterType::Cool));
+    m_editFilterType->addItem(tr("High Contrast"), static_cast<int>(FilterType::HighContrast));
+    m_editFilterType->addItem(tr("Blur"), static_cast<int>(FilterType::Blur));
+    m_editFilterType->addItem(tr("Sharpen"), static_cast<int>(FilterType::Sharpen));
+    layout->addWidget(createFormRow(tr("Filter:"), m_editFilterType));
 
     m_editColor = new QComboBox(panel);
     m_editColor->addItem(tr("Red"), QColor(Qt::red));
@@ -707,12 +719,27 @@ EditAction PropertyPanel::currentEditAction() const
 {
     EditAction a;
     a.toolType = static_cast<EditToolType>(m_editTool->currentData().toInt());
+    a.filterType = static_cast<FilterType>(m_editFilterType->currentData().toInt());
     a.color = m_editColor->currentData().value<QColor>();
     a.lineWidth = m_editLineWidth->value();
     a.opacity = m_editOpacity->value();
     a.fontSize = m_editFontSize->value();
     a.fillStyle = static_cast<EditFillStyle>(m_editFillStyle->currentData().toInt());
     return a;
+}
+
+PdfSettings PropertyPanel::pdfSettings() const
+{
+    PdfSettings s;
+    s.pageSize = static_cast<PdfSettings::PageSize>(m_pdfPageSize->currentData().toInt());
+    s.layout = static_cast<PdfSettings::Layout>(m_pdfLayout->currentData().toInt());
+    s.dpi = m_pdfDpi->value();
+    s.marginLeft = m_pdfMarginLeft->value();
+    s.marginTop = m_pdfMarginTop->value();
+    s.marginRight = m_pdfMarginRight->value();
+    s.marginBottom = m_pdfMarginBottom->value();
+    s.outputPath = m_pdfOutputPath->text();
+    return s;
 }
 
 ResizeSettings PropertyPanel::resizeSettings() const
@@ -1098,17 +1125,98 @@ void PropertyPanel::buildBatchPanel()
     m_stack->addWidget(panel);
 }
 
+void PropertyPanel::buildPdfPanel()
+{
+    QWidget* panel = new QWidget(this);
+    QVBoxLayout* layout = new QVBoxLayout(panel);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(6);
+
+    layout->addWidget(new QLabel(tr("<b>PDF Export</b>"), panel));
+
+    m_pdfPageSize = new QComboBox(panel);
+    m_pdfPageSize->addItem(tr("A4"), static_cast<int>(PdfSettings::A4));
+    m_pdfPageSize->addItem(tr("A5"), static_cast<int>(PdfSettings::A5));
+    m_pdfPageSize->addItem(tr("Letter"), static_cast<int>(PdfSettings::Letter));
+    layout->addWidget(createFormRow(tr("Page Size:"), m_pdfPageSize));
+
+    m_pdfLayout = new QComboBox(panel);
+    m_pdfLayout->addItem(tr("Single Per Page"), static_cast<int>(PdfSettings::SinglePerPage));
+    m_pdfLayout->addItem(tr("Fit to Page"), static_cast<int>(PdfSettings::FitToPage));
+    m_pdfLayout->addItem(tr("Grid 2x2"), static_cast<int>(PdfSettings::Grid2x2));
+    m_pdfLayout->addItem(tr("Grid 3x3"), static_cast<int>(PdfSettings::Grid3x3));
+    layout->addWidget(createFormRow(tr("Layout:"), m_pdfLayout));
+
+    m_pdfDpi = new QSpinBox(panel);
+    m_pdfDpi->setRange(72, 600);
+    m_pdfDpi->setValue(150);
+    m_pdfDpi->setSuffix(QStringLiteral(" dpi"));
+    layout->addWidget(createFormRow(tr("Resolution:"), m_pdfDpi));
+
+    QWidget* marginRow = new QWidget(panel);
+    QHBoxLayout* marginLayout = new QHBoxLayout(marginRow);
+    marginLayout->setContentsMargins(0, 2, 0, 2);
+    marginLayout->addWidget(new QLabel(tr("Margins:"), marginRow));
+    m_pdfMarginLeft = new QDoubleSpinBox(marginRow);
+    m_pdfMarginTop = new QDoubleSpinBox(marginRow);
+    m_pdfMarginRight = new QDoubleSpinBox(marginRow);
+    m_pdfMarginBottom = new QDoubleSpinBox(marginRow);
+    for (auto* sb : { m_pdfMarginLeft, m_pdfMarginTop, m_pdfMarginRight, m_pdfMarginBottom }) {
+        sb->setRange(0, 100);
+        sb->setValue(20.0);
+        sb->setDecimals(1);
+        sb->setSuffix(QStringLiteral(" mm"));
+        marginLayout->addWidget(sb);
+    }
+    layout->addWidget(marginRow);
+
+    QWidget* outRow = new QWidget(panel);
+    QHBoxLayout* outLayout = new QHBoxLayout(outRow);
+    outLayout->setContentsMargins(0, 2, 0, 2);
+    outLayout->addWidget(new QLabel(tr("Output:"), outRow));
+    m_pdfOutputPath = new QLineEdit(outRow);
+    outLayout->addWidget(m_pdfOutputPath, 1);
+    QPushButton* browseBtn = new QPushButton(tr("Browse..."), outRow);
+    connect(browseBtn, &QPushButton::clicked, this, [this]() {
+        QString path = QFileDialog::getSaveFileName(this, tr("Save PDF"),
+                                                    m_pdfOutputPath->text(),
+                                                    tr("PDF Files (*.pdf)"));
+        if (!path.isEmpty())
+            m_pdfOutputPath->setText(path);
+    });
+    outLayout->addWidget(browseBtn);
+    layout->addWidget(outRow);
+
+    layout->addStretch();
+    m_stack->addWidget(panel);
+}
+
 void PropertyPanel::onEditToolChanged(int index)
 {
     Q_UNUSED(index)
     EditToolType tool = static_cast<EditToolType>(m_editTool->currentData().toInt());
     bool isShape = (tool == EditToolType::Rectangle || tool == EditToolType::Ellipse);
     bool isText = (tool == EditToolType::Text);
+    bool isFilter = (tool == EditToolType::Filter);
 
+    m_editFilterType->setEnabled(isFilter);
+    if (m_editFilterType->parentWidget())
+        m_editFilterType->parentWidget()->setEnabled(isFilter);
+    m_editColor->setEnabled(!isFilter);
+    if (m_editColor->parentWidget())
+        m_editColor->parentWidget()->setEnabled(!isFilter);
     m_editFillStyle->setEnabled(isShape);
-    m_editFillStyle->parentWidget()->setEnabled(isShape);
+    if (m_editFillStyle->parentWidget())
+        m_editFillStyle->parentWidget()->setEnabled(isShape);
     m_editFontSize->setEnabled(isText);
-    m_editFontSize->parentWidget()->setEnabled(isText);
+    if (m_editFontSize->parentWidget())
+        m_editFontSize->parentWidget()->setEnabled(isText);
+    m_editLineWidth->setEnabled(!isFilter);
+    if (m_editLineWidth->parentWidget())
+        m_editLineWidth->parentWidget()->setEnabled(!isFilter);
+    m_editOpacity->setEnabled(!isFilter);
+    if (m_editOpacity->parentWidget())
+        m_editOpacity->parentWidget()->setEnabled(!isFilter);
 }
 
 void PropertyPanel::onEditUndo()
@@ -1157,10 +1265,24 @@ void PropertyPanel::refreshEditHistory(const QList<EditAction>& history, int cur
         case EditToolType::Mosaic: toolName = tr("Mosaic"); break;
         case EditToolType::Text: toolName = tr("Text"); break;
         case EditToolType::Crop: toolName = tr("Crop"); break;
+        case EditToolType::Filter: toolName = tr("Filter"); break;
         }
         QString text = QStringLiteral("%1 %2").arg(i + 1).arg(toolName);
         if (a.toolType == EditToolType::Text && !a.text.isEmpty())
             text += QStringLiteral(" - ") + a.text;
+        else if (a.toolType == EditToolType::Filter) {
+            QString filterName;
+            switch (a.filterType) {
+            case FilterType::Grayscale: filterName = tr("Grayscale"); break;
+            case FilterType::Sepia: filterName = tr("Sepia"); break;
+            case FilterType::Warm: filterName = tr("Warm"); break;
+            case FilterType::Cool: filterName = tr("Cool"); break;
+            case FilterType::HighContrast: filterName = tr("High Contrast"); break;
+            case FilterType::Blur: filterName = tr("Blur"); break;
+            case FilterType::Sharpen: filterName = tr("Sharpen"); break;
+            }
+            text += QStringLiteral(" - ") + filterName;
+        }
         QListWidgetItem* item = new QListWidgetItem(text, m_editHistoryList);
         item->setData(Qt::UserRole, i);
         if (i == currentIndex)

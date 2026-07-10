@@ -26,6 +26,7 @@ set(LIB_SOURCES
     src/core/ExportManager.cpp
     src/core/ImageItem.cpp
     src/core/ImageListModel.cpp
+    src/core/PdfEngine.cpp
     src/core/ResizeEngine.cpp
     src/core/StitchEngine.cpp
     src/core/WatermarkEngine.cpp
@@ -58,6 +59,7 @@ set(HEADERS
     src/core/ExportManager.h
     src/core/ImageItem.h
     src/core/ImageListModel.h
+    src/core/PdfEngine.h
     src/core/ResizeEngine.h
     src/core/StitchEngine.h
     src/core/WatermarkEngine.h

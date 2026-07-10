@@ -183,14 +183,38 @@ QList<StitchPreset> StitchPresetManager::builtInPresets() const
     add(QStringLiteral("Custom"), 1, 1, QStringLiteral("常用"), QStringLiteral("Use current rows/columns"));
     add(QStringLiteral("1 x N"), 1, 1, QStringLiteral("常用"), QStringLiteral("Single row"));
 
-    // 社交媒体
-    add(QStringLiteral("2 x 2"), 2, 2, QStringLiteral("社交媒体"), QStringLiteral("4 grids"));
-    add(QStringLiteral("3 x 3"), 3, 3, QStringLiteral("社交媒体"), QStringLiteral("9 grids"));
-    add(QStringLiteral("2 x 3"), 2, 3, QStringLiteral("社交媒体"), QStringLiteral("6 grids"));
+    // 经典布局
+    add(QStringLiteral("九宫格"), 3, 3, QStringLiteral("经典布局"), QStringLiteral("9 grids"));
+    add(QStringLiteral("四宫格"), 2, 2, QStringLiteral("经典布局"), QStringLiteral("4 grids"));
+    add(QStringLiteral("六宫格(2x3)"), 2, 3, QStringLiteral("经典布局"), QStringLiteral("6 grids"));
+    add(QStringLiteral("六宫格(3x2)"), 3, 2, QStringLiteral("经典布局"), QStringLiteral("6 grids"));
+    add(QStringLiteral("十二宫格"), 3, 4, QStringLiteral("经典布局"), QStringLiteral("12 grids"));
+    add(QStringLiteral("十六宫格"), 4, 4, QStringLiteral("经典布局"), QStringLiteral("16 grids"));
 
-    // 海报/证件
-    add(QStringLiteral("3 x 4"), 3, 4, QStringLiteral("海报/证件"), QStringLiteral("12 grids"));
-    add(QStringLiteral("4 x 4"), 4, 4, QStringLiteral("海报/证件"), QStringLiteral("16 grids"));
+    // 社交分享
+    add(QStringLiteral("朋友圈九宫格"), 3, 3, QStringLiteral("社交分享"), QStringLiteral("WeChat 9 grids"));
+    add(QStringLiteral("朋友圈4张"), 2, 2, QStringLiteral("社交分享"), QStringLiteral("WeChat 4 grids"));
+    add(QStringLiteral("朋友圈6张"), 2, 3, QStringLiteral("社交分享"), QStringLiteral("WeChat 6 grids"));
+    add(QStringLiteral("小红书封面"), 3, 2, QStringLiteral("社交分享"), QStringLiteral("Xiaohongshu 3x2"));
+    add(QStringLiteral("Instagram拼图"), 3, 3, QStringLiteral("社交分享"), QStringLiteral("Instagram 9 grids"));
+
+    // 证件照片
+    add(QStringLiteral("证件照排版(1寸6张)"), 2, 3, QStringLiteral("证件照片"), QStringLiteral("1寸 6张"));
+    add(QStringLiteral("证件照排版(1寸8张)"), 2, 4, QStringLiteral("证件照片"), QStringLiteral("1寸 8张"));
+    add(QStringLiteral("证件照排版(2寸4张)"), 2, 2, QStringLiteral("证件照片"), QStringLiteral("2寸 4张"));
+    add(QStringLiteral("证件照排版(2寸6张)"), 2, 3, QStringLiteral("证件照片"), QStringLiteral("2寸 6张"));
+
+    // 相册排版
+    add(QStringLiteral("相册横排"), 1, 3, QStringLiteral("相册排版"), QStringLiteral("1x3 horizontal"));
+    add(QStringLiteral("相册竖排"), 3, 1, QStringLiteral("相册排版"), QStringLiteral("3x1 vertical"));
+    add(QStringLiteral("相册双排"), 2, 3, QStringLiteral("相册排版"), QStringLiteral("2x3 album"));
+    add(QStringLiteral("相册三排"), 3, 3, QStringLiteral("相册排版"), QStringLiteral("3x3 album"));
+
+    // 海报设计
+    add(QStringLiteral("海报拼贴(4格)"), 2, 2, QStringLiteral("海报设计"), QStringLiteral("Poster 4 grids"));
+    add(QStringLiteral("海报拼贴(6格)"), 3, 2, QStringLiteral("海报设计"), QStringLiteral("Poster 6 grids"));
+    add(QStringLiteral("海报拼贴(8格)"), 2, 4, QStringLiteral("海报设计"), QStringLiteral("Poster 8 grids"));
+    add(QStringLiteral("海报拼贴(9格)"), 3, 3, QStringLiteral("海报设计"), QStringLiteral("Poster 9 grids"));
 
     return result;
 }

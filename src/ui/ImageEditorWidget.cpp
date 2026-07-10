@@ -106,6 +106,27 @@ void ImageEditorWidget::mousePressEvent(QMouseEvent* event)
 
     QPointF pos = mapToImage(event->pos());
 
+    // Filter tool applies immediately on click
+    if (m_currentTemplate.toolType == EditToolType::Filter) {
+        m_selection.selectedActionId.clear();
+        emit selectionChanged(QString());
+
+        EditAction filterAction = m_currentTemplate;
+        filterAction.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        filterAction.timestamp = QDateTime::currentDateTime();
+        filterAction.bounds = QRectF(pos, QSizeF(0, 0));
+        m_engine.addAction(filterAction);
+        emit actionAdded(filterAction);
+
+        while (m_history.size() > m_historyIndex + 1)
+            m_history.removeLast();
+        m_history.append(filterAction);
+        m_historyIndex = m_history.size() - 1;
+        emit historyChanged(m_history, m_historyIndex);
+        updateCanvas();
+        return;
+    }
+
     // 先检查是否点中已有标注
     const auto actions = m_engine.actions();
     for (auto it = actions.rbegin(); it != actions.rend(); ++it) {

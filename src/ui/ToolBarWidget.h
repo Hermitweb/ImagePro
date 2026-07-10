@@ -15,7 +15,8 @@ enum class ToolType {
     Watermark,
     Edit,
     Resize,
-    Batch
+    Batch,
+    Pdf
 };
 
 class ToolBarWidget : public QWidget
