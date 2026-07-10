@@ -1,5 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!DOCTYPE TS>
+<?xml version='1.0' encoding='utf-8'?>
 <TS version="2.1" language="zh_CN">
 <context>
     <name>QObject</name>
@@ -42,54 +41,69 @@
     </message>
 </context>
 <context>
+    <name>yingtu::ImageItemDelegate</name>
+    <message>
+        <source>加载失败</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>重试</source>
+        <translation type="unfinished" />
+    </message>
+</context>
+<context>
     <name>yingtu::ImageListWidget</name>
     <message>
-        <source>Drag images here or click Add Images</source>
-        <translation>拖拽图片到此处或点击添加图片</translation>
+        <source>拖拽图片到此处或点击添加图片</source>
+        <translation type="unfinished" />
     </message>
     <message>
-        <source>Delete</source>
-        <translation>删除</translation>
+        <source>显示</source>
+        <translation type="unfinished" />
     </message>
     <message>
-        <source>Open File Location</source>
-        <translation>打开文件位置</translation>
+        <source>隐藏</source>
+        <translation type="unfinished" />
     </message>
     <message>
-        <source>Copy File Path</source>
-        <translation>复制文件路径</translation>
+        <source>复制</source>
+        <translation type="unfinished" />
     </message>
     <message>
-        <source>Preview Image</source>
-        <translation>预览图片</translation>
+        <source>复制到剪贴板</source>
+        <translation type="unfinished" />
     </message>
     <message>
-        <source>Rotate</source>
-        <translation>旋转</translation>
+        <source>移到最前</source>
+        <translation type="unfinished" />
     </message>
     <message>
-        <source>Flip Horizontal</source>
-        <translation>水平翻转</translation>
+        <source>移到最后</source>
+        <translation type="unfinished" />
     </message>
     <message>
-        <source>Flip Vertical</source>
-        <translation>垂直翻转</translation>
+        <source>在资源管理器中显示</source>
+        <translation type="unfinished" />
     </message>
     <message>
-        <source>Move Up</source>
-        <translation>上移</translation>
+        <source>快速查看</source>
+        <translation type="unfinished" />
     </message>
     <message>
-        <source>Move Down</source>
-        <translation>下移</translation>
+        <source>移除</source>
+        <translation type="unfinished" />
     </message>
     <message>
-        <source>Add Images</source>
-        <translation>添加图片</translation>
+        <source>添加图片</source>
+        <translation type="unfinished" />
     </message>
     <message>
-        <source>Clear All</source>
-        <translation>清空全部</translation>
+        <source>全选</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>清空列表</source>
+        <translation type="unfinished" />
     </message>
 </context>
 <context>
@@ -386,6 +400,50 @@
         <source>Ready</source>
         <translation>就绪</translation>
     </message>
+    <message>
+        <source>&amp;PDF</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>Image Info</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>File: %1
+Size: %2x%3</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>Save PDF</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>PDF Files (*.pdf)</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>Exporting PDF...</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>Exported PDF: %1</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>PDF Export Complete</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>Successfully exported %1 images to PDF</source>
+        <translation type="unfinished" />
+    </message>
+</context>
+<context>
+    <name>yingtu::PdfEngine</name>
+    <message>
+        <source>No images to export.</source>
+        <translation type="unfinished" />
+    </message>
 </context>
 <context>
     <name>yingtu::PreviewWidget</name>
@@ -464,10 +522,6 @@
         <translation>开始</translation>
     </message>
     <message>
-        <source>&lt;b&gt;Stitch Settings&lt;/b&gt;</source>
-        <translation>&amp;lt;b&amp;gt;Stitch Settings&amp;lt;/b&amp;gt;</translation>
-    </message>
-    <message>
         <source>Vertical</source>
         <translation>纵向</translation>
     </message>
@@ -477,7 +531,7 @@
     </message>
     <message>
         <source>Grid</source>
-        <translation>网格</translation>
+        <translation>九宫格</translation>
     </message>
     <message>
         <source>Direction:</source>
@@ -513,11 +567,11 @@
     </message>
     <message>
         <source>Remove White Edges</source>
-        <translation>去除白边</translation>
+        <translation>移除白边</translation>
     </message>
     <message>
         <source>Auto Crop Edges</source>
-        <translation>自动裁剪边缘</translation>
+        <translation>自动裁边</translation>
     </message>
     <message>
         <source>Preset:</source>
@@ -629,7 +683,7 @@
     </message>
     <message>
         <source>Browse...</source>
-        <translation>浏览…</translation>
+        <translation>浏览...</translation>
     </message>
     <message>
         <source>Select Watermark Image</source>
@@ -935,6 +989,190 @@
         <source>Target Tool:</source>
         <translation>目标工具：</translation>
     </message>
+    <message>
+        <source>Stitch Settings</source>
+        <translation>拼接设置</translation>
+    </message>
+    <message>
+        <source>Grid Presets</source>
+        <translation>网格预设</translation>
+    </message>
+    <message>
+        <source>All</source>
+        <translation>全部</translation>
+    </message>
+    <message>
+        <source>Social</source>
+        <translation>社交分享</translation>
+    </message>
+    <message>
+        <source>ID Photo</source>
+        <translation>证件照片</translation>
+    </message>
+    <message>
+        <source>Output Settings</source>
+        <translation>输出设置</translation>
+    </message>
+    <message>
+        <source>Create</source>
+        <translation>创建</translation>
+    </message>
+    <message>
+        <source>File Name:</source>
+        <translation>文件名：</translation>
+    </message>
+    <message>
+        <source>Filter</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>Grayscale</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>Sepia</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>Warm</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>Cool</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>High Contrast</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>Blur</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>Sharpen</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>Filter:</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>&lt;b&gt;PDF Export&lt;/b&gt;</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>A4</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>A5</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>Letter</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>Page Size:</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>Single Per Page</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>Fit to Page</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>Grid 2x2</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>Grid 3x3</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>Layout:</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>Resolution:</source>
+        <translation type="unfinished">分辨率：</translation>
+    </message>
+    <message>
+        <source>Margins:</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>Output:</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>Save PDF</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>PDF Files (*.pdf)</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source> [needs %1]</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>Error</source>
+        <translation type="unfinished">错误</translation>
+    </message>
+    <message>
+        <source>Failed to create output directory.</source>
+        <translation type="unfinished">创建输出目录失败。</translation>
+    </message>
+    <message>
+        <source>Preview: %1</source>
+        <translation>预览：%1</translation>
+    </message>
+    <message>
+        <source>At least 2 images are required</source>
+        <translation>至少需要 2 张图片</translation>
+    </message>
+    <message>
+        <source>Spacing is out of range</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>Output directory is empty</source>
+        <translation>输出目录为空</translation>
+    </message>
+    <message>
+        <source>Output directory does not exist</source>
+        <translation>输出目录不存在</translation>
+    </message>
+    <message>
+        <source>Output directory is not writable</source>
+        <translation>输出目录不可写</translation>
+    </message>
+    <message>
+        <source>Output path is too long</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>File name template is empty</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>Image widths are inconsistent</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>Ready</source>
+        <translation type="unfinished">就绪</translation>
+    </message>
+    <message>
+        <source>e.g. {name}_{index}</source>
+        <translation type="unfinished" />
+    </message>
 </context>
 <context>
     <name>yingtu::ResizeEngine</name>
@@ -1002,6 +1240,61 @@
     </message>
 </context>
 <context>
+    <name>yingtu::StitchCanvas</name>
+    <message>
+        <source>No image</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>x=%1, y=%2%3</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>%1 @%2x</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>输入图 %1：%2×%3</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>释放以加入拼接</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>点击或拖入图片到合成图</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>左旋</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>右旋</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>水平翻转</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>垂直翻转</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>移除</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>信息</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>输入图 %1</source>
+        <translation type="unfinished" />
+    </message>
+</context>
+<context>
     <name>yingtu::StitchEngine</name>
     <message>
         <source>No images to stitch</source>
@@ -1057,6 +1350,10 @@
     <message>
         <source>Batch</source>
         <translation>批处理</translation>
+    </message>
+    <message>
+        <source>PDF</source>
+        <translation type="unfinished" />
     </message>
 </context>
 <context>

@@ -297,8 +297,8 @@ void PropertyPanel::buildStitchPanel()
     outputLayout->addWidget(dirRow);
 
     m_stitchFileNameTemplate = new QLineEdit(outputContent);
-    m_stitchFileNameTemplate->setText(QStringLiteral("{原名}_stitched_{时间}"));
-    m_stitchFileNameTemplate->setPlaceholderText(tr("e.g. {原名}_{序号}"));
+    m_stitchFileNameTemplate->setText(QStringLiteral("{name}_stitched_{time}"));
+    m_stitchFileNameTemplate->setPlaceholderText(tr("e.g. {name}_{index}"));
     connect(m_stitchFileNameTemplate, &QLineEdit::textChanged,
             this, &PropertyPanel::onStitchFileNameTemplateChanged);
     outputLayout->addWidget(createFormRow(tr("File Name:"), m_stitchFileNameTemplate));
@@ -1285,14 +1285,21 @@ QString PropertyPanel::previewFileNameFromTemplate(const QString& templ) const
 {
     QString result = templ;
     QDateTime now = QDateTime::currentDateTime();
-    result.replace(QStringLiteral("{原名}"), QStringLiteral("微信截图_001"));
+    result.replace(QStringLiteral("{name}"), QStringLiteral("wechat_screenshot_001"));
+    result.replace(QStringLiteral("{ext}"), QStringLiteral("png"));
+    result.replace(QStringLiteral("{time}"), now.toString(QStringLiteral("yyyyMMdd_HHmmss")));
+    result.replace(QStringLiteral("{date}"), now.toString(QStringLiteral("yyyy-MM-dd")));
+    result.replace(QStringLiteral("{index}"), QStringLiteral("001"));
+    result.replace(QStringLiteral("{size}"), QStringLiteral("1920x1080"));
+    // 兼容旧版中文占位符
+    result.replace(QStringLiteral("{原名}"), QStringLiteral("wechat_screenshot_001"));
     result.replace(QStringLiteral("{扩展}"), QStringLiteral("png"));
     result.replace(QStringLiteral("{时间}"), now.toString(QStringLiteral("yyyyMMdd_HHmmss")));
     result.replace(QStringLiteral("{日期}"), now.toString(QStringLiteral("yyyy-MM-dd")));
     result.replace(QStringLiteral("{序号}"), QStringLiteral("001"));
     result.replace(QStringLiteral("{尺寸}"), QStringLiteral("1920x1080"));
     if (result.isEmpty())
-        result = QStringLiteral("微信截图_001.png");
+        result = QStringLiteral("wechat_screenshot_001.png");
     else if (!result.endsWith(QStringLiteral(".png"), Qt::CaseInsensitive))
         result += QStringLiteral(".png");
     return tr("Preview: %1").arg(result);
