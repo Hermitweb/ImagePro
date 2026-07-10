@@ -7,6 +7,7 @@
 #include <QLocale>
 #include <QSettings>
 #include <QStandardPaths>
+#include <QStyleFactory>
 #include <QTranslator>
 
 namespace yingtu {
@@ -35,6 +36,7 @@ static void logLanguageStep(const QString& step)
 void ImageProApp::initialize()
 {
     logLanguageStep(QStringLiteral("initialize start"));
+    setStyle(QStyleFactory::create(QStringLiteral("Fusion")));
     QFont font(QStringLiteral("Microsoft YaHei"), 9);
     setFont(font);
 
