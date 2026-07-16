@@ -66,11 +66,11 @@ private:
     int m_loadingAngle = 0;
     bool m_windowFilterInstalled = false;
 
-    int m_cellWidth = 112;
-    int m_cellHeight = 112;
-    int m_thumbSize = 96;
-    int m_thumbMarginH = 8;
-    int m_topMargin = 8;
+    int m_cellWidth = 200;
+    int m_cellHeight = 60;
+    int m_thumbSize = 192;
+    int m_thumbMarginH = 4;
+    int m_topMargin = 4;
 };
 
 } // namespace yingtu
