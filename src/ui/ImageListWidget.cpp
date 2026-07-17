@@ -71,7 +71,7 @@ public:
 
         const QRect cellRect = opt.rect;
         const QRect thumbRect = m_widget ? m_widget->thumbnailRect(cellRect)
-                                         : QRect(cellRect.center() - QPoint(48, 48), QSize(96, 96));
+                                         : QRect(cellRect.center() - QPoint(96, 26), QSize(192, 52));
         const bool selected = opt.state & QStyle::State_Selected;
         const bool hover = opt.state & QStyle::State_MouseOver;
         const bool hidden = index.data(ImageListModel::HiddenRole).toBool();
@@ -145,7 +145,7 @@ public:
     {
         Q_UNUSED(option)
         Q_UNUSED(index)
-        return m_widget ? m_widget->cellSize() : QSize(112, 112);
+        return m_widget ? m_widget->cellSize() : QSize(200, 60);
     }
 
 private:
@@ -180,7 +180,7 @@ public:
         if (widget)
             setGridSize(widget->cellSize());
         else
-            setGridSize(QSize(112, 112));
+            setGridSize(QSize(200, 60));
         setSpacing(ItemSpacing);
         setResizeMode(QListView::Adjust);
         setUniformItemSizes(true);
@@ -497,15 +497,15 @@ void ImageListWidget::updatePanelWidth()
 {
     QWidget* top = window();
     const int windowWidth = top ? top->width() : width();
-    int target = 132;
+    int target = 200;
     if (windowWidth >= 1920)
-        target = 176;
+        target = 260;
     else if (windowWidth >= 1280)
-        target = 156;
+        target = 220;
     else if (windowWidth >= 800)
-        target = 144;
-    setMinimumWidth(132);
-    setMaximumWidth(180);
+        target = 200;
+    setMinimumWidth(180);
+    setMaximumWidth(280);
     setFixedWidth(target);
 
     int viewportW = target;
@@ -516,11 +516,13 @@ void ImageListWidget::updatePanelWidth()
 
 void ImageListWidget::updateGridMetrics(int panelWidth)
 {
-    constexpr int OuterMargin = 2;
-    constexpr int InnerMargin = 2;
-    m_cellWidth = qMax(96, panelWidth - 2 * OuterMargin);
-    m_cellHeight = m_cellWidth;
-    m_thumbSize = qMax(80, m_cellWidth - 2 * InnerMargin);
+    constexpr int HorizontalMargin = 4;
+    constexpr int VerticalMargin = 4;
+    constexpr int MinThumb = 52;
+
+    m_cellWidth = panelWidth;
+    m_thumbSize = qMax(MinThumb, panelWidth - 2 * HorizontalMargin);
+    m_cellHeight = m_thumbSize + 2 * VerticalMargin;
     m_thumbMarginH = (m_cellWidth - m_thumbSize) / 2;
     m_topMargin = (m_cellHeight - m_thumbSize) / 2;
     if (m_view)

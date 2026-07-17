@@ -167,23 +167,9 @@ static PreviewTaskResult generatePreview(const PreviewTaskInput& input)
     return result;
 }
 
-static void mwLog(const QString& step)
-{
-    const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-    QDir().mkpath(dir);
-    QFile log(QDir(dir).absoluteFilePath(QStringLiteral("app_debug.log")));
-    if (log.open(QIODevice::WriteOnly | QIODevice::Append)) {
-        log.write(QDateTime::currentDateTime().toString(Qt::ISODate).toUtf8());
-        log.write(" MW ");
-        log.write(step.toUtf8());
-        log.write("\n");
-    }
-}
-
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
 {
-    mwLog(QStringLiteral("constructor start"));
     setWindowTitle(tr("影图 ImagePro"));
     setWindowIcon(QIcon(QStringLiteral(":/icons/app.svg")));
     resize(1280, 800);
@@ -192,15 +178,10 @@ MainWindow::MainWindow(QWidget* parent)
     m_model = new ImageListModel(this);
 
     setupMenuBar();
-    mwLog(QStringLiteral("menu bar done"));
     setupToolBar();
-    mwLog(QStringLiteral("tool bar done"));
     setupPreviewToolBar();
-    mwLog(QStringLiteral("preview toolbar done"));
     setupCentralWidget();
-    mwLog(QStringLiteral("central done"));
     setupStatusBar();
-    mwLog(QStringLiteral("status bar done"));
 
     m_previewDelayTimer = new QTimer(this);
     m_previewDelayTimer->setSingleShot(true);
@@ -213,10 +194,8 @@ MainWindow::MainWindow(QWidget* parent)
     m_stitchSizeWatcher = new QFutureWatcher<QSize>(this);
 
     connectSignals();
-    mwLog(QStringLiteral("signals done"));
 
     updateStatusBar();
-    mwLog(QStringLiteral("constructor end"));
 }
 
 void MainWindow::setupMenuBar()
@@ -296,8 +275,8 @@ void MainWindow::setupCentralWidget()
     splitter->setHandleWidth(6);
 
     m_listWidget = new ImageListWidget(m_model, splitter);
-    m_listWidget->setMinimumWidth(132);
-    m_listWidget->setMaximumWidth(180);
+    m_listWidget->setMinimumWidth(180);
+    m_listWidget->setMaximumWidth(280);
 
     m_centerStack = new QStackedWidget(splitter);
     m_centerStack->setMinimumSize(400, 300);
@@ -317,7 +296,7 @@ void MainWindow::setupCentralWidget()
     splitter->setStretchFactor(0, 0);
     splitter->setStretchFactor(1, 1);
     splitter->setStretchFactor(2, 0);
-    splitter->setSizes(QList<int>() << 156 << 740 << 240);
+    splitter->setSizes(QList<int>() << 220 << 676 << 240);
 
     if (m_previewToolBar)
         vlayout->addWidget(m_previewToolBar);
@@ -334,8 +313,8 @@ void MainWindow::setupStatusBar()
 void MainWindow::setupPreviewToolBar()
 {
     m_previewToolBar = new QWidget(this);
-    FlowLayout* flowLayout = new FlowLayout(m_previewToolBar, 6, 8, 6);
-    flowLayout->setContentsMargins(8, 4, 8, 4);
+    FlowLayout* flowLayout = new FlowLayout(m_previewToolBar, 4, 6, 4);
+    flowLayout->setContentsMargins(6, 4, 6, 4);
 
     auto addButton = [this, flowLayout](const QString& text, const QString& tooltip, void (MainWindow::*slot)()) {
         QToolButton* btn = new QToolButton(m_previewToolBar);
@@ -427,7 +406,11 @@ void MainWindow::connectSignals()
     });
 
     connect(m_previewWidget, &PreviewWidget::zoomChanged, this, [this](double factor) {
-        if (m_zoomLabel)
+        if (m_zoomLabel && m_currentTool != ToolType::Edit)
+            m_zoomLabel->setText(QStringLiteral("%1%").arg(qRound(factor * 100)));
+    });
+    connect(m_editorWidget, &ImageEditorWidget::zoomChanged, this, [this](double factor) {
+        if (m_zoomLabel && m_currentTool == ToolType::Edit)
             m_zoomLabel->setText(QStringLiteral("%1%").arg(qRound(factor * 100)));
     });
     connect(m_previewWidget, &PreviewWidget::deleteCurrentRequested, this, [this]() {
@@ -555,6 +538,8 @@ void MainWindow::onToolChanged(ToolType tool)
     if (tool == ToolType::Edit) {
         m_centerStack->setCurrentWidget(m_editorWidget);
         m_editorWidget->setCurrentTool(m_propertyPanel->currentEditAction());
+        if (m_zoomLabel)
+            m_zoomLabel->setText(QStringLiteral("%1%").arg(qRound(m_editorWidget->zoomFactor() * 100)));
         if (m_currentImageRow >= 0) {
             const ImageItem* item = m_model->itemAt(m_currentImageRow);
             if (item) {
@@ -823,19 +808,19 @@ void MainWindow::onBatchProcess()
 {
     QStringList paths = m_model->filePaths();
     if (paths.isEmpty()) {
-        QMessageBox::warning(this, tr("Warning"), tr("Please add images first."));
+        m_statusBar->setMessage(tr("Batch: please add images first"));
         return;
     }
 
     auto batch = m_propertyPanel->batchSettings();
     if (batch.outputDir.isEmpty()) {
-        QMessageBox::warning(this, tr("Warning"), tr("Please select an output directory."));
+        m_statusBar->setMessage(tr("Batch: please select an output directory"));
         return;
     }
 
     QDir outDir(batch.outputDir);
     if (!outDir.exists() && !outDir.mkpath(batch.outputDir)) {
-        QMessageBox::warning(this, tr("Warning"), tr("Failed to create output directory."));
+        m_statusBar->setMessage(tr("Batch: failed to create output directory %1").arg(batch.outputDir));
         return;
     }
 
@@ -892,7 +877,7 @@ void MainWindow::onBatchProcess()
         break;
     }
     default:
-        QMessageBox::warning(this, tr("Warning"), tr("Unsupported batch target tool."));
+        m_statusBar->setMessage(tr("Batch: unsupported target tool"));
         return;
     }
 }
@@ -1007,22 +992,34 @@ void MainWindow::updateStatusBar()
 
 void MainWindow::onPreviewZoomIn()
 {
-    m_previewWidget->zoomIn();
+    if (m_currentTool == ToolType::Edit && m_editorWidget)
+        m_editorWidget->zoomIn();
+    else
+        m_previewWidget->zoomIn();
 }
 
 void MainWindow::onPreviewZoomOut()
 {
-    m_previewWidget->zoomOut();
+    if (m_currentTool == ToolType::Edit && m_editorWidget)
+        m_editorWidget->zoomOut();
+    else
+        m_previewWidget->zoomOut();
 }
 
 void MainWindow::onPreviewResetZoom()
 {
-    m_previewWidget->resetZoom();
+    if (m_currentTool == ToolType::Edit && m_editorWidget)
+        m_editorWidget->resetZoom();
+    else
+        m_previewWidget->resetZoom();
 }
 
 void MainWindow::onPreviewFitToWindow()
 {
-    m_previewWidget->fitToWindow();
+    if (m_currentTool == ToolType::Edit && m_editorWidget)
+        m_editorWidget->fitToWindow();
+    else
+        m_previewWidget->fitToWindow();
 }
 
 void MainWindow::onThumbnailLoadStarted(int total)
@@ -1093,12 +1090,18 @@ void MainWindow::requestDelayedPreview()
 
 void MainWindow::onPreviewRotateLeft()
 {
-    m_previewWidget->rotateLeft();
+    if (m_currentTool == ToolType::Edit && m_editorWidget)
+        m_editorWidget->rotateLeft();
+    else
+        m_previewWidget->rotateLeft();
 }
 
 void MainWindow::onPreviewRotateRight()
 {
-    m_previewWidget->rotateRight();
+    if (m_currentTool == ToolType::Edit && m_editorWidget)
+        m_editorWidget->rotateRight();
+    else
+        m_previewWidget->rotateRight();
 }
 
 void MainWindow::onPreviewFlipHorizontal()
