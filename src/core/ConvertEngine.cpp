@@ -81,10 +81,18 @@ QStringList ConvertEngine::process(const QStringList& filePaths, bool* ok)
     for (int i = 0; i < total; ++i) {
         const QString& path = filePaths.at(i);
         QFileInfo fi(path);
-        QString dir = m_settings.outputDir.isEmpty() ? fi.absolutePath() : m_settings.outputDir;
-        QString baseName = fi.completeBaseName();
-        QString suffix = QStringLiteral(".") + m_settings.targetFormat.toLower();
-        QString outputPath = FileUtils::generateUniqueOutputPath(dir, baseName, suffix);
+
+        QString outputPath;
+        if (!m_settings.explicitOutputPath.isEmpty() && filePaths.size() == 1) {
+            outputPath = m_settings.explicitOutputPath;
+        } else {
+            QString dir = m_settings.explicitOutputDir;
+            if (dir.isEmpty())
+                dir = m_settings.outputDir.isEmpty() ? fi.absolutePath() : m_settings.outputDir;
+            QString baseName = fi.completeBaseName();
+            QString suffix = QStringLiteral(".") + m_settings.targetFormat.toLower();
+            outputPath = FileUtils::generateUniqueOutputPath(dir, baseName, suffix);
+        }
 
         if (convertSingle(path, outputPath))
             outputPaths.append(outputPath);

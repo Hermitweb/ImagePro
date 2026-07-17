@@ -157,7 +157,6 @@ private:
     QString previewFileNameFromTemplate(const QString& templ) const;
 
     QStackedWidget* m_stack = nullptr;
-    QPushButton* m_previewBtn = nullptr;
     QPushButton* m_processBtn = nullptr;
 
     // Stitch

@@ -19,6 +19,7 @@
 #include "utils/FlowLayout.h"
 #include "utils/ImageLoader.h"
 #include <QApplication>
+#include <QCoreApplication>
 #include <QCloseEvent>
 #include <QDir>
 #include <QDockWidget>
@@ -43,6 +44,68 @@
 #include <QtConcurrent>
 
 namespace yingtu {
+
+static QString commonParentDirectory(const QStringList& paths)
+{
+    if (paths.isEmpty())
+        return QString();
+
+    QStringList dirs;
+    dirs.reserve(paths.size());
+    for (const QString& path : paths) {
+        QString dir = QFileInfo(path).absolutePath();
+        if (!dir.endsWith(QLatin1Char('/')))
+            dir += QLatin1Char('/');
+        dirs.append(dir);
+    }
+
+    QString common = dirs.first();
+    for (int i = 1; i < dirs.size(); ++i) {
+        const QString& dir = dirs.at(i);
+        int len = qMin(common.length(), dir.length());
+        int j = 0;
+        while (j < len && common.at(j) == dir.at(j))
+            ++j;
+        common = common.left(j);
+    }
+
+    // 截断到最后一个完整目录分隔符
+    int lastSep = common.lastIndexOf(QLatin1Char('/'));
+    if (lastSep > 0)
+        common = common.left(lastSep);
+    else if (lastSep == 0 && common.length() > 1)
+        common = common.left(1);
+
+    return common;
+}
+
+static QString buildImageSaveFilter(const QString& preferredFmt)
+{
+    QString fmt = preferredFmt.toLower();
+    if (fmt == QStringLiteral("jpg"))
+        fmt = QStringLiteral("jpeg");
+
+    const char* context = "yingtu::MainWindow";
+    struct FilterEntry {
+        QString key;
+        QString text;
+    };
+    const QList<FilterEntry> entries = {
+        { QStringLiteral("jpeg"), QCoreApplication::translate(context, "JPEG Images (*.jpg *.jpeg)") },
+        { QStringLiteral("png"), QCoreApplication::translate(context, "PNG Images (*.png)") },
+        { QStringLiteral("bmp"), QCoreApplication::translate(context, "BMP Images (*.bmp)") },
+        { QStringLiteral("webp"), QCoreApplication::translate(context, "WebP Images (*.webp)") },
+    };
+
+    QStringList filters;
+    for (const auto& e : entries) {
+        if (e.key == fmt)
+            filters.prepend(e.text);
+        else
+            filters.append(e.text);
+    }
+    return filters.join(QStringLiteral(";;"));
+}
 
 struct PreviewTaskInput {
     ToolType tool;
@@ -637,7 +700,46 @@ void MainWindow::onProcessRequested()
 
     switch (m_currentTool) {
     case ToolType::Stitch: {
-        runEngineAsync<StitchEngine>(m_propertyPanel->stitchSettings(), paths,
+        StitchSettings settings = m_propertyPanel->stitchSettings();
+
+        QString fmt = settings.outputFormat.toLower();
+
+        QString defaultPath;
+        if (!settings.outputDir.isEmpty()) {
+            defaultPath = settings.outputDir + QStringLiteral("/") + settings.baseName
+                          + QStringLiteral(".") + fmt;
+        } else {
+            QString sourceDir = commonParentDirectory(paths);
+            if (sourceDir.isEmpty())
+                sourceDir = QFileInfo(paths.first()).absolutePath();
+            QFileInfo fi(paths.first());
+            defaultPath = sourceDir + QStringLiteral("/") + fi.completeBaseName()
+                          + QStringLiteral(".") + fmt;
+        }
+
+        QString filter;
+        if (fmt == QStringLiteral("jpg") || fmt == QStringLiteral("jpeg"))
+            filter = tr("JPEG Images (*.jpg *.jpeg)");
+        else if (fmt == QStringLiteral("webp"))
+            filter = tr("WebP Images (*.webp)");
+        else if (fmt == QStringLiteral("bmp"))
+            filter = tr("BMP Images (*.bmp)");
+        else
+            filter = tr("PNG Images (*.png)");
+
+        QString selectedPath = QFileDialog::getSaveFileName(this, tr("Save Stitched Image"),
+                                                            defaultPath, filter);
+        if (selectedPath.isEmpty())
+            break;
+
+        QString expectedSuffix = QStringLiteral(".") + fmt;
+        if (!selectedPath.endsWith(expectedSuffix, Qt::CaseInsensitive)) {
+            QFileInfo fi(selectedPath);
+            selectedPath = fi.absolutePath() + QStringLiteral("/") + fi.completeBaseName() + expectedSuffix;
+        }
+
+        settings.explicitOutputPath = selectedPath;
+        runEngineAsync<StitchEngine>(settings, paths,
             tr("Stitching..."), [this, paths](const QString& out) {
                 if (out.isEmpty())
                     return;
@@ -656,7 +758,42 @@ void MainWindow::onProcessRequested()
         break;
     }
     case ToolType::Convert: {
-        runEngineAsync<ConvertEngine>(m_propertyPanel->convertSettings(), selectedPaths,
+        ConvertSettings convertSettings = m_propertyPanel->convertSettings();
+
+        if (selectedPaths.size() == 1) {
+            QFileInfo fi(selectedPaths.first());
+            QString fmt = convertSettings.targetFormat.toLower();
+            QString defaultPath = fi.absolutePath() + QStringLiteral("/") + fi.completeBaseName()
+                                  + QStringLiteral(".") + fmt;
+            QString filter = buildImageSaveFilter(fmt);
+            QString selectedPath = QFileDialog::getSaveFileName(this, tr("Save Converted Image"),
+                                                                defaultPath, filter);
+            if (selectedPath.isEmpty())
+                break;
+
+            QString expectedSuffix = QStringLiteral(".") + convertSettings.targetFormat.toLower();
+            if (!selectedPath.endsWith(expectedSuffix, Qt::CaseInsensitive)) {
+                QFileInfo outFi(selectedPath);
+                selectedPath = outFi.absolutePath() + QStringLiteral("/") + outFi.completeBaseName() + expectedSuffix;
+            }
+            convertSettings.explicitOutputPath = selectedPath;
+        } else {
+            QString defaultDir = convertSettings.outputDir;
+            if (defaultDir.isEmpty()) {
+                if (m_currentImageRow >= 0 && m_currentImageRow < m_model->rowCount()) {
+                    defaultDir = QFileInfo(m_model->itemAt(m_currentImageRow)->filePath()).absolutePath();
+                } else if (!selectedPaths.isEmpty()) {
+                    defaultDir = QFileInfo(selectedPaths.first()).absolutePath();
+                }
+            }
+            QString selectedDir = QFileDialog::getExistingDirectory(this, tr("Select Output Directory"),
+                                                                    defaultDir);
+            if (selectedDir.isEmpty())
+                break;
+            convertSettings.explicitOutputDir = selectedDir;
+        }
+
+        runEngineAsync<ConvertEngine>(convertSettings, selectedPaths,
             tr("Converting..."), [this, selectedPaths](const QStringList& outs) {
                 if (outs.isEmpty())
                     return;
@@ -675,7 +812,39 @@ void MainWindow::onProcessRequested()
         break;
     }
     case ToolType::Compress: {
-        runEngineAsync<CompressEngine>(m_propertyPanel->compressSettings(), paths,
+        CompressSettings compressSettings = m_propertyPanel->compressSettings();
+
+        if (paths.size() == 1) {
+            QFileInfo fi(paths.first());
+            QString fmt = compressSettings.outputFormat == QStringLiteral("original")
+                              ? fi.suffix() : compressSettings.outputFormat;
+            if (fmt.compare(QStringLiteral("jpg"), Qt::CaseInsensitive) == 0)
+                fmt = QStringLiteral("jpeg");
+            QString defaultPath = fi.absolutePath() + QStringLiteral("/") + fi.completeBaseName()
+                                  + QStringLiteral("_compressed.") + fmt.toLower();
+            QString filter = buildImageSaveFilter(fmt);
+            QString selectedPath = QFileDialog::getSaveFileName(this, tr("Save Compressed Image"),
+                                                                defaultPath, filter);
+            if (selectedPath.isEmpty())
+                break;
+            compressSettings.explicitOutputPath = selectedPath;
+        } else {
+            QString defaultDir = compressSettings.outputDir;
+            if (defaultDir.isEmpty()) {
+                if (m_currentImageRow >= 0 && m_currentImageRow < m_model->rowCount()) {
+                    defaultDir = QFileInfo(m_model->itemAt(m_currentImageRow)->filePath()).absolutePath();
+                } else if (!paths.isEmpty()) {
+                    defaultDir = QFileInfo(paths.first()).absolutePath();
+                }
+            }
+            QString selectedDir = QFileDialog::getExistingDirectory(this, tr("Select Output Directory"),
+                                                                    defaultDir);
+            if (selectedDir.isEmpty())
+                break;
+            compressSettings.explicitOutputDir = selectedDir;
+        }
+
+        runEngineAsync<CompressEngine>(compressSettings, paths,
             tr("Compressing..."), [this](const QList<CompressResult>& results) {
                 QStringList outs;
                 qint64 totalOriginal = 0;
@@ -702,7 +871,39 @@ void MainWindow::onProcessRequested()
         break;
     }
     case ToolType::Watermark: {
-        runEngineAsync<WatermarkEngine>(m_propertyPanel->watermarkSettings(), paths,
+        WatermarkSettings watermarkSettings = m_propertyPanel->watermarkSettings();
+
+        if (paths.size() == 1) {
+            QFileInfo fi(paths.first());
+            QString fmt = watermarkSettings.outputFormat == QStringLiteral("original")
+                              ? fi.suffix() : watermarkSettings.outputFormat;
+            if (fmt.compare(QStringLiteral("jpg"), Qt::CaseInsensitive) == 0)
+                fmt = QStringLiteral("jpeg");
+            QString defaultPath = fi.absolutePath() + QStringLiteral("/") + fi.completeBaseName()
+                                  + QStringLiteral("_watermarked.") + fmt.toLower();
+            QString filter = buildImageSaveFilter(fmt);
+            QString selectedPath = QFileDialog::getSaveFileName(this, tr("Save Watermarked Image"),
+                                                                defaultPath, filter);
+            if (selectedPath.isEmpty())
+                break;
+            watermarkSettings.explicitOutputPath = selectedPath;
+        } else {
+            QString defaultDir = watermarkSettings.outputDir;
+            if (defaultDir.isEmpty()) {
+                if (m_currentImageRow >= 0 && m_currentImageRow < m_model->rowCount()) {
+                    defaultDir = QFileInfo(m_model->itemAt(m_currentImageRow)->filePath()).absolutePath();
+                } else if (!paths.isEmpty()) {
+                    defaultDir = QFileInfo(paths.first()).absolutePath();
+                }
+            }
+            QString selectedDir = QFileDialog::getExistingDirectory(this, tr("Select Output Directory"),
+                                                                    defaultDir);
+            if (selectedDir.isEmpty())
+                break;
+            watermarkSettings.explicitOutputDir = selectedDir;
+        }
+
+        runEngineAsync<WatermarkEngine>(watermarkSettings, paths,
             tr("Watermarking..."), [this](const QStringList& outs) {
                 if (outs.isEmpty())
                     return;
@@ -721,7 +922,39 @@ void MainWindow::onProcessRequested()
         break;
     }
     case ToolType::Resize: {
-        runEngineAsync<ResizeEngine>(m_propertyPanel->resizeSettings(), paths,
+        ResizeSettings resizeSettings = m_propertyPanel->resizeSettings();
+
+        if (paths.size() == 1) {
+            QFileInfo fi(paths.first());
+            QString fmt = resizeSettings.outputFormat == QStringLiteral("original")
+                              ? fi.suffix() : resizeSettings.outputFormat;
+            if (fmt.compare(QStringLiteral("jpg"), Qt::CaseInsensitive) == 0)
+                fmt = QStringLiteral("jpeg");
+            QString defaultPath = fi.absolutePath() + QStringLiteral("/") + fi.completeBaseName()
+                                  + QStringLiteral("_resized.") + fmt.toLower();
+            QString filter = buildImageSaveFilter(fmt);
+            QString selectedPath = QFileDialog::getSaveFileName(this, tr("Save Resized Image"),
+                                                                defaultPath, filter);
+            if (selectedPath.isEmpty())
+                break;
+            resizeSettings.explicitOutputPath = selectedPath;
+        } else {
+            QString defaultDir = resizeSettings.outputDir;
+            if (defaultDir.isEmpty()) {
+                if (m_currentImageRow >= 0 && m_currentImageRow < m_model->rowCount()) {
+                    defaultDir = QFileInfo(m_model->itemAt(m_currentImageRow)->filePath()).absolutePath();
+                } else if (!paths.isEmpty()) {
+                    defaultDir = QFileInfo(paths.first()).absolutePath();
+                }
+            }
+            QString selectedDir = QFileDialog::getExistingDirectory(this, tr("Select Output Directory"),
+                                                                    defaultDir);
+            if (selectedDir.isEmpty())
+                break;
+            resizeSettings.explicitOutputDir = selectedDir;
+        }
+
+        runEngineAsync<ResizeEngine>(resizeSettings, paths,
             tr("Resizing..."), [this](const QStringList& outs) {
                 if (outs.isEmpty())
                     return;
@@ -780,8 +1013,13 @@ void MainWindow::onProcessRequested()
         if (img.isNull()) break;
         QString path = paths.first();
         QFileInfo fi(path);
-        QString out = fi.absolutePath() + QStringLiteral("/") + fi.completeBaseName()
-                      + QStringLiteral("_edited.") + fi.suffix();
+        QString fmt = fi.suffix();
+        QString defaultPath = fi.absolutePath() + QStringLiteral("/") + fi.completeBaseName()
+                              + QStringLiteral("_edited.") + fmt;
+        QString filter = buildImageSaveFilter(fmt);
+        QString out = QFileDialog::getSaveFileName(this, tr("Save Image"), defaultPath, filter);
+        if (out.isEmpty())
+            break;
         if (ImageLoader::saveImage(img, out)) {
             m_statusBar->setMessage(tr("Saved edited image: %1").arg(out));
             ResultInfo info;

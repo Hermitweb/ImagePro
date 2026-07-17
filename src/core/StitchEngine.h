@@ -24,6 +24,7 @@ struct StitchSettings {
     int quality = 90;
     QString outputDir;
     QString baseName = QStringLiteral("stitched");
+    QString explicitOutputPath; // 若非空，直接保存到该路径（用户手动选择）
 };
 
 class StitchEngine : public QObject

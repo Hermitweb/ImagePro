@@ -4,6 +4,7 @@
 #include "core/ImageListModel.h"
 #include <QFutureWatcher>
 #include <QMainWindow>
+#include <QPointer>
 #include <QProgressDialog>
 #include <QSize>
 #include <QTimer>
@@ -90,9 +91,9 @@ private:
     ToolType m_currentTool = ToolType::Stitch;
     int m_currentImageRow = -1;
     QTimer* m_previewDelayTimer = nullptr;
-    QFutureWatcher<struct PreviewTaskResult>* m_previewWatcher = nullptr;
-    QFutureWatcher<QSize>* m_stitchSizeWatcher = nullptr;
-    QProgressDialog* m_progressDialog = nullptr;
+    QPointer<QFutureWatcher<struct PreviewTaskResult>> m_previewWatcher;
+    QPointer<QFutureWatcher<QSize>> m_stitchSizeWatcher;
+    QPointer<QProgressDialog> m_progressDialog;
 };
 
 } // namespace yingtu

@@ -21,6 +21,8 @@ struct CompressSettings {
     int scalePercent = 100;
     bool showOriginal = false;
     QString outputDir;
+    QString explicitOutputDir; // 批量：若非空，直接使用该目录
+    QString explicitOutputPath; // 单张：若非空，直接保存到该路径
 };
 
 struct CompressResult {

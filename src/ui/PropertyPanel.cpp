@@ -49,7 +49,7 @@ PropertyPanel::PropertyPanel(QWidget* parent)
 
     QVBoxLayout* mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(6, 6, 6, 6);
-    mainLayout->setSpacing(8);
+    mainLayout->setSpacing(6);
 
     m_stack = new QStackedWidget(this);
     buildStitchPanel();
@@ -64,15 +64,13 @@ PropertyPanel::PropertyPanel(QWidget* parent)
     mainLayout->addWidget(m_stack, 1);
 
     QHBoxLayout* btnLayout = new QHBoxLayout();
-    btnLayout->setSpacing(8);
-    m_previewBtn = new QPushButton(tr("Preview"), this);
-    m_processBtn = new QPushButton(tr("Start"), this);
+    btnLayout->setSpacing(6);
+    m_processBtn = new QPushButton(tr("Save"), this);
     m_processBtn->setDefault(true);
-    btnLayout->addWidget(m_previewBtn);
+    m_processBtn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     btnLayout->addWidget(m_processBtn);
     mainLayout->addLayout(btnLayout);
 
-    connect(m_previewBtn, &QPushButton::clicked, this, &PropertyPanel::previewRequested);
     connect(m_processBtn, &QPushButton::clicked, this, &PropertyPanel::processRequested);
 
     // 统一监听所有设置控件变化（拼接预设下拉框由专有槽处理，避免双重触发）

@@ -431,12 +431,15 @@ QString StitchEngine::process(const QStringList& filePaths, bool* ok)
         return QString();
     }
 
-    QString dir = m_settings.outputDir;
-    if (dir.isEmpty())
-        dir = QFileInfo(filePaths.first()).absolutePath();
+    QString outputPath = m_settings.explicitOutputPath;
+    if (outputPath.isEmpty()) {
+        QString dir = m_settings.outputDir;
+        if (dir.isEmpty())
+            dir = QFileInfo(filePaths.first()).absolutePath();
 
-    QString suffix = QStringLiteral(".") + m_settings.outputFormat.toLower();
-    QString outputPath = FileUtils::generateUniqueOutputPath(dir, m_settings.baseName, suffix);
+        QString suffix = QStringLiteral(".") + m_settings.outputFormat.toLower();
+        outputPath = FileUtils::generateUniqueOutputPath(dir, m_settings.baseName, suffix);
+    }
 
 #ifdef USE_LIBVIPS
     if (!m_settings.removeWhiteEdges && !m_settings.autoCropEdges) {

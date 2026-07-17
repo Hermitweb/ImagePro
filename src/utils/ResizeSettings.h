@@ -29,6 +29,8 @@ struct ResizeSettings {
     QString outputFormat = QStringLiteral("original");
     int quality = 90;
     QString outputDir;
+    QString explicitOutputDir; // 批量：若非空，直接使用该目录
+    QString explicitOutputPath; // 单张：若非空，直接保存到该路径
 };
 
 } // namespace yingtu

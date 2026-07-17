@@ -45,13 +45,20 @@ QString WatermarkEngine::processSingle(const QString& filePath)
     QImage result = preview(img, m_settings);
 
     QFileInfo fi(filePath);
-    QString dir = m_settings.outputDir.isEmpty() ? fi.absolutePath() : m_settings.outputDir;
     QString fmt = m_settings.outputFormat == QStringLiteral("original") ? fi.suffix() : m_settings.outputFormat;
     if (fmt.compare(QStringLiteral("jpg"), Qt::CaseInsensitive) == 0)
         fmt = QStringLiteral("jpeg");
 
-    QString outputPath = FileUtils::generateUniqueOutputPath(dir, fi.completeBaseName() + QStringLiteral("_watermarked"),
-                                                             QStringLiteral(".") + fmt.toLower());
+    QString outputPath;
+    if (!m_settings.explicitOutputPath.isEmpty()) {
+        outputPath = m_settings.explicitOutputPath;
+    } else {
+        QString dir = m_settings.explicitOutputDir;
+        if (dir.isEmpty())
+            dir = m_settings.outputDir.isEmpty() ? fi.absolutePath() : m_settings.outputDir;
+        outputPath = FileUtils::generateUniqueOutputPath(dir, fi.completeBaseName() + QStringLiteral("_watermarked"),
+                                                         QStringLiteral(".") + fmt.toLower());
+    }
 
     int q = m_settings.quality;
     bool ok = ImageLoader::saveImage(result, outputPath, fmt, q);

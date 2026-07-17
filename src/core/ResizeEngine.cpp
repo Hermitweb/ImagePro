@@ -97,13 +97,20 @@ QSize ResizeEngine::outputSize(const QImage& source, const ResizeSettings& setti
 QString ResizeEngine::processSingle(const QString& filePath)
 {
     QFileInfo fi(filePath);
-    QString dir = m_settings.outputDir.isEmpty() ? fi.absolutePath() : m_settings.outputDir;
     QString fmt = m_settings.outputFormat == QStringLiteral("original") ? fi.suffix() : m_settings.outputFormat;
     if (fmt.compare(QStringLiteral("jpg"), Qt::CaseInsensitive) == 0)
         fmt = QStringLiteral("jpeg");
 
-    QString outputPath = FileUtils::generateUniqueOutputPath(dir, fi.completeBaseName() + QStringLiteral("_resized"),
-                                                             QStringLiteral(".") + fmt.toLower());
+    QString outputPath;
+    if (!m_settings.explicitOutputPath.isEmpty()) {
+        outputPath = m_settings.explicitOutputPath;
+    } else {
+        QString dir = m_settings.explicitOutputDir;
+        if (dir.isEmpty())
+            dir = m_settings.outputDir.isEmpty() ? fi.absolutePath() : m_settings.outputDir;
+        outputPath = FileUtils::generateUniqueOutputPath(dir, fi.completeBaseName() + QStringLiteral("_resized"),
+                                                         QStringLiteral(".") + fmt.toLower());
+    }
 
     // 使用 libvips 流式缩放，避免全图加载；包括拉伸、放大与非等比场景
     ImageInfo info = ImageLoader::loadInfo(filePath);

@@ -3,8 +3,9 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPainter>
+#include <QPalette>
 #include <QPropertyAnimation>
-#include <QToolButton>
+#include <QPushButton>
 #include <QVBoxLayout>
 #include <QWidget>
 
@@ -24,24 +25,13 @@ public:
         mainLayout->setContentsMargins(0, 0, 0, 0);
         mainLayout->setSpacing(0);
 
-        m_header = new QToolButton(this);
+        m_header = new QPushButton(this);
         m_header->setCheckable(true);
         m_header->setChecked(true);
-        m_header->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
         m_header->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-        m_header->setStyleSheet(QStringLiteral(
-            "QToolButton {"
-            "  border: none;"
-            "  border-radius: 4px;"
-            "  padding: 6px 4px;"
-            "  text-align: left;"
-            "  font-weight: bold;"
-            "  background-color: transparent;"
-            "}"
-            "QToolButton:hover { background-color: rgba(128,128,128,0.12); }"
-            "QToolButton:checked { background-color: rgba(128,128,128,0.08); }"));
+        updateHeaderStyle();
         setTitle(title);
-        connect(m_header, &QToolButton::toggled, this, [this](bool checked) {
+        connect(m_header, &QPushButton::toggled, this, [this](bool checked) {
             setExpanded(checked);
         });
 
@@ -51,7 +41,7 @@ public:
         m_contentContainer->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
         QVBoxLayout* contentLayout = new QVBoxLayout(m_contentContainer);
         contentLayout->setContentsMargins(4, 4, 4, 4);
-        contentLayout->setSpacing(8);
+        contentLayout->setSpacing(6);
         m_contentLayout = contentLayout;
         mainLayout->addWidget(m_contentContainer);
 
@@ -136,6 +126,26 @@ private:
         m_header->setText(arrow + m_title);
     }
 
+    void updateHeaderStyle()
+    {
+        QColor textColor = palette().color(QPalette::WindowText);
+        QString qss = QStringLiteral(
+            "QPushButton {"
+            "  border: none;"
+            "  border-bottom: 1px solid rgba(128,128,128,0.3);"
+            "  border-radius: 0px;"
+            "  padding: 6px 4px;"
+            "  text-align: left;"
+            "  font-weight: bold;"
+            "  color: %1;"
+            "  background-color: transparent;"
+            "}"
+            "QPushButton:hover { background-color: rgba(128,128,128,0.12); }"
+            "QPushButton:checked { background-color: rgba(128,128,128,0.08); }")
+            .arg(textColor.name());
+        m_header->setStyleSheet(qss);
+    }
+
     void updateContentHeight()
     {
         if (!m_contentContainer || !m_content)
@@ -144,7 +154,7 @@ private:
         m_contentContainer->setFixedHeight(h);
     }
 
-    QToolButton* m_header = nullptr;
+    QPushButton* m_header = nullptr;
     QWidget* m_contentContainer = nullptr;
     QVBoxLayout* m_contentLayout = nullptr;
     QWidget* m_content = nullptr;

@@ -55,7 +55,7 @@ ToolBarWidget::ToolBarWidget(QWidget* parent)
     m_group->setExclusive(true);
 
     QHBoxLayout* layout = new QHBoxLayout(this);
-    layout->setContentsMargins(8, 4, 8, 4);
+    layout->setContentsMargins(6, 4, 6, 4);
     layout->setSpacing(6);
 
     m_addButton = new QToolButton(this);

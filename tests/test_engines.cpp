@@ -1,6 +1,7 @@
 #include "core/CompressEngine.h"
 #include "core/ConvertEngine.h"
 #include "core/ResizeEngine.h"
+#include "core/WatermarkEngine.h"
 #include "utils/ImageLoader.h"
 #include "utils/ResizeSettings.h"
 #include <QTemporaryDir>
@@ -17,6 +18,7 @@ private slots:
     void testConvertEngine();
     void testCompressEngine();
     void testResizeEngine();
+    void testWatermarkEngine();
 
 private:
     QString createTestImage(const QString& path);
@@ -102,6 +104,37 @@ void TestEngines::testResizeEngine()
 
     QImage resized = ImageLoader::loadImage(outputs.first());
     QVERIFY(!resized.isNull());
+}
+
+void TestEngines::testWatermarkEngine()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    const QString input = createTestImage(dir.path() + QStringLiteral("/input.png"));
+    QVERIFY(!input.isEmpty());
+
+    WatermarkSettings settings;
+    settings.type = WatermarkType::Text;
+    settings.text = QStringLiteral("ImagePro");
+    settings.fontSize = 24;
+    settings.opacity = 80;
+    settings.position = 4; // center
+    settings.outputFormat = QStringLiteral("png");
+    settings.outputDir = dir.path();
+
+    WatermarkEngine engine;
+    engine.setSettings(settings);
+
+    bool ok = false;
+    QStringList outputs = engine.process(QStringList() << input, &ok);
+    QVERIFY(ok);
+    QCOMPARE(outputs.size(), 1);
+    QVERIFY(QFile::exists(outputs.first()));
+
+    QImage watermarked = ImageLoader::loadImage(outputs.first());
+    QVERIFY(!watermarked.isNull());
+    QCOMPARE(watermarked.size(), QImage(input).size());
 }
 
 QTEST_MAIN(TestEngines)

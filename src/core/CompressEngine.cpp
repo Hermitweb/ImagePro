@@ -1,8 +1,8 @@
 #include "CompressEngine.h"
 #include "utils/FileUtils.h"
 #include "utils/ImageLoader.h"
+#include "utils/Logger.h"
 #include <QBuffer>
-#include <QDebug>
 #include <QFileInfo>
 
 namespace yingtu {
@@ -30,13 +30,20 @@ CompressResult CompressEngine::compressSingle(const QString& filePath)
     result.originalSize = QFileInfo(filePath).size();
 
     QFileInfo fi(filePath);
-    QString dir = m_settings.outputDir.isEmpty() ? fi.absolutePath() : m_settings.outputDir;
     QString fmt = m_settings.outputFormat == QStringLiteral("original") ? fi.suffix() : m_settings.outputFormat;
     if (fmt.compare(QStringLiteral("jpg"), Qt::CaseInsensitive) == 0)
         fmt = QStringLiteral("jpeg");
 
-    QString outputPath = FileUtils::generateUniqueOutputPath(dir, fi.completeBaseName() + QStringLiteral("_compressed"),
-                                                             QStringLiteral(".") + fmt.toLower());
+    QString outputPath;
+    if (!m_settings.explicitOutputPath.isEmpty()) {
+        outputPath = m_settings.explicitOutputPath;
+    } else {
+        QString dir = m_settings.explicitOutputDir;
+        if (dir.isEmpty())
+            dir = m_settings.outputDir.isEmpty() ? fi.absolutePath() : m_settings.outputDir;
+        outputPath = FileUtils::generateUniqueOutputPath(dir, fi.completeBaseName() + QStringLiteral("_compressed"),
+                                                         QStringLiteral(".") + fmt.toLower());
+    }
 
     bool needIterativeSize = (m_settings.mode == CompressMode::Size && m_settings.targetSize > 0);
 
@@ -116,7 +123,9 @@ CompressResult CompressEngine::compressSingle(const QString& filePath)
 
     bool ok = ImageLoader::saveImage(out, outputPath, fmt, q);
     if (!ok) {
-        qDebug() << "DEBUG save failed:" << out.size() << out.format() << outputPath << fmt << q;
+        Logger::error(QStringLiteral("Save failed: size=%1x%2 format=%3 path=%4 fmt=%5 quality=%6")
+                          .arg(out.width()).arg(out.height()).arg(out.format()).arg(outputPath).arg(fmt).arg(q),
+                      QStringLiteral("CompressEngine"));
         result.errorString = tr("Failed to save compressed image");
         return result;
     }

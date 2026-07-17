@@ -3,7 +3,7 @@ project(ImagePro VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTOMOC OFF)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
@@ -117,11 +117,20 @@ set(RESOURCE_FILES
 set_source_files_properties(${TS_FILES} PROPERTIES OUTPUT_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/translations")
 qt5_add_translation(QM_FILES ${TS_FILES})
 
-add_library(ImageProLib STATIC ${LIB_SOURCES} ${HEADERS})
+qt5_wrap_cpp(MOC_SOURCES ${HEADERS})
+
+# ImageListWidget.cpp contains a private Q_OBJECT class (ImageListView) that needs
+# its own moc output included inline, mimicking the old AUTOMOC behavior.
+set(IMAGELISTWIDGET_MOC "${CMAKE_CURRENT_BINARY_DIR}/ImageListWidget.moc")
+qt5_generate_moc(src/ui/ImageListWidget.cpp ${IMAGELISTWIDGET_MOC})
+set_source_files_properties(${IMAGELISTWIDGET_MOC} PROPERTIES HEADER_FILE_ONLY TRUE)
+
+add_library(ImageProLib STATIC ${LIB_SOURCES} ${HEADERS} ${MOC_SOURCES} ${IMAGELISTWIDGET_MOC})
 
 target_include_directories(ImageProLib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_BINARY_DIR}
     ${VIPS_INCLUDE_DIRS}
 )
 

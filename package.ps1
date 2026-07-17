@@ -22,10 +22,11 @@ $env:PATH = "$mingwBin;$env:PATH"
 
 # 1. 配置并构建
 Write-Host "==> Configuring CMake..."
-cmake -B $buildDir -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=$BuildType -DBUILD_TESTS=OFF .
+cmake -S $PSScriptRoot -B $buildDir -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=$BuildType -DBUILD_TESTS=OFF `
+    -DCMAKE_CXX_COMPILER="$mingwBin/c++.exe" -DCMAKE_C_COMPILER="$mingwBin/gcc.exe"
 
 Write-Host "==> Building..."
-cmake --build $buildDir -j4
+cmake --build $buildDir -j1
 
 # 2. 清理并创建部署目录
 Write-Host "==> Preparing deploy directory..."
@@ -37,7 +38,7 @@ New-Item -ItemType Directory -Force -Path $deployDir | Out-Null
 # 3. 复制主程序与 Qt 依赖
 Write-Host "==> Deploying Qt dependencies..."
 Copy-Item "$buildDir/ImagePro.exe" $deployDir
-& windeployqt-qt5.exe "$deployDir/ImagePro.exe" `
+& "$mingwBin/windeployqt-qt5.exe" "$deployDir/ImagePro.exe" `
     --release --no-translations --no-compiler-runtime --no-opengl-sw --dir $deployDir
 
 # 4. 复制编译器运行时与 vips
@@ -62,7 +63,7 @@ $systemDlls = @(
 )
 
 function Get-Dependencies($file) {
-    $deps = & objdump -p $file 2>$null | Select-String "DLL Name:\s+(.+)" | ForEach-Object { $_.Matches.Groups[1].Value.Trim() }
+    $deps = & "$mingwBin/objdump.exe" -p $file 2>$null | Select-String "DLL Name:\s+(.+)" | ForEach-Object { $_.Matches.Groups[1].Value.Trim() }
     return $deps | Where-Object { $systemDlls -notcontains $_ }
 }
 

@@ -71,6 +71,15 @@ TRANSLATIONS = {
     "Exported PDF: %1": "已导出 PDF：%1",
     "PDF Export Complete": "PDF 导出完成",
     "Successfully exported %1 images to PDF": "成功导出 %1 张图片到 PDF",
+    "Save Stitched Image": "保存拼接图片",
+    "Save Converted Image": "保存转换后的图片",
+    "Save Compressed Image": "保存压缩后的图片",
+    "Save Watermarked Image": "保存添加水印后的图片",
+    "Save Resized Image": "保存调整尺寸后的图片",
+    "JPEG Images (*.jpg *.jpeg)": "JPEG 图片 (*.jpg *.jpeg)",
+    "WebP Images (*.webp)": "WebP 图片 (*.webp)",
+    "BMP Images (*.bmp)": "BMP 图片 (*.bmp)",
+    "PNG Images (*.png)": "PNG 图片 (*.png)",
 
     # Property panel - Stitch
     "Stitch Settings": "拼接设置",
@@ -102,8 +111,7 @@ TRANSLATIONS = {
     "Browse...": "浏览...",
     "Create": "创建",
     "File Name:": "文件名：",
-    "Preview": "预览",
-    "Start": "开始",
+    "Save": "保存",
     "Add Custom Preset": "添加自定义预设",
 
     # Validation / preview

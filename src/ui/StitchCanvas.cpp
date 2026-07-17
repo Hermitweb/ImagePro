@@ -546,12 +546,12 @@ void StitchCanvas::wheelEvent(QWheelEvent* event)
     double oldZoom = m_zoomFactor;
     double newZoom = qBound(s_minZoom, oldZoom * (delta > 0 ? 1.15 : 1.0 / 1.15), s_maxZoom);
 
-    QPointF imagePos = widgetToImage(event->pos());
+    QPointF imagePos = widgetToImage(event->position().toPoint());
     m_zoomFactor = newZoom;
     m_fitToWindow = false;
 
     QPointF newWidgetPos = imageToWidget(imagePos);
-    m_panOffset += (event->pos() - newWidgetPos).toPoint();
+    m_panOffset += (event->position().toPoint() - newWidgetPos).toPoint();
 
     updateTransform();
     event->accept();

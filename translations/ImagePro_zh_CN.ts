@@ -265,6 +265,26 @@
         <translation>正在拼接…</translation>
     </message>
     <message>
+        <source>Save Stitched Image</source>
+        <translation>保存拼接图片</translation>
+    </message>
+    <message>
+        <source>JPEG Images (*.jpg *.jpeg)</source>
+        <translation>JPEG 图片 (*.jpg *.jpeg)</translation>
+    </message>
+    <message>
+        <source>WebP Images (*.webp)</source>
+        <translation>WebP 图片 (*.webp)</translation>
+    </message>
+    <message>
+        <source>BMP Images (*.bmp)</source>
+        <translation>BMP 图片 (*.bmp)</translation>
+    </message>
+    <message>
+        <source>PNG Images (*.png)</source>
+        <translation>PNG 图片 (*.png)</translation>
+    </message>
+    <message>
         <source>Saved: %1</source>
         <translation>已保存：%1</translation>
     </message>
@@ -353,14 +373,6 @@
         <translation>编辑后的图片已保存</translation>
     </message>
     <message>
-        <source>Please select an output directory.</source>
-        <translation>请选择输出目录。</translation>
-    </message>
-    <message>
-        <source>Failed to create output directory.</source>
-        <translation>创建输出目录失败。</translation>
-    </message>
-    <message>
         <source>Batch saved %1 images to %2</source>
         <translation>批处理已保存 %1 张图片到 %2</translation>
     </message>
@@ -379,10 +391,6 @@
     <message>
         <source>Batch resizing...</source>
         <translation>正在批量调整尺寸…</translation>
-    </message>
-    <message>
-        <source>Unsupported batch target tool.</source>
-        <translation>不支持的批处理目标工具。</translation>
     </message>
     <message>
         <source>Updating preview...</source>
@@ -437,6 +445,46 @@ Size: %2x%3</source>
     <message>
         <source>Successfully exported %1 images to PDF</source>
         <translation>成功导出 %1 张图片到 PDF</translation>
+    </message>
+    <message>
+        <source>Save Converted Image</source>
+        <translation>保存转换后的图片</translation>
+    </message>
+    <message>
+        <source>Select Output Directory</source>
+        <translation>选择输出目录</translation>
+    </message>
+    <message>
+        <source>Save Compressed Image</source>
+        <translation>保存压缩后的图片</translation>
+    </message>
+    <message>
+        <source>Save Watermarked Image</source>
+        <translation>保存添加水印后的图片</translation>
+    </message>
+    <message>
+        <source>Save Resized Image</source>
+        <translation>保存调整尺寸后的图片</translation>
+    </message>
+    <message>
+        <source>Save Image</source>
+        <translation>保存图片</translation>
+    </message>
+    <message>
+        <source>Batch: please add images first</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>Batch: please select an output directory</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>Batch: failed to create output directory %1</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <source>Batch: unsupported target tool</source>
+        <translation type="unfinished" />
     </message>
 </context>
 <context>
@@ -515,12 +563,8 @@ Size: %2x%3</source>
 <context>
     <name>yingtu::PropertyPanel</name>
     <message>
-        <source>Preview</source>
-        <translation>预览</translation>
-    </message>
-    <message>
-        <source>Start</source>
-        <translation>开始</translation>
+        <source>Save</source>
+        <translation>保存</translation>
     </message>
     <message>
         <source>Vertical</source>

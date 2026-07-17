@@ -12,6 +12,8 @@ struct ConvertSettings {
     bool keepExif = true;
     bool convertToSRgb = false;
     QString outputDir;
+    QString explicitOutputDir; // 批量：若非空，转换结果保存到该目录
+    QString explicitOutputPath; // 单张：若非空，直接保存到该路径
     bool batchApply = true;
 };
 
