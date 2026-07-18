@@ -56,6 +56,7 @@ struct EditAction {
     int fontSize = 16;
     int mosaicSize = 20; // 马赛克块大小
     QString fontFamily;
+    bool fontBold = false;
     EditFillStyle fillStyle = EditFillStyle::SemiFill;
     QList<QPointF> points;
     QString text;

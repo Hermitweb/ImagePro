@@ -29,6 +29,8 @@ public:
     QImage render() const;
     QImage renderWithSelection(const QString& selectedId) const;
 
+    QRectF cropBounds() const;
+
     static QRectF handleRect(const QRectF& bounds, int handleIndex);
     static int hitTest(const QRectF& bounds, const QPointF& pos, int handleSize = 8);
 

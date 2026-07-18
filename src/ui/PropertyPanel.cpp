@@ -647,10 +647,37 @@ void PropertyPanel::buildEditPanel()
     m_editFillStyle->setCurrentIndex(1);
     layout->addWidget(createFormRow(tr("Fill Style:"), m_editFillStyle));
 
+    m_editFontFamily = new QComboBox(panel);
+    for (const QString& family : QFontDatabase().families()) {
+        if (!family.startsWith(QStringLiteral(".")) && !family.isEmpty())
+            m_editFontFamily->addItem(family);
+    }
+    int defaultEditFontIdx = m_editFontFamily->findText(QStringLiteral("Microsoft YaHei"));
+    if (defaultEditFontIdx < 0)
+        defaultEditFontIdx = m_editFontFamily->findText(QFont().defaultFamily());
+    m_editFontFamily->setCurrentIndex(qMax(0, defaultEditFontIdx));
+    layout->addWidget(createFormRow(tr("Font Family:"), m_editFontFamily));
+
     m_editFontSize = new QSpinBox(panel);
     m_editFontSize->setRange(8, 200);
     m_editFontSize->setValue(16);
     layout->addWidget(createFormRow(tr("Font Size:"), m_editFontSize));
+
+    m_editFontBold = new QCheckBox(tr("Bold"), panel);
+    layout->addWidget(m_editFontBold);
+
+    QWidget* textColorRow = new QWidget(panel);
+    QHBoxLayout* textColorLayout = new QHBoxLayout(textColorRow);
+    textColorLayout->setContentsMargins(0, 2, 0, 2);
+    textColorLayout->setSpacing(6);
+    textColorLayout->addWidget(new QLabel(tr("Text Color:"), textColorRow));
+    m_editTextColorBtn = new QPushButton(textColorRow);
+    m_editTextColorBtn->setFixedSize(QSize(28, 22));
+    m_editTextColorBtn->setStyleSheet(QStringLiteral("background-color: %1; border: 1px solid gray;").arg(m_editTextColor.name()));
+    connect(m_editTextColorBtn, &QPushButton::clicked, this, &PropertyPanel::onEditFontColorClicked);
+    textColorLayout->addWidget(m_editTextColorBtn);
+    textColorLayout->addStretch();
+    layout->addWidget(textColorRow);
 
     QHBoxLayout* historyBtnLayout = new QHBoxLayout();
     historyBtnLayout->setSpacing(6);
@@ -989,10 +1016,15 @@ EditAction PropertyPanel::currentEditAction() const
     a.filterType = static_cast<FilterType>(m_editFilterType->currentData().toInt());
     a.mosaicStyle = static_cast<MosaicStyle>(m_editMosaicStyle->currentData().toInt());
     a.mosaicSize = m_editMosaicSize->value();
-    a.color = m_editColor->currentData().value<QColor>();
     a.lineWidth = m_editLineWidth->value();
     a.opacity = m_editOpacity->value();
+    a.fontFamily = m_editFontFamily->currentText();
     a.fontSize = m_editFontSize->value();
+    a.fontBold = m_editFontBold->isChecked();
+    if (a.toolType == EditToolType::Text)
+        a.color = m_editTextColor;
+    else
+        a.color = m_editColor->currentData().value<QColor>();
     a.fillStyle = static_cast<EditFillStyle>(m_editFillStyle->currentData().toInt());
     return a;
 }
@@ -1822,6 +1854,16 @@ void PropertyPanel::onCompressEstimateRequested()
     m_compressEstimateLabel->setText(tr("Estimated size: %1").arg(FileUtils::formatFileSize(bytes)));
 }
 
+void PropertyPanel::onEditFontColorClicked()
+{
+    QColor c = QColorDialog::getColor(m_editTextColor, this, tr("Select Text Color"));
+    if (!c.isValid())
+        return;
+    m_editTextColor = c;
+    m_editTextColorBtn->setStyleSheet(QStringLiteral("background-color: %1; border: 1px solid gray;").arg(c.name()));
+    emit settingsChanged();
+}
+
 void PropertyPanel::onEditToolChanged(int index)
 {
     Q_UNUSED(index)
@@ -1846,12 +1888,18 @@ void PropertyPanel::onEditToolChanged(int index)
     m_editFillStyle->setEnabled(isShape);
     if (m_editFillStyle->parentWidget())
         m_editFillStyle->parentWidget()->setEnabled(isShape);
+    m_editFontFamily->setEnabled(isText);
+    if (m_editFontFamily->parentWidget())
+        m_editFontFamily->parentWidget()->setEnabled(isText);
     m_editFontSize->setEnabled(isText);
     if (m_editFontSize->parentWidget())
         m_editFontSize->parentWidget()->setEnabled(isText);
-    m_editLineWidth->setEnabled(!isFilter && !isMosaic);
+    m_editFontBold->setEnabled(isText);
+    if (m_editTextColorBtn && m_editTextColorBtn->parentWidget())
+        m_editTextColorBtn->parentWidget()->setEnabled(isText);
+    m_editLineWidth->setEnabled(!isFilter && !isMosaic && !isText);
     if (m_editLineWidth->parentWidget())
-        m_editLineWidth->parentWidget()->setEnabled(!isFilter && !isMosaic);
+        m_editLineWidth->parentWidget()->setEnabled(!isFilter && !isMosaic && !isText);
     m_editOpacity->setEnabled(!isFilter && !isMosaic);
     if (m_editOpacity->parentWidget())
         m_editOpacity->parentWidget()->setEnabled(!isFilter && !isMosaic);

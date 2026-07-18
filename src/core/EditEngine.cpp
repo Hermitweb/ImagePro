@@ -197,6 +197,15 @@ void EditEngine::setActions(const QList<EditAction>& actions)
     emit actionsChanged();
 }
 
+QRectF EditEngine::cropBounds() const
+{
+    for (auto it = m_actions.rbegin(); it != m_actions.rend(); ++it) {
+        if (it->toolType == EditToolType::Crop)
+            return it->bounds;
+    }
+    return QRectF();
+}
+
 QImage EditEngine::render() const
 {
     return renderWithSelection(QString());
@@ -207,6 +216,12 @@ QImage EditEngine::renderWithSelection(const QString& selectedId) const
     QImage result = m_baseImage.isNull() ? QImage(800, 600, QImage::Format_ARGB32) : m_baseImage.copy();
     if (result.isNull())
         result.fill(Qt::white);
+
+    QRectF crop = cropBounds();
+    QRect cropRect;
+    const bool hasCrop = !crop.isEmpty();
+    if (hasCrop)
+        cropRect = crop.toRect().intersected(result.rect());
 
     // Apply filter and mosaic actions to the base image before drawing annotations
     for (const auto& action : m_actions) {
@@ -220,17 +235,22 @@ QImage EditEngine::renderWithSelection(const QString& selectedId) const
     painter.setRenderHint(QPainter::Antialiasing);
 
     for (const auto& action : m_actions) {
-        if (action.isFilter())
+        if (action.isFilter() || action.toolType == EditToolType::Crop)
             continue;
         drawAction(&painter, action);
         if (action.id == selectedId && action.isMovable()) {
             QPen pen(Qt::white);
             pen.setStyle(Qt::DashLine);
             painter.setPen(pen);
+            painter.setBrush(Qt::NoBrush);
             painter.drawRect(action.bounds.adjusted(-2, -2, 2, 2));
         }
     }
     painter.end();
+
+    if (hasCrop && cropRect.isValid())
+        result = result.copy(cropRect);
+
     return result;
 }
 
@@ -300,9 +320,11 @@ void EditEngine::drawAction(QPainter* painter, const EditAction& action) const
         QFont font = painter->font();
         font.setFamily(action.fontFamily.isEmpty() ? QStringLiteral("Microsoft YaHei") : action.fontFamily);
         font.setPointSize(action.fontSize > 0 ? action.fontSize : 16);
+        font.setBold(action.fontBold);
         painter->setFont(font);
+        painter->setPen(QPen(c));
         painter->setBrush(Qt::NoBrush);
-        painter->drawText(action.bounds.topLeft(), action.text);
+        painter->drawText(action.bounds, Qt::AlignLeft | Qt::AlignTop, action.text);
         break;
     }
     case EditToolType::Crop: {

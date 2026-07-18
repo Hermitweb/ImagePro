@@ -354,12 +354,26 @@ void ImageEditorWidget::keyPressEvent(QKeyEvent* event)
     }
 }
 
+QRectF ImageEditorWidget::effectiveCropBounds() const
+{
+    QRectF b = m_engine.cropBounds();
+    if (b.isEmpty()) {
+        QImage img = m_engine.baseImage();
+        if (img.isNull())
+            return QRectF(0, 0, 800, 600);
+        return QRectF(0, 0, img.width(), img.height());
+    }
+    return b;
+}
+
+QPointF ImageEditorWidget::cropOffset() const
+{
+    return effectiveCropBounds().topLeft();
+}
+
 QSize ImageEditorWidget::rotatedImageSize() const
 {
-    QImage img = m_engine.baseImage();
-    if (img.isNull())
-        return QSize(800, 600);
-    return img.size();
+    return effectiveCropBounds().size().toSize();
 }
 
 QTransform ImageEditorWidget::viewTransform() const
@@ -381,12 +395,12 @@ QTransform ImageEditorWidget::imageTransform() const
 
 QPointF ImageEditorWidget::mapToImage(const QPoint& pos) const
 {
-    return imageTransform().map(QPointF(pos));
+    return imageTransform().map(QPointF(pos)) + cropOffset();
 }
 
 QPoint ImageEditorWidget::mapFromImage(const QPointF& pos) const
 {
-    return viewTransform().map(pos).toPoint();
+    return viewTransform().map(pos - cropOffset()).toPoint();
 }
 
 void ImageEditorWidget::clampPan()
@@ -542,7 +556,16 @@ void ImageEditorWidget::finishCurrentAction()
         if (!ok || text.isEmpty())
             return;
         m_currentAction.text = text;
-        m_currentAction.bounds = QRectF(m_currentAction.points.first(), QSizeF(100, 30));
+
+        QFont font;
+        font.setFamily(m_currentAction.fontFamily.isEmpty()
+                           ? QStringLiteral("Microsoft YaHei")
+                           : m_currentAction.fontFamily);
+        font.setPointSize(m_currentAction.fontSize > 0 ? m_currentAction.fontSize : 16);
+        font.setBold(m_currentAction.fontBold);
+        QFontMetrics fm(font);
+        QRect textRect = fm.boundingRect(QRect(), Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap, text);
+        m_currentAction.bounds = QRectF(m_currentAction.points.first(), textRect.size());
     }
 
     m_engine.addAction(m_currentAction);

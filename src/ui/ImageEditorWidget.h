@@ -57,6 +57,8 @@ private:
     QSize rotatedImageSize() const;
     QTransform viewTransform() const;
     QTransform imageTransform() const;
+    QRectF effectiveCropBounds() const;
+    QPointF cropOffset() const;
     void updateCanvas();
     void clampPan();
     void finishCurrentAction();

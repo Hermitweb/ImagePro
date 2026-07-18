@@ -102,6 +102,7 @@ private slots:
     void onWatermarkTypeChanged(int index);
 
     void onEditToolChanged(int index);
+    void onEditFontColorClicked();
     void onEditUndo();
     void onEditRedo();
     void onEditClear();
@@ -236,7 +237,11 @@ private:
     QComboBox* m_editColor = nullptr;
     QSpinBox* m_editLineWidth = nullptr;
     QSlider* m_editOpacity = nullptr;
+    QComboBox* m_editFontFamily = nullptr;
     QSpinBox* m_editFontSize = nullptr;
+    QCheckBox* m_editFontBold = nullptr;
+    QPushButton* m_editTextColorBtn = nullptr;
+    QColor m_editTextColor = Qt::red;
     QComboBox* m_editFillStyle = nullptr;
     QListWidget* m_editHistoryList = nullptr;
     QPushButton* m_editUndoBtn = nullptr;
