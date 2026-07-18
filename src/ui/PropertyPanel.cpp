@@ -605,6 +605,21 @@ void PropertyPanel::buildEditPanel()
     m_editFilterType->addItem(tr("Sharpen"), static_cast<int>(FilterType::Sharpen));
     layout->addWidget(createFormRow(tr("Filter:"), m_editFilterType));
 
+    m_editMosaicStyle = new QComboBox(panel);
+    m_editMosaicStyle->addItem(tr("Square"), static_cast<int>(MosaicStyle::Square));
+    m_editMosaicStyle->addItem(tr("Hexagon"), static_cast<int>(MosaicStyle::Hexagon));
+    m_editMosaicStyle->addItem(tr("Circle"), static_cast<int>(MosaicStyle::Circle));
+    m_editMosaicStyle->addItem(tr("Blur"), static_cast<int>(MosaicStyle::Blur));
+    m_editMosaicStyle->addItem(tr("Mezzotint"), static_cast<int>(MosaicStyle::Mezzotint));
+    m_editMosaicStyle->addItem(tr("Color Halftone"), static_cast<int>(MosaicStyle::ColorHalftone));
+    layout->addWidget(createFormRow(tr("Mosaic Style:"), m_editMosaicStyle));
+
+    m_editMosaicSize = new QSpinBox(panel);
+    m_editMosaicSize->setRange(4, 200);
+    m_editMosaicSize->setValue(20);
+    m_editMosaicSize->setSuffix(QStringLiteral(" px"));
+    layout->addWidget(createFormRow(tr("Mosaic Size:"), m_editMosaicSize));
+
     m_editColor = new QComboBox(panel);
     m_editColor->addItem(tr("Red"), QColor(Qt::red));
     m_editColor->addItem(tr("Blue"), QColor(Qt::blue));
@@ -972,6 +987,8 @@ EditAction PropertyPanel::currentEditAction() const
     EditAction a;
     a.toolType = static_cast<EditToolType>(m_editTool->currentData().toInt());
     a.filterType = static_cast<FilterType>(m_editFilterType->currentData().toInt());
+    a.mosaicStyle = static_cast<MosaicStyle>(m_editMosaicStyle->currentData().toInt());
+    a.mosaicSize = m_editMosaicSize->value();
     a.color = m_editColor->currentData().value<QColor>();
     a.lineWidth = m_editLineWidth->value();
     a.opacity = m_editOpacity->value();
@@ -1812,25 +1829,32 @@ void PropertyPanel::onEditToolChanged(int index)
     bool isShape = (tool == EditToolType::Rectangle || tool == EditToolType::Ellipse);
     bool isText = (tool == EditToolType::Text);
     bool isFilter = (tool == EditToolType::Filter);
+    bool isMosaic = (tool == EditToolType::Mosaic);
 
     m_editFilterType->setEnabled(isFilter);
     if (m_editFilterType->parentWidget())
         m_editFilterType->parentWidget()->setEnabled(isFilter);
-    m_editColor->setEnabled(!isFilter);
+    m_editMosaicStyle->setEnabled(isMosaic);
+    if (m_editMosaicStyle->parentWidget())
+        m_editMosaicStyle->parentWidget()->setEnabled(isMosaic);
+    m_editMosaicSize->setEnabled(isMosaic);
+    if (m_editMosaicSize->parentWidget())
+        m_editMosaicSize->parentWidget()->setEnabled(isMosaic);
+    m_editColor->setEnabled(!isFilter && !isMosaic);
     if (m_editColor->parentWidget())
-        m_editColor->parentWidget()->setEnabled(!isFilter);
+        m_editColor->parentWidget()->setEnabled(!isFilter && !isMosaic);
     m_editFillStyle->setEnabled(isShape);
     if (m_editFillStyle->parentWidget())
         m_editFillStyle->parentWidget()->setEnabled(isShape);
     m_editFontSize->setEnabled(isText);
     if (m_editFontSize->parentWidget())
         m_editFontSize->parentWidget()->setEnabled(isText);
-    m_editLineWidth->setEnabled(!isFilter);
+    m_editLineWidth->setEnabled(!isFilter && !isMosaic);
     if (m_editLineWidth->parentWidget())
-        m_editLineWidth->parentWidget()->setEnabled(!isFilter);
-    m_editOpacity->setEnabled(!isFilter);
+        m_editLineWidth->parentWidget()->setEnabled(!isFilter && !isMosaic);
+    m_editOpacity->setEnabled(!isFilter && !isMosaic);
     if (m_editOpacity->parentWidget())
-        m_editOpacity->parentWidget()->setEnabled(!isFilter);
+        m_editOpacity->parentWidget()->setEnabled(!isFilter && !isMosaic);
 }
 
 void PropertyPanel::onEditUndo()
@@ -1895,6 +1919,18 @@ void PropertyPanel::refreshEditHistory(const QList<EditAction>& history, int cur
             case FilterType::Sharpen: filterName = tr("Sharpen"); break;
             }
             text += QStringLiteral(" - ") + filterName;
+        }
+        else if (a.toolType == EditToolType::Mosaic) {
+            QString styleName;
+            switch (a.mosaicStyle) {
+            case MosaicStyle::Square: styleName = tr("Square"); break;
+            case MosaicStyle::Hexagon: styleName = tr("Hexagon"); break;
+            case MosaicStyle::Circle: styleName = tr("Circle"); break;
+            case MosaicStyle::Blur: styleName = tr("Blur"); break;
+            case MosaicStyle::Mezzotint: styleName = tr("Mezzotint"); break;
+            case MosaicStyle::ColorHalftone: styleName = tr("Color Halftone"); break;
+            }
+            text += QStringLiteral(" - ") + styleName;
         }
         QListWidgetItem* item = new QListWidgetItem(text, m_editHistoryList);
         item->setData(Qt::UserRole, i);

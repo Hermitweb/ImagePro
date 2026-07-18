@@ -35,6 +35,7 @@ set(LIB_SOURCES
     src/core/ExportManager.cpp
     src/core/ImageItem.cpp
     src/core/ImageListModel.cpp
+    src/core/MosaicFilter.cpp
     src/core/PdfEngine.cpp
     src/core/ResizeEngine.cpp
     src/core/StitchEngine.cpp

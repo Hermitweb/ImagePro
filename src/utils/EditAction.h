@@ -26,6 +26,15 @@ enum class EditFillStyle {
     SolidFill
 };
 
+enum class MosaicStyle {
+    Square,        // 经典方块马赛克
+    Hexagon,       // 六边形马赛克
+    Circle,        // 圆形马赛克
+    Blur,          // 动态/模糊（毛玻璃）马赛克
+    Mezzotint,     // 铜版雕刻
+    ColorHalftone  // 彩色半调
+};
+
 enum class FilterType {
     Grayscale,
     Sepia,
@@ -40,10 +49,12 @@ struct EditAction {
     QString id;
     EditToolType toolType = EditToolType::Rectangle;
     FilterType filterType = FilterType::Grayscale;
+    MosaicStyle mosaicStyle = MosaicStyle::Square;
     QColor color = Qt::red;
     int lineWidth = 3;
     int opacity = 80; // 0~100
     int fontSize = 16;
+    int mosaicSize = 20; // 马赛克块大小
     QString fontFamily;
     EditFillStyle fillStyle = EditFillStyle::SemiFill;
     QList<QPointF> points;
@@ -56,6 +67,7 @@ struct EditAction {
                toolType == EditToolType::Ellipse ||
                toolType == EditToolType::Arrow ||
                toolType == EditToolType::Text ||
+               toolType == EditToolType::Mosaic ||
                toolType == EditToolType::Crop;
     }
 

@@ -142,6 +142,17 @@ void ImageEditorWidget::paintEvent(QPaintEvent* event)
         painter.setWorldTransform(viewTransform());
         painter.drawImage(QRectF(0, 0, m_canvasCache.width(), m_canvasCache.height()), m_canvasCache);
     }
+
+    // Preview the currently drawing mosaic region
+    if (m_drawing && m_currentAction.toolType == EditToolType::Mosaic && !m_currentAction.bounds.isEmpty()) {
+        painter.setWorldTransform(viewTransform());
+        QPen pen(QColor(255, 255, 255, 180));
+        pen.setWidth(1);
+        pen.setStyle(Qt::DashLine);
+        painter.setPen(pen);
+        painter.setBrush(QColor(255, 255, 255, 30));
+        painter.drawRect(m_currentAction.bounds);
+    }
 }
 
 void ImageEditorWidget::mousePressEvent(QMouseEvent* event)

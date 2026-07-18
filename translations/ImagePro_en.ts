@@ -1196,6 +1196,38 @@ Size: %2x%3</translation>
         <translation>Mosaic</translation>
     </message>
     <message>
+        <source>Square</source>
+        <translation>Square</translation>
+    </message>
+    <message>
+        <source>Hexagon</source>
+        <translation>Hexagon</translation>
+    </message>
+    <message>
+        <source>Circle</source>
+        <translation>Circle</translation>
+    </message>
+    <message>
+        <source>Blur</source>
+        <translation>Blur</translation>
+    </message>
+    <message>
+        <source>Mezzotint</source>
+        <translation>Mezzotint</translation>
+    </message>
+    <message>
+        <source>Color Halftone</source>
+        <translation>Color Halftone</translation>
+    </message>
+    <message>
+        <source>Mosaic Style:</source>
+        <translation>Mosaic Style:</translation>
+    </message>
+    <message>
+        <source>Mosaic Size:</source>
+        <translation>Mosaic Size:</translation>
+    </message>
+    <message>
         <source>Crop</source>
         <translation>Crop</translation>
     </message>

@@ -1,4 +1,5 @@
 #include "EditEngine.h"
+#include "core/MosaicFilter.h"
 #include <QPainter>
 #include <QtMath>
 #include <functional>
@@ -207,10 +208,12 @@ QImage EditEngine::renderWithSelection(const QString& selectedId) const
     if (result.isNull())
         result.fill(Qt::white);
 
-    // Apply filter actions to the base image before drawing annotations
+    // Apply filter and mosaic actions to the base image before drawing annotations
     for (const auto& action : m_actions) {
         if (action.isFilter())
             result = applyFilter(result, action.filterType);
+        else if (action.toolType == EditToolType::Mosaic)
+            result = applyMosaic(result, action);
     }
 
     QPainter painter(&result);
@@ -276,15 +279,21 @@ void EditEngine::drawAction(QPainter* painter, const EditAction& action) const
         }
         break;
     }
-    case EditToolType::Pen:
-    case EditToolType::Mosaic: {
+    case EditToolType::Pen: {
         if (action.points.size() > 1) {
-            if (action.toolType == EditToolType::Mosaic) {
-                painter->setPen(QPen(Qt::gray, action.lineWidth * 3));
-            }
             for (int i = 1; i < action.points.size(); ++i)
                 painter->drawLine(action.points[i - 1], action.points[i]);
         }
+        break;
+    }
+    case EditToolType::Mosaic: {
+        // Mosaic effect is applied directly to the base image; draw only a subtle border.
+        QPen mosaicPen(QColor(255, 255, 255, 120));
+        mosaicPen.setWidth(1);
+        mosaicPen.setStyle(Qt::DashLine);
+        painter->setPen(mosaicPen);
+        painter->setBrush(Qt::NoBrush);
+        painter->drawRect(action.bounds);
         break;
     }
     case EditToolType::Text: {

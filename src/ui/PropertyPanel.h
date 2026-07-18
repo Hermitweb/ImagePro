@@ -231,6 +231,8 @@ private:
     // Edit
     QComboBox* m_editTool = nullptr;
     QComboBox* m_editFilterType = nullptr;
+    QComboBox* m_editMosaicStyle = nullptr;
+    QSpinBox* m_editMosaicSize = nullptr;
     QComboBox* m_editColor = nullptr;
     QSpinBox* m_editLineWidth = nullptr;
     QSlider* m_editOpacity = nullptr;

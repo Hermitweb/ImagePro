@@ -848,6 +848,38 @@ Size: %2x%3</source>
         <translation>马赛克</translation>
     </message>
     <message>
+        <source>Square</source>
+        <translation>方块</translation>
+    </message>
+    <message>
+        <source>Hexagon</source>
+        <translation>六边形</translation>
+    </message>
+    <message>
+        <source>Circle</source>
+        <translation>圆形</translation>
+    </message>
+    <message>
+        <source>Blur</source>
+        <translation>模糊</translation>
+    </message>
+    <message>
+        <source>Mezzotint</source>
+        <translation>铜版雕刻</translation>
+    </message>
+    <message>
+        <source>Color Halftone</source>
+        <translation>彩色半调</translation>
+    </message>
+    <message>
+        <source>Mosaic Style:</source>
+        <translation>马赛克样式：</translation>
+    </message>
+    <message>
+        <source>Mosaic Size:</source>
+        <translation>马赛克大小：</translation>
+    </message>
+    <message>
         <source>Crop</source>
         <translation>裁剪</translation>
     </message>
