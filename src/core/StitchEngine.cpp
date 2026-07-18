@@ -94,9 +94,10 @@ static QImage cropWhiteEdges(const QImage& source, int threshold = 250)
 
 static VipsImage* loadVipsImage(const QString& path)
 {
-    // SEQUENTIAL：拼接中每张图只读取一次；全局 operation/memory/file cache 已禁用。
+    // 拼接需要对多张图进行 resize/insert 组合，后续 vips_insert 评估管线时
+    // 会多次读取输入；SEQUENTIAL 在此场景下会导致崩溃或读取失败，改用 RANDOM。
     return vips_image_new_from_file(path.toUtf8().constData(),
-                                    "access", VIPS_ACCESS_SEQUENTIAL,
+                                    "access", VIPS_ACCESS_RANDOM,
                                     nullptr);
 }
 

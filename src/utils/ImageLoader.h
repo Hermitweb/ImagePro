@@ -23,6 +23,10 @@ struct ImageInfo {
 class ImageLoader
 {
 public:
+    // 在主线程尽早调用，确保 libvips 从主线程完成一次性初始化，
+    // 避免后续在 QtConcurrent 工作线程中首次初始化引发线程/GLib 问题。
+    static void initialize();
+
     static ImageInfo loadInfo(const QString& filePath);
     static QImage loadImage(const QString& filePath);
     static QImage loadPreview(const QString& filePath, const QSize& maxSize);

@@ -61,6 +61,11 @@ static void ensureVipsInitialized()
     (void)VipsInitHelper::instance();
 }
 
+void ImageLoader::initialize()
+{
+    ensureVipsInitialized();
+}
+
 QImage ImageLoader::vipsImageToQImage(VipsImage* image)
 {
     const int width = vips_image_get_width(image);

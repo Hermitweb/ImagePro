@@ -1,5 +1,6 @@
 #include "ImageProApp.h"
 #include "ThemeManager.h"
+#include "utils/ImageLoader.h"
 #include <QFont>
 #include <QLibraryInfo>
 #include <QSettings>
@@ -21,6 +22,10 @@ void ImageProApp::initialize()
     setStyle(QStyleFactory::create(QStringLiteral("Fusion")));
     QFont font(QStringLiteral("Microsoft YaHei"), 9);
     setFont(font);
+
+    // libvips 必须在主线程完成首次初始化，避免在 QtConcurrent 工作线程中
+    // 首次调用时触发 GLib/GObject 线程问题，导致拼接/尺寸预览闪退或挂起。
+    ImageLoader::initialize();
 
     QSettings settings;
     QString lang = settings.value(QStringLiteral("language"), QStringLiteral("zh_CN")).toString();
