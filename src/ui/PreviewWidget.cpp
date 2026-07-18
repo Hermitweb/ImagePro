@@ -270,6 +270,12 @@ void PreviewWidget::setStitchInputRects(const QVector<QRect>& rects)
         m_stitchCanvas->setInputRects(rects);
 }
 
+void PreviewWidget::setStitchHighlightedInput(int index)
+{
+    if (m_stitchCanvas && m_stitchMode)
+        m_stitchCanvas->setHighlightedIndex(index);
+}
+
 void PreviewWidget::resetStitchCanvas()
 {
     if (m_stitchCanvas)

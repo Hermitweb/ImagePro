@@ -1133,6 +1133,8 @@ void MainWindow::onImageSelected(int row)
     if (row == m_currentImageRow)
         return;
     m_currentImageRow = row;
+    if (m_currentTool == ToolType::Stitch)
+        m_previewWidget->setStitchHighlightedInput(row);
     updatePreview();
 }
 
@@ -1143,6 +1145,10 @@ void MainWindow::updatePreview(bool applyToolEffect)
         m_previewWidget->clear();
         return;
     }
+
+    // 拼接模式下始终显示拼接合成效果，点击图片列表仅用于选择/高亮，不切换单张预览。
+    if (m_currentTool == ToolType::Stitch)
+        applyToolEffect = true;
 
     const bool hasCurrentRow = m_currentImageRow >= 0 && m_currentImageRow < m_model->rowCount();
     const ImageItem* item = hasCurrentRow ? m_model->itemAt(m_currentImageRow) : nullptr;

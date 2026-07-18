@@ -78,7 +78,10 @@ private:
     QRectF mapRectToWidget(const QRect& rect) const;
     int inputIndexAt(const QPointF& imagePos) const;
 
+public:
     void setHighlightedIndex(int index);
+
+private:
     void setHoveredIndex(int index);
     void updateCursor();
     void ensurePanInBounds();

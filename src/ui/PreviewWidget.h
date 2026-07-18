@@ -42,6 +42,7 @@ public:
     bool stitchMode() const { return m_stitchMode; }
     void setStitchSynthesizedImage(const QImage& image);
     void setStitchInputRects(const QVector<QRect>& rects);
+    void setStitchHighlightedInput(int index);
     void resetStitchCanvas();
     void setStitchImageListModel(ImageListModel* model);
 
