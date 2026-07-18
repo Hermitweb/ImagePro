@@ -1157,11 +1157,11 @@ void MainWindow::updatePreview(bool applyToolEffect)
         return;
     }
 
-    // 如果前一个异步任务还在运行，直接取消并等待完成
-    if (m_previewWatcher->isRunning()) {
+    // 如果前一个异步任务还在运行，尝试取消并不再等待。
+    // QtConcurrent::run 不支持真正取消 libvips 操作，等待反而会让 UI 被挂起任务阻塞；
+    // 直接启动新任务，旧任务结果会被新 future 覆盖而忽略。
+    if (m_previewWatcher->isRunning())
         m_previewWatcher->cancel();
-        m_previewWatcher->waitForFinished();
-    }
 
     m_previewWidget->setComparisonMode(false);
 

@@ -38,9 +38,10 @@ private:
         } else {
             m_ok = true;
             // 对交互式图像处理应用而言，操作缓存会随每次预览/处理无界增长，
-            // 是虚拟内存暴涨的主要根因之一。关闭 operation / memory / file 缓存，
-            // 并限制 libvips 内部并发线程数，避免与 QtConcurrent 叠加后占用过多地址空间。
-            vips_cache_set_max(0);
+            // 是虚拟内存暴涨的主要根因之一。关闭 memory / file 缓存，限制 operation
+            // 缓存为少量条目，并限制 libvips 内部并发线程数，避免与 QtConcurrent 叠加后
+            // 占用过多地址空间或产生线程竞争。
+            vips_cache_set_max(32);
             vips_cache_set_max_mem(0);
             vips_cache_set_max_files(0);
             vips_concurrency_set(qMax(1, QThread::idealThreadCount() / 2));
