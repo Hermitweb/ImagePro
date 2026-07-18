@@ -798,7 +798,7 @@ Size: %2x%3</translation>
     <message>
         <source>Save Compressed Image</source>
         <translation>Select Output Directory&lt;/source&gt;
-        &lt;translation type="unfinished"&gt;Select Output Directory&lt;/translation&gt;
+        &lt;translation type=&quot;unfinished&quot;&gt;Select Output Directory&lt;/translation&gt;
     &lt;/message&gt;
     &lt;message&gt;
         &lt;source&gt;Save Compressed Image</translation>
@@ -818,7 +818,7 @@ Size: %2x%3</translation>
     <message>
         <source>Batch: please add images first</source>
         <translation>Save Image&lt;/source&gt;
-        &lt;translation type="unfinished"&gt;Save Image&lt;/translation&gt;
+        &lt;translation type=&quot;unfinished&quot;&gt;Save Image&lt;/translation&gt;
     &lt;/message&gt;
     &lt;message&gt;
         &lt;source&gt;Batch: please add images first</translation>
@@ -2036,7 +2036,7 @@ Size: %2x%3</translation>
     <message>
         <source>Margins:</source>
         <translation>Resolution:&lt;/source&gt;
-        &lt;translation type="unfinished"&gt;Resolution:&lt;/translation&gt;
+        &lt;translation type=&quot;unfinished&quot;&gt;Resolution:&lt;/translation&gt;
     &lt;/message&gt;
     &lt;message&gt;
         &lt;source&gt;Margins:</translation>
@@ -2068,11 +2068,11 @@ Size: %2x%3</translation>
     <message>
         <source>Preview: %1</source>
         <translation>Error&lt;/source&gt;
-        &lt;translation type="unfinished"&gt;Error&lt;/translation&gt;
+        &lt;translation type=&quot;unfinished&quot;&gt;Error&lt;/translation&gt;
     &lt;/message&gt;
     &lt;message&gt;
         &lt;source&gt;Failed to create output directory.&lt;/source&gt;
-        &lt;translation type="unfinished"&gt;Failed to create output directory.&lt;/translation&gt;
+        &lt;translation type=&quot;unfinished&quot;&gt;Failed to create output directory.&lt;/translation&gt;
     &lt;/message&gt;
     &lt;message&gt;
         &lt;source&gt;Preview: %1</translation>
@@ -2116,7 +2116,7 @@ Size: %2x%3</translation>
     <message>
         <source>e.g. {name}_{index}</source>
         <translation>Ready&lt;/source&gt;
-        &lt;translation type="unfinished"&gt;Ready&lt;/translation&gt;
+        &lt;translation type=&quot;unfinished&quot;&gt;Ready&lt;/translation&gt;
     &lt;/message&gt;
     &lt;message&gt;
         &lt;source&gt;e.g. {name}_{index}</translation>
@@ -2320,6 +2320,10 @@ Size: %2x%3</translation>
     <message>
         <source>Failed to save stitched image</source>
         <translation>Failed to save stitched image</translation>
+    </message>
+    <message>
+        <source>Stitched image too large: estimated %1 pixels (limit %2). Please reduce image count, resolution, or enable downscaling.</source>
+        <translation>Stitched image too large: estimated %1 pixels (limit %2). Please reduce image count, resolution, or enable downscaling.</translation>
     </message>
 </context>
 <context>

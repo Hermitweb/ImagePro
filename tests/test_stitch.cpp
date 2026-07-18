@@ -1,5 +1,6 @@
 #include "core/StitchEngine.h"
 #include "utils/ImageLoader.h"
+#include <QPainter>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QImage>
@@ -15,6 +16,7 @@ private slots:
     void testStitchGrid();
     void testStitchPreview();
     void testStitchPreviewMaxLongEdge();
+    void testStitchAutoCropEdges();
 
 private:
     QString createTestImage(const QString& path, const QColor& color);
@@ -127,6 +129,41 @@ void TestStitch::testStitchPreviewMaxLongEdge()
     QImage preview = StitchEngine::preview(QStringList() << path, settings, maxLongEdge);
     QVERIFY(!preview.isNull());
     QCOMPARE(qMax(preview.width(), preview.height()), maxLongEdge);
+}
+
+void TestStitch::testStitchAutoCropEdges()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    // 构造带白边的图片，验证 autoCropEdges 在 libvips 路径下仍能裁剪
+    QImage image(120, 100, QImage::Format_RGB32);
+    image.fill(Qt::white);
+    QPainter painter(&image);
+    painter.fillRect(10, 10, 100, 80, Qt::red);
+    painter.end();
+
+    QString path = dir.path() + QStringLiteral("/a.png");
+    QVERIFY(ImageLoader::saveImage(image, path));
+
+    StitchSettings settings;
+    settings.direction = StitchSettings::Horizontal;
+    settings.spacing = 0;
+    settings.autoCropEdges = true;
+    settings.outputDir = dir.path();
+
+    StitchEngine engine;
+    engine.setSettings(settings);
+
+    bool ok = false;
+    QString output = engine.process(QStringList() << path, &ok);
+    QVERIFY(ok);
+    QVERIFY(QFile::exists(output));
+
+    QImage stitched = ImageLoader::loadImage(output);
+    QVERIFY(!stitched.isNull());
+    QCOMPARE(stitched.width(), 100);
+    QCOMPARE(stitched.height(), 80);
 }
 
 QTEST_MAIN(TestStitch)

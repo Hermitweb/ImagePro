@@ -1047,11 +1047,12 @@ QImage StitchCanvas::loadOriginalImage(int index) const
     if (m_model && index >= 0 && index < m_model->rowCount()) {
         const ImageItem* item = m_model->itemAt(index);
         if (item) {
-            QImage img = item->loadImage();
+            // Spotlight 窗口尺寸有限，不需要加载全分辨率原图。
+            QImage img = item->loadPreviewImage(QSize(4096, 4096));
             if (!img.isNull())
                 return img;
             if (!item->filePath().isEmpty())
-                return ImageLoader::loadImage(item->filePath());
+                return ImageLoader::loadPreview(item->filePath(), QSize(4096, 4096));
         }
     }
 

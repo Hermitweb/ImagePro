@@ -1166,7 +1166,13 @@ void MainWindow::updatePreview(bool applyToolEffect)
     input.previewSize = m_previewWidget->viewportSize();
     if (input.previewSize.isEmpty())
         input.previewSize = QSize(1280, 720);
+    // 限制预览 oversampling，避免大窗口下生成远超屏幕的巨型缓冲。
     input.previewSize *= 2;
+    constexpr int kMaxPreviewLongEdge = 3840;
+    if (qMax(input.previewSize.width(), input.previewSize.height()) > kMaxPreviewLongEdge) {
+        input.previewSize = input.previewSize.scaled(kMaxPreviewLongEdge, kMaxPreviewLongEdge,
+                                                      Qt::KeepAspectRatio);
+    }
     input.applyToolEffect = applyToolEffect;
     input.stitchSettings = m_propertyPanel->stitchSettings();
     input.compressSettings = m_propertyPanel->compressSettings();

@@ -1,4 +1,5 @@
-<?xml version='1.0' encoding='utf-8'?>
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE TS>
 <TS version="2.1" language="zh_CN">
 <context>
     <name>QObject</name>
@@ -410,7 +411,7 @@
     </message>
     <message>
         <source>&amp;PDF</source>
-        <translation type="unfinished" />
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Image Info</source>
@@ -472,26 +473,26 @@ Size: %2x%3</source>
     </message>
     <message>
         <source>Batch: please add images first</source>
-        <translation type="unfinished" />
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Batch: please select an output directory</source>
-        <translation type="unfinished" />
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Batch: failed to create output directory %1</source>
-        <translation type="unfinished" />
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Batch: unsupported target tool</source>
-        <translation type="unfinished" />
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
     <name>yingtu::PdfEngine</name>
     <message>
         <source>No images to export.</source>
-        <translation type="unfinished" />
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -1164,7 +1165,7 @@ Size: %2x%3</source>
     </message>
     <message>
         <source> [needs %1]</source>
-        <translation type="unfinished" />
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Error</source>
@@ -1184,7 +1185,7 @@ Size: %2x%3</source>
     </message>
     <message>
         <source>Spacing is out of range</source>
-        <translation type="unfinished" />
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Output directory is empty</source>
@@ -1200,15 +1201,15 @@ Size: %2x%3</source>
     </message>
     <message>
         <source>Output path is too long</source>
-        <translation type="unfinished" />
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>File name template is empty</source>
-        <translation type="unfinished" />
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Image widths are inconsistent</source>
-        <translation type="unfinished" />
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Ready</source>
@@ -1288,15 +1289,15 @@ Size: %2x%3</source>
     <name>yingtu::StitchCanvas</name>
     <message>
         <source>No image</source>
-        <translation type="unfinished" />
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>x=%1, y=%2%3</source>
-        <translation type="unfinished" />
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>%1 @%2x</source>
-        <translation type="unfinished" />
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>输入图 %1：%2×%3</source>
@@ -1352,6 +1353,10 @@ Size: %2x%3</source>
     <message>
         <source>Failed to save stitched image</source>
         <translation>保存拼接图失败</translation>
+    </message>
+    <message>
+        <source>Stitched image too large: estimated %1 pixels (limit %2). Please reduce image count, resolution, or enable downscaling.</source>
+        <translation>拼接图过大：估算 %1 像素（限制 %2）。请减少图片数量、降低分辨率或启用缩放。</translation>
     </message>
 </context>
 <context>

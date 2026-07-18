@@ -94,6 +94,7 @@ static QImage cropWhiteEdges(const QImage& source, int threshold = 250)
 
 static VipsImage* loadVipsImage(const QString& path)
 {
+    // SEQUENTIAL：拼接中每张图只读取一次；全局 operation/memory/file cache 已禁用。
     return vips_image_new_from_file(path.toUtf8().constData(),
                                     "access", VIPS_ACCESS_SEQUENTIAL,
                                     nullptr);
@@ -394,6 +395,66 @@ static void freeVipsImageInfos(QList<VipsImageInfo>& infos)
     infos.clear();
 }
 
+// 估算 Stitch 最终输出像素数，用于在分配巨大画布前拒绝危险操作。
+static qint64 estimateOutputPixels(const QStringList& filePaths, const StitchSettings& settings)
+{
+    QList<QSize> sizes;
+    sizes.reserve(filePaths.size());
+    for (const QString& path : filePaths) {
+        ImageInfo info = ImageLoader::loadInfo(path);
+        if (info.valid)
+            sizes.append(QSize(info.width, info.height));
+    }
+
+    const int n = sizes.size();
+    if (n == 0)
+        return 0;
+
+    if (settings.direction == StitchSettings::Horizontal) {
+        int maxH = 0;
+        qint64 totalW = 0;
+        for (const QSize& s : sizes) {
+            maxH = qMax(maxH, s.height());
+            totalW += s.width();
+        }
+        if (settings.uniformHeight && maxH > 0) {
+            totalW = 0;
+            for (const QSize& s : sizes)
+                totalW += qRound(s.width() * double(maxH) / s.height());
+        }
+        totalW += qint64(n - 1) * settings.spacing;
+        return totalW * maxH;
+    }
+
+    if (settings.direction == StitchSettings::Vertical) {
+        int maxW = 0;
+        qint64 totalH = 0;
+        for (const QSize& s : sizes) {
+            maxW = qMax(maxW, s.width());
+            totalH += s.height();
+        }
+        if (settings.uniformWidth && maxW > 0) {
+            totalH = 0;
+            for (const QSize& s : sizes)
+                totalH += qRound(s.height() * double(maxW) / s.width());
+        }
+        totalH += qint64(n - 1) * settings.spacing;
+        return maxW * totalH;
+    }
+
+    // Grid
+    int maxW = 0, maxH = 0;
+    for (const QSize& s : sizes) {
+        maxW = qMax(maxW, s.width());
+        maxH = qMax(maxH, s.height());
+    }
+    qint64 totalW = qint64(settings.gridColumns) * maxW
+                    + qint64(settings.gridColumns - 1) * settings.spacing;
+    qint64 totalH = qint64(settings.gridRows) * maxH
+                    + qint64(settings.gridRows - 1) * settings.spacing;
+    return totalW * totalH;
+}
+
 static QImage vipsStitchPreview(const QStringList& filePaths, const StitchSettings& settings,
                                  int maxLongEdge)
 {
@@ -451,13 +512,39 @@ QString StitchEngine::process(const QStringList& filePaths, bool* ok)
         outputPath = FileUtils::generateUniqueOutputPath(dir, m_settings.baseName, suffix);
     }
 
+    // 输出尺寸安全阈值：在分配画布前拒绝会导致虚拟内存暴涨的危险操作。
+    constexpr qint64 kMaxOutputPixels = 1'000'000'000LL; // 约 4GB ARGB
+    const qint64 estimatedPixels = estimateOutputPixels(filePaths, m_settings);
+    if (estimatedPixels > kMaxOutputPixels) {
+        emit error(tr("Stitched image too large: estimated %1 pixels (limit %2). "
+                      "Please reduce image count, resolution, or enable downscaling.")
+                       .arg(estimatedPixels).arg(kMaxOutputPixels));
+        return QString();
+    }
+
 #ifdef USE_LIBVIPS
-    if (!m_settings.removeWhiteEdges && !m_settings.autoCropEdges) {
-        if (vipsStitchProcess(filePaths, m_settings, outputPath)) {
-            if (ok) *ok = true;
-            emit finished(outputPath);
-            return outputPath;
+    // removeWhiteEdges 需要对单张输入图做白边裁剪，仍走 QImage 路径；
+    // autoCropEdges 只需对最终结果裁剪，先走 libvips 拼接再转 QImage 裁剪；
+    // 正常情况直接走 libvips 写出文件，不经过 QImage，内存最优。
+    if (!m_settings.removeWhiteEdges) {
+        if (!m_settings.autoCropEdges) {
+            if (vipsStitchProcess(filePaths, m_settings, outputPath)) {
+                if (ok) *ok = true;
+                emit finished(outputPath);
+                return outputPath;
+            }
+        } else {
+            QImage result = vipsStitchPreview(filePaths, m_settings, 0);
+            if (!result.isNull()) {
+                result = cropWhiteEdges(result);
+                if (ImageLoader::saveImage(result, outputPath, m_settings.outputFormat, m_settings.quality)) {
+                    if (ok) *ok = true;
+                    emit finished(outputPath);
+                    return outputPath;
+                }
+            }
         }
+        // libvips 路径失败时回退到 QImage 路径
     }
 #endif
 

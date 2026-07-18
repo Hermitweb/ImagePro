@@ -244,6 +244,9 @@ ZH_MAP = {
     "No images to stitch": "没有可拼接的图片",
     "Failed to generate stitched image": "生成拼接图失败",
     "Failed to save stitched image": "保存拼接图失败",
+    "Stitched image too large: estimated %1 pixels (limit %2). "
+    "Please reduce image count, resolution, or enable downscaling.":
+        "拼接图过大：估算 %1 像素（限制 %2）。请减少图片数量、降低分辨率或启用缩放。",
     "Remove": "移除",
     "Stitch": "拼接",
     "Edit": "编辑",

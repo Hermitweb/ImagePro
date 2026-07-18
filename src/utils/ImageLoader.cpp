@@ -4,6 +4,7 @@
 #include <QFileInfo>
 #include <QImageReader>
 #include <QPixmap>
+#include <QThread>
 #include <QtMath>
 
 #ifdef USE_LIBVIPS
@@ -32,10 +33,18 @@ public:
 private:
     VipsInitHelper()
     {
-        if (VIPS_INIT("ImagePro"))
+        if (VIPS_INIT("ImagePro")) {
             m_ok = false;
-        else
+        } else {
             m_ok = true;
+            // 对交互式图像处理应用而言，操作缓存会随每次预览/处理无界增长，
+            // 是虚拟内存暴涨的主要根因之一。关闭 operation / memory / file 缓存，
+            // 并限制 libvips 内部并发线程数，避免与 QtConcurrent 叠加后占用过多地址空间。
+            vips_cache_set_max(0);
+            vips_cache_set_max_mem(0);
+            vips_cache_set_max_files(0);
+            vips_concurrency_set(qMax(1, QThread::idealThreadCount() / 2));
+        }
     }
     ~VipsInitHelper()
     {
@@ -202,6 +211,7 @@ ImageInfo ImageLoader::loadInfo(const QString& filePath)
     }
     info.fileSize = fi.size();
 
+    // SEQUENTIAL：单遍读取；全局 operation/memory/file cache 已禁用，避免 tile cache 累积。
     VipsImage* image = vips_image_new_from_file(filePath.toUtf8().constData(),
         "access", VIPS_ACCESS_SEQUENTIAL,
         nullptr);
@@ -223,6 +233,7 @@ QImage ImageLoader::loadImage(const QString& filePath)
 {
     ensureVipsInitialized();
 
+    // SEQUENTIAL：单遍读取；全局 operation/memory/file cache 已禁用。
     VipsImage* image = vips_image_new_from_file(filePath.toUtf8().constData(),
         "access", VIPS_ACCESS_SEQUENTIAL,
         nullptr);
@@ -332,6 +343,7 @@ bool ImageLoader::convertFile(const QString& inputPath, const QString& outputPat
 {
     ensureVipsInitialized();
 
+    // SEQUENTIAL：单遍读取；全局 operation/memory/file cache 已禁用。
     VipsImage* image = vips_image_new_from_file(inputPath.toUtf8().constData(),
         "access", VIPS_ACCESS_SEQUENTIAL,
         nullptr);
@@ -352,6 +364,7 @@ bool ImageLoader::resizeFile(const QString& inputPath, const QString& outputPath
     if (targetSize.isEmpty())
         return convertFile(inputPath, outputPath, format, quality);
 
+    // SEQUENTIAL：单遍读取；全局 operation/memory/file cache 已禁用。
     VipsImage* image = vips_image_new_from_file(inputPath.toUtf8().constData(),
         "access", VIPS_ACCESS_SEQUENTIAL,
         nullptr);
@@ -402,6 +415,7 @@ bool ImageLoader::convertToSRgbFile(const QString& inputPath, const QString& out
 {
     ensureVipsInitialized();
 
+    // SEQUENTIAL：单遍读取；全局 operation/memory/file cache 已禁用。
     VipsImage* image = vips_image_new_from_file(inputPath.toUtf8().constData(),
         "access", VIPS_ACCESS_SEQUENTIAL,
         nullptr);
@@ -438,6 +452,7 @@ bool ImageLoader::compressToTargetSize(const QString& inputPath, const QString& 
             return false;
         }
     } else {
+        // SEQUENTIAL：单遍读取；全局 operation/memory/file cache 已禁用。
         image = vips_image_new_from_file(inputPath.toUtf8().constData(),
             "access", VIPS_ACCESS_SEQUENTIAL,
             nullptr);
