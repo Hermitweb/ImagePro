@@ -17,6 +17,10 @@ find_package(Qt5 REQUIRED COMPONENTS Widgets Concurrent Svg Test LinguistTools)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(VIPS REQUIRED vips-cpp)
 
+# 启用 libvips 优化路径：流式加载、缩略图、格式转换均走 libvips，
+# 避免 QImage 全图加载导致大内存占用。
+add_compile_definitions(USE_LIBVIPS)
+
 set(LIB_SOURCES
     src/app/ApplicationState.cpp
     src/app/ImageProApp.cpp
@@ -164,11 +168,19 @@ option(BUILD_TESTS "Build test executables" OFF)
 if(BUILD_TESTS)
     enable_testing()
 
+    # libvips 在 Windows 下根据可执行文件位置推导模块目录时，
+    # 测试程序位于 build 目录而非安装目录，可能定位到不存在的路径并触发崩溃。
+    # 为测试固定一个空的模块目录，禁用可选模块加载，避免 ctest 下出现 SEGFAULT。
+    set(VIPS_EMPTY_MODULE_DIR "${CMAKE_CURRENT_BINARY_DIR}/vips-modules-empty")
+    file(MAKE_DIRECTORY "${VIPS_EMPTY_MODULE_DIR}")
+
     function(add_imagepro_test NAME SOURCE)
         add_executable(${NAME} ${SOURCE})
         set_target_properties(${NAME} PROPERTIES AUTOMOC ON)
         target_link_libraries(${NAME} PRIVATE ImageProLib)
         add_test(NAME ${NAME} COMMAND ${NAME})
+        set_tests_properties(${NAME} PROPERTIES
+            ENVIRONMENT "VIPS_MODULE_PATH=${VIPS_EMPTY_MODULE_DIR}")
     endfunction()
 
     add_imagepro_test(test_save tests/test_save.cpp)

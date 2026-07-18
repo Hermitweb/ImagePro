@@ -148,7 +148,9 @@ static PreviewTaskResult generatePreview(const PreviewTaskInput& input)
 
     switch (input.tool) {
     case ToolType::Stitch: {
-        result.image = StitchEngine::preview(input.allFilePaths, input.stitchSettings);
+        const int stitchMaxLongEdge = qMax(input.previewSize.width(), input.previewSize.height());
+        result.image = StitchEngine::preview(input.allFilePaths, input.stitchSettings,
+                                              stitchMaxLongEdge);
         const int count = input.allFilePaths.size();
         if (count > 0 && !result.image.isNull()) {
             const int w = result.image.width();
@@ -1216,8 +1218,10 @@ void MainWindow::updateStatusBar()
         });
         QStringList paths = m_model->filePaths();
         StitchSettings settings = m_propertyPanel->stitchSettings();
-        m_stitchSizeWatcher->setFuture(QtConcurrent::run([paths, settings]() -> QSize {
-            QImage preview = StitchEngine::preview(paths, settings);
+        // 状态栏尺寸估算只需要一个受限预览，避免加载完整大图
+        const int statusMaxLongEdge = 800;
+        m_stitchSizeWatcher->setFuture(QtConcurrent::run([paths, settings, statusMaxLongEdge]() -> QSize {
+            QImage preview = StitchEngine::preview(paths, settings, statusMaxLongEdge);
             return preview.isNull() ? QSize() : preview.size();
         }));
     } else if (m_currentImageRow >= 0 && m_currentImageRow < m_model->rowCount()) {

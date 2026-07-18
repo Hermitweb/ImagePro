@@ -39,7 +39,10 @@ public:
     // 执行拼接，返回输出文件路径
     QString process(const QStringList& filePaths, bool* ok = nullptr);
 
-    static QImage preview(const QStringList& filePaths, const StitchSettings& settings);
+    // maxLongEdge 限制预览时长边的最大像素，避免加载完整大图导致内存爆炸。
+    // 传 0 表示不限制（仅用于最终输出流程）。
+    static QImage preview(const QStringList& filePaths, const StitchSettings& settings,
+                          int maxLongEdge = 0);
 
 signals:
     void progress(int percent);

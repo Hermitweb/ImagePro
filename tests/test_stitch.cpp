@@ -14,6 +14,7 @@ private slots:
     void testStitchVertical();
     void testStitchGrid();
     void testStitchPreview();
+    void testStitchPreviewMaxLongEdge();
 
 private:
     QString createTestImage(const QString& path, const QColor& color);
@@ -105,6 +106,27 @@ void TestStitch::testStitchPreview()
 
     QImage preview = StitchEngine::preview(inputs, settings);
     QVERIFY(!preview.isNull());
+}
+
+void TestStitch::testStitchPreviewMaxLongEdge()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    // 构造较大图片，验证 preview 的长边限制能避免加载完整分辨率
+    QImage image(500, 250, QImage::Format_RGB32);
+    image.fill(Qt::red);
+    QString path = dir.path() + QStringLiteral("/a.png");
+    QVERIFY(ImageLoader::saveImage(image, path));
+
+    StitchSettings settings;
+    settings.direction = StitchSettings::Horizontal;
+    settings.spacing = 0;
+
+    const int maxLongEdge = 200;
+    QImage preview = StitchEngine::preview(QStringList() << path, settings, maxLongEdge);
+    QVERIFY(!preview.isNull());
+    QCOMPARE(qMax(preview.width(), preview.height()), maxLongEdge);
 }
 
 QTEST_MAIN(TestStitch)

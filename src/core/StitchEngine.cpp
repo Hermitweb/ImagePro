@@ -187,38 +187,54 @@ struct VipsImageInfo {
     int displayHeight = 0;
 };
 
+static QSize limitLongEdge(const QSize& orig, int maxLongEdge)
+{
+    if (maxLongEdge <= 0)
+        return orig;
+    int longEdge = qMax(orig.width(), orig.height());
+    if (longEdge <= maxLongEdge)
+        return orig;
+    return orig.scaled(maxLongEdge, maxLongEdge, Qt::KeepAspectRatio);
+}
+
 static QList<VipsImageInfo> loadAndPrepareImages(const QStringList& filePaths,
                                                   const StitchSettings& settings,
                                                   int maxLongEdge)
 {
     QList<VipsImageInfo> infos;
 
-    // 先统一获取原始尺寸，计算目标尺寸
+    // 先统一获取原始尺寸，并应用 maxLongEdge 限制
     QList<QSize> originalSizes;
+    QList<QSize> displaySizes;
     for (const QString& path : filePaths) {
         ImageInfo info = ImageLoader::loadInfo(path);
-        if (info.valid)
-            originalSizes.append(QSize(info.width, info.height));
-        else
+        if (info.valid) {
+            QSize orig(info.width, info.height);
+            originalSizes.append(orig);
+            displaySizes.append(limitLongEdge(orig, maxLongEdge));
+        } else {
             originalSizes.append(QSize());
+            displaySizes.append(QSize());
+        }
     }
 
+    // 在已限制后的尺寸上计算统一目标尺寸
     int targetCellW = 0;
     int targetCellH = 0;
     if (settings.direction == StitchSettings::Grid) {
-        for (const QSize& s : originalSizes) {
+        for (const QSize& s : displaySizes) {
             if (!s.isEmpty()) {
                 targetCellW = qMax(targetCellW, s.width());
                 targetCellH = qMax(targetCellH, s.height());
             }
         }
     } else if (settings.direction == StitchSettings::Vertical && settings.uniformWidth) {
-        for (const QSize& s : originalSizes) {
+        for (const QSize& s : displaySizes) {
             if (!s.isEmpty())
                 targetCellW = qMax(targetCellW, s.width());
         }
     } else if (settings.direction == StitchSettings::Horizontal && settings.uniformHeight) {
-        for (const QSize& s : originalSizes) {
+        for (const QSize& s : displaySizes) {
             if (!s.isEmpty())
                 targetCellH = qMax(targetCellH, s.height());
         }
@@ -230,33 +246,26 @@ static QList<VipsImageInfo> loadAndPrepareImages(const QStringList& filePaths,
             continue;
 
         const QSize orig = originalSizes.at(i);
-        if (orig.isEmpty()) {
+        const QSize limited = displaySizes.at(i);
+        if (orig.isEmpty() || limited.isEmpty()) {
             g_object_unref(img);
             continue;
         }
 
-        int displayW = orig.width();
-        int displayH = orig.height();
-
-        // 预览模式下限制长边
-        if (maxLongEdge > 0) {
-            int longEdge = qMax(displayW, displayH);
-            if (longEdge > maxLongEdge) {
-                double scale = static_cast<double>(maxLongEdge) / longEdge;
-                displayW = qRound(displayW * scale);
-                displayH = qRound(displayH * scale);
-            }
-        }
+        int displayW = limited.width();
+        int displayH = limited.height();
 
         VipsImage* scaled = img;
         if (settings.direction == StitchSettings::Vertical && settings.uniformWidth && targetCellW > 0) {
-            VipsImage* tmp = resizeVipsImage(img, targetCellW, qRound(orig.height() * (static_cast<double>(targetCellW) / orig.width())), true);
+            VipsImage* tmp = resizeVipsImage(img, targetCellW,
+                qRound(orig.height() * (static_cast<double>(targetCellW) / orig.width())), true);
             if (tmp) {
                 g_object_unref(scaled);
                 scaled = tmp;
             }
         } else if (settings.direction == StitchSettings::Horizontal && settings.uniformHeight && targetCellH > 0) {
-            VipsImage* tmp = resizeVipsImage(img, qRound(orig.width() * (static_cast<double>(targetCellH) / orig.height())), targetCellH, true);
+            VipsImage* tmp = resizeVipsImage(img,
+                qRound(orig.width() * (static_cast<double>(targetCellH) / orig.height())), targetCellH, true);
             if (tmp) {
                 g_object_unref(scaled);
                 scaled = tmp;
@@ -267,7 +276,7 @@ static QList<VipsImageInfo> loadAndPrepareImages(const QStringList& filePaths,
                 g_object_unref(scaled);
                 scaled = tmp;
             }
-        } else if (maxLongEdge > 0) {
+        } else if (maxLongEdge > 0 && (orig.width() != displayW || orig.height() != displayH)) {
             VipsImage* tmp = resizeVipsImage(img, displayW, displayH, true);
             if (tmp) {
                 g_object_unref(scaled);
@@ -385,9 +394,10 @@ static void freeVipsImageInfos(QList<VipsImageInfo>& infos)
     infos.clear();
 }
 
-static QImage vipsStitchPreview(const QStringList& filePaths, const StitchSettings& settings)
+static QImage vipsStitchPreview(const QStringList& filePaths, const StitchSettings& settings,
+                                 int maxLongEdge)
 {
-    QList<VipsImageInfo> infos = loadAndPrepareImages(filePaths, settings, 800);
+    QList<VipsImageInfo> infos = loadAndPrepareImages(filePaths, settings, maxLongEdge);
     VipsImage* stitched = stitchVipsImages(infos, settings);
     freeVipsImageInfos(infos);
 
@@ -469,11 +479,12 @@ QString StitchEngine::process(const QStringList& filePaths, bool* ok)
     return outputPath;
 }
 
-QImage StitchEngine::preview(const QStringList& filePaths, const StitchSettings& settings)
+QImage StitchEngine::preview(const QStringList& filePaths, const StitchSettings& settings,
+                              int maxLongEdge)
 {
 #ifdef USE_LIBVIPS
     if (!settings.removeWhiteEdges) {
-        QImage img = vipsStitchPreview(filePaths, settings);
+        QImage img = vipsStitchPreview(filePaths, settings, maxLongEdge);
         if (!img.isNull())
             return img;
     }
@@ -482,7 +493,18 @@ QImage StitchEngine::preview(const QStringList& filePaths, const StitchSettings&
     QList<QImage> images;
 
     for (const QString& path : filePaths) {
-        QImage img = ImageLoader::loadImage(path);
+        QImage img;
+        if (maxLongEdge > 0) {
+            ImageInfo info = ImageLoader::loadInfo(path);
+            if (info.valid) {
+                QSize orig(info.width, info.height);
+                QSize limited = limitLongEdge(orig, maxLongEdge);
+                if (limited != orig)
+                    img = ImageLoader::loadPreview(path, limited);
+            }
+        }
+        if (img.isNull())
+            img = ImageLoader::loadImage(path);
         if (img.isNull())
             continue;
         if (settings.removeWhiteEdges)
