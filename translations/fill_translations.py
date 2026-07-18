@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Fill Qt translation .ts files for ImagePro."""
+"""Fill Qt translation .ts files for ImagePro using proper XML parsing."""
 
-import re
-import sys
 from pathlib import Path
+from xml.etree import ElementTree as ET
 
 # Source text -> Chinese translation
 ZH_MAP = {
@@ -204,7 +203,6 @@ ZH_MAP = {
     "Semi Fill": "半透明填充",
     "Solid Fill": "实心填充",
     "Fill Style:": "填充样式：",
-    "Font Family:": "字体：",
     "Bold": "粗体",
     "Text Color:": "文字颜色：",
     "Select Text Color": "选择文字颜色",
@@ -267,41 +265,29 @@ ZH_MAP = {
 }
 
 
+def _fill_ts(ts_path: Path, translation_map: dict):
+    tree = ET.parse(ts_path)
+    root = tree.getroot()
+    for message in root.iter("message"):
+        source_elem = message.find("source")
+        trans_elem = message.find("translation")
+        if source_elem is None or trans_elem is None:
+            continue
+        source = source_elem.text or ""
+        # 移除旧 type="unfinished" 属性
+        if "type" in trans_elem.attrib:
+            del trans_elem.attrib["type"]
+        trans = translation_map.get(source, source)
+        trans_elem.text = trans
+    tree.write(ts_path, encoding="utf-8", xml_declaration=True)
+
+
 def fill_zh(ts_path: Path):
-    text = ts_path.read_text(encoding="utf-8")
-
-    def replace_message(match: re.Match) -> str:
-        source = match.group(1)
-        trans = ZH_MAP.get(source, source)
-        # Escape XML entities in translation
-        trans = trans.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        return f"<source>{source}</source>\n        <translation>{trans}</translation>"
-
-    text = re.sub(
-        r"<source>(.*?)</source>\s*<translation type=\"unfinished\"></translation>",
-        replace_message,
-        text,
-        flags=re.DOTALL,
-    )
-    ts_path.write_text(text, encoding="utf-8")
+    _fill_ts(ts_path, ZH_MAP)
 
 
 def fill_en(ts_path: Path):
-    text = ts_path.read_text(encoding="utf-8")
-
-    def replace_message(match: re.Match) -> str:
-        source = match.group(1)
-        trans = source
-        trans = trans.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        return f"<source>{source}</source>\n        <translation>{trans}</translation>"
-
-    text = re.sub(
-        r"<source>(.*?)</source>\s*<translation type=\"unfinished\"></translation>",
-        replace_message,
-        text,
-        flags=re.DOTALL,
-    )
-    ts_path.write_text(text, encoding="utf-8")
+    _fill_ts(ts_path, {})
 
 
 if __name__ == "__main__":
