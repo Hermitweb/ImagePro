@@ -166,6 +166,7 @@ if(BUILD_TESTS)
 
     function(add_imagepro_test NAME SOURCE)
         add_executable(${NAME} ${SOURCE})
+        set_target_properties(${NAME} PROPERTIES AUTOMOC ON)
         target_link_libraries(${NAME} PRIVATE ImageProLib)
         add_test(NAME ${NAME} COMMAND ${NAME})
     endfunction()
