@@ -167,13 +167,15 @@ VipsImage* ImageLoader::qImageToVipsImage(const QImage& image)
         break;
     }
 
-    VipsImage* mem = vips_image_new_from_memory(buffer.constData(), buffer.size(),
-                                                width, height, bands,
-                                                VIPS_FORMAT_UCHAR);
+    // 使用 _copy 版本让 libvips 立即复制并持有缓冲，避免局部 QByteArray 释放后
+    // 出现 use-after-free（vips_copy 对内存源图像可能是惰性引用，不保证深拷贝）。
+    VipsImage* mem = vips_image_new_from_memory_copy(buffer.constData(), buffer.size(),
+                                                     width, height, bands,
+                                                     VIPS_FORMAT_UCHAR);
     if (!mem)
         return nullptr;
 
-    // 复制一份，使 VipsImage 不再依赖局部 QByteArray
+    // 设置正确的色彩空间解释
     VipsImage* copied = nullptr;
     if (vips_copy(mem, &copied,
                   "interpretation", interpretation,
