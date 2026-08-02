@@ -68,6 +68,7 @@ jobs:
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
 
       - name: Setup MSYS2
+        id: msys
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
@@ -114,9 +115,14 @@ jobs:
 
       - name: Assemble deploy directory
         shell: pwsh
+        env:
+          MSYS2_LOC: ${{ steps.msys.outputs.msys2-location }}
         run: |
-          $env:PATH = "C:/msys64/mingw64/bin;$env:PATH"
-          ./deploy.ps1 -BuildDir build -DeployDir deploy -MsysRoot C:/msys64 -SourceRoot .
+          # setup-msys2 的安装位置不固定（非 C:/msys64），用其输出定位 mingw64/bin。
+          $msys = $env:MSYS2_LOC
+          Write-Host "MSYS2 location: $msys"
+          $env:PATH = "$msys/mingw64/bin;$env:PATH"
+          ./deploy.ps1 -BuildDir build -DeployDir deploy -MsysRoot $msys -SourceRoot .
 
       - name: Install vpk
         shell: pwsh
