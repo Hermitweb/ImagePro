@@ -29,7 +29,15 @@ New-Item -ItemType Directory -Force -Path $DeployDir | Out-Null
 # 2. 主程序 + Qt 依赖
 Write-Host "==> Copying ImagePro.exe and Qt dependencies..."
 Copy-Item "$BuildDir/ImagePro.exe" $DeployDir
-& "$mingwBin/windeployqt-qt5.exe" "$DeployDir/ImagePro.exe" `
+
+# windeployqt 在不同 MSYS2 版本中命名不一（windeployqt-qt5.exe / windeployqt.exe）。
+$windeployqt = @("$mingwBin/windeployqt-qt5.exe", "$mingwBin/windeployqt.exe") |
+    Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $windeployqt) {
+    throw "windeployqt not found in $mingwBin (install mingw-w64-x86_64-qt5-tools)."
+}
+Write-Host "==> Using windeployqt: $windeployqt"
+& $windeployqt "$DeployDir/ImagePro.exe" `
     --release --no-translations --no-compiler-runtime --no-opengl-sw --dir $DeployDir
 
 # 3. 编译器运行时与 libvips
