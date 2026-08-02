@@ -91,6 +91,8 @@ private slots:
     void onStitchCreateOutputDir();
     void onStitchFileNameTemplateChanged();
     void onStitchOutputFormatChanged(int index);
+    void onStitchDirectionChanged(int index);
+    void onStitchBackgroundChanged(int index);
 
     void onConvertEstimateTimeout();
     void onConvertFormatChanged(int index);
@@ -145,6 +147,7 @@ private:
     void refreshStitchPresetAvailability();
     void rebuildStitchPresetDropdown();
     QString stitchPresetDisplayText(const StitchPreset& preset) const;
+    void updateStitchControlVisibility();
 
     void addOutputHistory(const QString& path);
     void saveUiState();
@@ -170,11 +173,13 @@ private:
     QComboBox* m_stitchBackground = nullptr;
     QPushButton* m_stitchBgColorBtn = nullptr;
     QLabel* m_stitchBgColorLabel = nullptr;
+    QWidget* m_stitchBgColorRowWidget = nullptr;
     QCheckBox* m_stitchUniformWidth = nullptr;
     QCheckBox* m_stitchRemoveWhiteEdges = nullptr;
     QCheckBox* m_stitchAutoCropEdges = nullptr;
     QSpinBox* m_stitchGridRows = nullptr;
     QSpinBox* m_stitchGridColumns = nullptr;
+    QWidget* m_stitchGridRowWidget = nullptr;
     QComboBox* m_stitchOutputFormat = nullptr;
     QSlider* m_stitchQuality = nullptr;
 

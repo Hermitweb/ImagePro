@@ -155,51 +155,9 @@ static PreviewTaskResult generatePreview(const PreviewTaskInput& input)
     switch (input.tool) {
     case ToolType::Stitch: {
         const int stitchMaxLongEdge = qMax(input.previewSize.width(), input.previewSize.height());
+        // 引擎直接返回每张输入图在拼接图中的真实矩形，无需在 UI 层等分猜测。
         result.image = StitchEngine::preview(input.allFilePaths, input.stitchSettings,
-                                              stitchMaxLongEdge);
-        const int count = input.allFilePaths.size();
-        if (count > 0 && !result.image.isNull()) {
-            const int w = result.image.width();
-            const int h = result.image.height();
-            switch (input.stitchSettings.direction) {
-            case StitchSettings::Vertical: {
-                const int rh = h / count;
-                for (int i = 0; i < count; ++i) {
-                    const int y = i * rh;
-                    const int y2 = (i == count - 1) ? h : (i + 1) * rh;
-                    result.stitchInputRects.append(QRect(0, y, w, y2 - y));
-                }
-                break;
-            }
-            case StitchSettings::Horizontal: {
-                const int rw = w / count;
-                for (int i = 0; i < count; ++i) {
-                    const int x = i * rw;
-                    const int x2 = (i == count - 1) ? w : (i + 1) * rw;
-                    result.stitchInputRects.append(QRect(x, 0, x2 - x, h));
-                }
-                break;
-            }
-            case StitchSettings::Grid: {
-                const int rows = qMax(1, input.stitchSettings.gridRows);
-                const int cols = qMax(1, input.stitchSettings.gridColumns);
-                const int cw = w / cols;
-                const int rh = h / rows;
-                for (int r = 0; r < rows; ++r) {
-                    for (int c = 0; c < cols; ++c) {
-                        if (result.stitchInputRects.size() >= count)
-                            break;
-                        const int x = c * cw;
-                        const int x2 = (c == cols - 1) ? w : (c + 1) * cw;
-                        const int y = r * rh;
-                        const int y2 = (r == rows - 1) ? h : (r + 1) * rh;
-                        result.stitchInputRects.append(QRect(x, y, x2 - x, y2 - y));
-                    }
-                }
-                break;
-            }
-            }
-        }
+                                              stitchMaxLongEdge, &result.stitchInputRects);
         break;
     }
     case ToolType::Compress: {
@@ -1289,22 +1247,10 @@ void MainWindow::updateStatusBar()
     m_statusBar->setTotalFileSize(totalSize);
 
     if (m_currentTool == ToolType::Stitch && m_model->rowCount() > 0) {
-        // 拼接输出尺寸可能涉及加载所有图片，放到后台计算避免阻塞状态栏刷新
-        if (m_stitchSizeWatcher->isRunning())
-            m_stitchSizeWatcher->cancel();
-        disconnect(m_stitchSizeWatcher, nullptr, nullptr, nullptr);
-        connect(m_stitchSizeWatcher, &QFutureWatcher<QSize>::finished, this, [this]() {
-            if (!m_stitchSizeWatcher->isCanceled())
-                m_statusBar->setOutputSize(m_stitchSizeWatcher->result());
-        });
+        // 仅读取图片头信息估算输出尺寸，不加载像素数据，远快于跑完整拼接。
         QStringList paths = m_model->filePaths();
         StitchSettings settings = m_propertyPanel->stitchSettings();
-        // 状态栏尺寸估算只需要一个受限预览，避免加载完整大图
-        const int statusMaxLongEdge = 800;
-        m_stitchSizeWatcher->setFuture(QtConcurrent::run([paths, settings, statusMaxLongEdge]() -> QSize {
-            QImage preview = StitchEngine::preview(paths, settings, statusMaxLongEdge);
-            return preview.isNull() ? QSize() : preview.size();
-        }));
+        m_statusBar->setOutputSize(StitchEngine::estimateOutputSize(paths, settings));
     } else if (m_currentImageRow >= 0 && m_currentImageRow < m_model->rowCount()) {
         const ImageItem* item = m_model->itemAt(m_currentImageRow);
         if (item)

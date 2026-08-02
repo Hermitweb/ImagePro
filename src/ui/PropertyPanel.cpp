@@ -178,43 +178,43 @@ void PropertyPanel::buildStitchPanel()
     m_stitchBackground->addItem(tr("Custom"), QStringLiteral("custom"));
     settingsLayout->addWidget(createFormRow(tr("Background:"), m_stitchBackground));
 
-    QWidget* bgColorRow = new QWidget(settingsContent);
-    QHBoxLayout* bgColorLayout = new QHBoxLayout(bgColorRow);
+    m_stitchBgColorRowWidget = new QWidget(settingsContent);
+    QHBoxLayout* bgColorLayout = new QHBoxLayout(m_stitchBgColorRowWidget);
     bgColorLayout->setContentsMargins(0, 2, 0, 2);
     bgColorLayout->setSpacing(6);
-    bgColorLayout->addWidget(new QLabel(tr("BG Color:"), bgColorRow));
-    m_stitchBgColorBtn = new QPushButton(bgColorRow);
+    bgColorLayout->addWidget(new QLabel(tr("Color:"), m_stitchBgColorRowWidget));
+    m_stitchBgColorBtn = new QPushButton(m_stitchBgColorRowWidget);
     m_stitchBgColorBtn->setFixedSize(QSize(28, 22));
     m_stitchBgColorBtn->setStyleSheet(QStringLiteral("background-color: white; border: 1px solid gray;"));
     connect(m_stitchBgColorBtn, &QPushButton::clicked, this, &PropertyPanel::onStitchBgColorClicked);
     bgColorLayout->addWidget(m_stitchBgColorBtn);
-    m_stitchBgColorLabel = new QLabel(QStringLiteral("#FFFFFF"), bgColorRow);
+    m_stitchBgColorLabel = new QLabel(QStringLiteral("#FFFFFF"), m_stitchBgColorRowWidget);
     bgColorLayout->addWidget(m_stitchBgColorLabel, 1);
     bgColorLayout->addStretch();
-    settingsLayout->addWidget(bgColorRow);
+    settingsLayout->addWidget(m_stitchBgColorRowWidget);
 
     m_stitchUniformWidth = new QCheckBox(tr("Uniform Width"), settingsContent);
-    m_stitchRemoveWhiteEdges = new QCheckBox(tr("Remove White Edges"), settingsContent);
-    m_stitchAutoCropEdges = new QCheckBox(tr("Auto Crop Edges"), settingsContent);
+    m_stitchRemoveWhiteEdges = new QCheckBox(tr("Crop Input Margins"), settingsContent);
+    m_stitchAutoCropEdges = new QCheckBox(tr("Crop Output Margins"), settingsContent);
     settingsLayout->addWidget(m_stitchUniformWidth);
     settingsLayout->addWidget(m_stitchRemoveWhiteEdges);
     settingsLayout->addWidget(m_stitchAutoCropEdges);
 
-    QWidget* gridRow = new QWidget(settingsContent);
-    QHBoxLayout* gridLayout = new QHBoxLayout(gridRow);
+    m_stitchGridRowWidget = new QWidget(settingsContent);
+    QHBoxLayout* gridLayout = new QHBoxLayout(m_stitchGridRowWidget);
     gridLayout->setContentsMargins(0, 2, 0, 2);
     gridLayout->setSpacing(6);
-    gridLayout->addWidget(new QLabel(tr("Grid:"), gridRow));
-    m_stitchGridRows = new QSpinBox(gridRow);
+    gridLayout->addWidget(new QLabel(tr("Grid:"), m_stitchGridRowWidget));
+    m_stitchGridRows = new QSpinBox(m_stitchGridRowWidget);
     m_stitchGridRows->setRange(1, 20);
     m_stitchGridRows->setValue(1);
-    m_stitchGridColumns = new QSpinBox(gridRow);
+    m_stitchGridColumns = new QSpinBox(m_stitchGridRowWidget);
     m_stitchGridColumns->setRange(1, 20);
     m_stitchGridColumns->setValue(1);
     gridLayout->addWidget(m_stitchGridRows);
-    gridLayout->addWidget(new QLabel(tr("x"), gridRow));
+    gridLayout->addWidget(new QLabel(tr("x"), m_stitchGridRowWidget));
     gridLayout->addWidget(m_stitchGridColumns);
-    settingsLayout->addWidget(gridRow);
+    settingsLayout->addWidget(m_stitchGridRowWidget);
 
     m_stitchOutputFormat = new QComboBox(settingsContent);
     m_stitchOutputFormat->addItems(QStringList() << QStringLiteral("PNG") << QStringLiteral("JPG")
@@ -258,6 +258,11 @@ void PropertyPanel::buildStitchPanel()
             this, &PropertyPanel::onStitchCategoryChanged);
     connect(m_stitchPreset, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &PropertyPanel::onStitchPresetChanged);
+
+    connect(m_stitchDirection, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &PropertyPanel::onStitchDirectionChanged);
+    connect(m_stitchBackground, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &PropertyPanel::onStitchBackgroundChanged);
 
     // 输出设置
     m_stitchSectionOutput = new CollapsibleSection(tr("Output Settings"), panel);
@@ -325,6 +330,7 @@ void PropertyPanel::buildStitchPanel()
     connect(m_stitchOutputFormat, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &PropertyPanel::onStitchOutputFormatChanged);
     onStitchFileNameTemplateChanged();
+    updateStitchControlVisibility();
 }
 
 void PropertyPanel::buildConvertPanel()
@@ -949,7 +955,10 @@ StitchSettings PropertyPanel::stitchSettings() const
     s.spacing = m_stitchSpacing->value();
     s.background = m_stitchBackground->currentData().toString();
     s.bgColor = QColor(m_stitchBgColorLabel->text());
-    s.uniformWidth = m_stitchUniformWidth->isChecked();
+    // 统一尺寸复选框按方向映射：Vertical→uniformWidth，Horizontal→uniformHeight，
+    // Grid→两者皆不需要（Grid 自身按最大单元格尺寸缩放）。
+    s.uniformWidth = (s.direction == StitchSettings::Vertical) && m_stitchUniformWidth && m_stitchUniformWidth->isChecked();
+    s.uniformHeight = (s.direction == StitchSettings::Horizontal) && m_stitchUniformWidth && m_stitchUniformWidth->isChecked();
     s.removeWhiteEdges = m_stitchRemoveWhiteEdges->isChecked();
     s.autoCropEdges = m_stitchAutoCropEdges->isChecked();
     s.gridRows = m_stitchGridRows->value();
@@ -1116,7 +1125,15 @@ void PropertyPanel::loadStitchPresets()
 
 QString PropertyPanel::stitchPresetDisplayText(const StitchPreset& preset) const
 {
-    return QStringLiteral("%1 (%2x%3)").arg(preset.name).arg(preset.rows).arg(preset.columns);
+    // 方向缩写：V=垂直, H=水平, Grid=行列数
+    QString dirStr;
+    if (preset.direction == static_cast<int>(StitchSettings::Vertical))
+        dirStr = tr("V");
+    else if (preset.direction == static_cast<int>(StitchSettings::Horizontal))
+        dirStr = tr("H");
+    else
+        dirStr = QStringLiteral("%1x%2").arg(preset.rows).arg(preset.columns);
+    return QStringLiteral("%1 (%2)").arg(preset.name).arg(dirStr);
 }
 
 void PropertyPanel::rebuildStitchPresetDropdown()
@@ -1244,9 +1261,14 @@ void PropertyPanel::applyStitchPreset(const StitchPreset& preset)
     m_stitchSpacing->blockSignals(true);
     m_stitchUniformWidth->blockSignals(true);
 
-    m_stitchDirection->setCurrentIndex(m_stitchDirection->findData(static_cast<int>(StitchSettings::Grid)));
-    m_stitchGridRows->setValue(preset.rows);
-    m_stitchGridColumns->setValue(preset.columns);
+    // 使用预设自带的方向；旧数据无方向字段时默认 Grid（兼容）
+    const int dir = preset.direction;
+    m_stitchDirection->setCurrentIndex(m_stitchDirection->findData(dir >= 0 && dir <= 2 ? dir : 2));
+
+    if (dir == static_cast<int>(StitchSettings::Grid)) {
+        m_stitchGridRows->setValue(preset.rows);
+        m_stitchGridColumns->setValue(preset.columns);
+    }
     m_stitchSpacing->setValue(0);
     m_stitchUniformWidth->setChecked(true);
 
@@ -1257,6 +1279,7 @@ void PropertyPanel::applyStitchPreset(const StitchPreset& preset)
     m_stitchUniformWidth->blockSignals(false);
     m_applyingStitchPreset = false;
 
+    updateStitchControlVisibility();
     validateAndUpdateUI();
 }
 
@@ -1271,6 +1294,7 @@ void PropertyPanel::onStitchAddPreset()
     StitchPreset p;
     p.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     p.name = name;
+    p.direction = m_stitchDirection->currentData().toInt();
     p.rows = m_stitchGridRows->value();
     p.columns = m_stitchGridColumns->value();
     p.category = QStringLiteral("自定义");
@@ -1336,6 +1360,56 @@ void PropertyPanel::onStitchOutputFormatChanged(int index)
         m_stitchQuality->setValue(100);
     else if (fmt == QStringLiteral("jpg") || fmt == QStringLiteral("webp"))
         m_stitchQuality->setValue(90);
+}
+
+void PropertyPanel::onStitchDirectionChanged(int index)
+{
+    Q_UNUSED(index)
+    if (m_initializing)
+        return;
+    updateStitchControlVisibility();
+    // 方向切换后清除预设选择（预设与方向绑定）
+    if (!m_currentStitchPresetId.isEmpty())
+        clearStitchPresetSelection();
+    emit settingsChanged();
+}
+
+void PropertyPanel::onStitchBackgroundChanged(int index)
+{
+    Q_UNUSED(index)
+    if (m_initializing)
+        return;
+    updateStitchControlVisibility();
+    emit settingsChanged();
+}
+
+void PropertyPanel::updateStitchControlVisibility()
+{
+    if (!m_stitchDirection)
+        return;
+
+    const auto dir = static_cast<StitchSettings::Direction>(m_stitchDirection->currentData().toInt());
+    const bool isGrid = (dir == StitchSettings::Grid);
+
+    // Grid 行/列仅在 Grid 方向显示
+    if (m_stitchGridRowWidget)
+        m_stitchGridRowWidget->setVisible(isGrid);
+
+    // 统一尺寸复选框：Grid 时隐藏（Grid 自带统一单元格缩放），
+    // Vertical 显示"Uniform Width"，Horizontal 显示"Uniform Height"。
+    if (m_stitchUniformWidth) {
+        m_stitchUniformWidth->setVisible(!isGrid);
+        if (dir == StitchSettings::Vertical)
+            m_stitchUniformWidth->setText(tr("Uniform Width"));
+        else if (dir == StitchSettings::Horizontal)
+            m_stitchUniformWidth->setText(tr("Uniform Height"));
+    }
+
+    // 背景色行仅在非透明背景时显示
+    if (m_stitchBgColorRowWidget && m_stitchBackground) {
+        const bool transparent = (m_stitchBackground->currentData().toString() == QStringLiteral("transparent"));
+        m_stitchBgColorRowWidget->setVisible(!transparent);
+    }
 }
 
 QString PropertyPanel::previewFileNameFromTemplate(const QString& templ) const
@@ -1502,23 +1576,40 @@ bool PropertyPanel::validateStitchSettings(QString* errorMessage, QString* warni
         ok = false;
     }
 
-    if (m_imageModel && imageCount >= 2 && m_stitchUniformWidth && m_stitchUniformWidth->isChecked()) {
-        int firstW = -1;
+    // Grid 图片数与单元格数不匹配时给出警告
+    if (m_stitchDirection && m_imageModel && imageCount >= 2) {
+        const auto dir = static_cast<StitchSettings::Direction>(m_stitchDirection->currentData().toInt());
+        if (dir == StitchSettings::Grid && m_stitchGridRows && m_stitchGridColumns) {
+            const int cells = m_stitchGridRows->value() * m_stitchGridColumns->value();
+            if (imageCount < cells)
+                warnings.append(tr("%1 of %2 grid cells will be empty").arg(cells - imageCount).arg(cells));
+            else if (imageCount > cells)
+                warnings.append(tr("%1 extra image(s) will be ignored").arg(imageCount - cells));
+        }
+    }
+
+    // 统一尺寸警告（方向感知）
+    if (m_imageModel && imageCount >= 2 && m_stitchUniformWidth && m_stitchUniformWidth->isChecked()
+        && m_stitchUniformWidth->isVisible()) {
+        const auto dir = static_cast<StitchSettings::Direction>(m_stitchDirection->currentData().toInt());
+        const bool checkWidth = (dir == StitchSettings::Vertical);
+        int firstVal = -1;
         bool inconsistent = false;
         int count = m_imageModel->rowCount(QModelIndex());
         for (int i = 0; i < count; ++i) {
             const ImageItem* item = m_imageModel->itemAt(i);
             if (!item || !item->isValid() || item->isHidden())
                 continue;
-            if (firstW < 0)
-                firstW = item->width();
-            else if (item->width() != firstW) {
+            const int val = checkWidth ? item->width() : item->height();
+            if (firstVal < 0)
+                firstVal = val;
+            else if (val != firstVal) {
                 inconsistent = true;
                 break;
             }
         }
         if (inconsistent)
-            warnings.append(tr("Image widths are inconsistent"));
+            warnings.append(checkWidth ? tr("Image widths are inconsistent") : tr("Image heights are inconsistent"));
     }
 
     if (errorMessage)

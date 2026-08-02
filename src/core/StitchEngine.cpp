@@ -14,28 +14,48 @@
 
 namespace yingtu {
 
-static bool isPixelWhite(const QColor& c, int threshold = 250)
-{
-    return c.red() >= threshold && c.green() >= threshold && c.blue() >= threshold;
-}
-
+// 逐行扫描白边裁剪。使用 constScanLine 直接指针访问，比 pixel(x,y) 快 10×+。
 static QImage cropWhiteEdges(const QImage& source, int threshold = 250)
 {
     if (source.isNull())
         return source;
 
-    int left = 0, top = 0, right = source.width() - 1, bottom = source.height() - 1;
+    // 统一到 32 位格式以便用 scanLine 做快速指针访问
+    QImage img = (source.format() == QImage::Format_ARGB32 ||
+                  source.format() == QImage::Format_RGB32)
+                     ? source
+                     : source.convertToFormat(QImage::Format_ARGB32);
+    if (img.isNull())
+        return source;
+
+    const int w = img.width();
+    const int h = img.height();
+
+    auto rowHasContent = [&](int y) -> bool {
+        const QRgb* row = reinterpret_cast<const QRgb*>(img.constScanLine(y));
+        for (int x = 0; x < w; ++x) {
+            const QRgb c = row[x];
+            if (qRed(c) < threshold || qGreen(c) < threshold || qBlue(c) < threshold)
+                return true;
+        }
+        return false;
+    };
+
+    auto colHasContent = [&](int x, int top, int bottom) -> bool {
+        for (int y = top; y <= bottom; ++y) {
+            const QRgb* row = reinterpret_cast<const QRgb*>(img.constScanLine(y));
+            const QRgb c = row[x];
+            if (qRed(c) < threshold || qGreen(c) < threshold || qBlue(c) < threshold)
+                return true;
+        }
+        return false;
+    };
+
+    int left = 0, top = 0, right = w - 1, bottom = h - 1;
     bool found = false;
 
-    for (int y = 0; y < source.height(); ++y) {
-        bool rowHasContent = false;
-        for (int x = 0; x < source.width(); ++x) {
-            if (!isPixelWhite(QColor(source.pixel(x, y)), threshold)) {
-                rowHasContent = true;
-                break;
-            }
-        }
-        if (rowHasContent) {
+    for (int y = 0; y < h; ++y) {
+        if (rowHasContent(y)) {
             top = y;
             found = true;
             break;
@@ -44,43 +64,22 @@ static QImage cropWhiteEdges(const QImage& source, int threshold = 250)
     if (!found)
         return source;
 
-    for (int y = source.height() - 1; y >= 0; --y) {
-        bool rowHasContent = false;
-        for (int x = 0; x < source.width(); ++x) {
-            if (!isPixelWhite(QColor(source.pixel(x, y)), threshold)) {
-                rowHasContent = true;
-                break;
-            }
-        }
-        if (rowHasContent) {
+    for (int y = h - 1; y >= 0; --y) {
+        if (rowHasContent(y)) {
             bottom = y;
             break;
         }
     }
 
-    for (int x = 0; x < source.width(); ++x) {
-        bool colHasContent = false;
-        for (int y = top; y <= bottom; ++y) {
-            if (!isPixelWhite(QColor(source.pixel(x, y)), threshold)) {
-                colHasContent = true;
-                break;
-            }
-        }
-        if (colHasContent) {
+    for (int x = 0; x < w; ++x) {
+        if (colHasContent(x, top, bottom)) {
             left = x;
             break;
         }
     }
 
-    for (int x = source.width() - 1; x >= 0; --x) {
-        bool colHasContent = false;
-        for (int y = top; y <= bottom; ++y) {
-            if (!isPixelWhite(QColor(source.pixel(x, y)), threshold)) {
-                colHasContent = true;
-                break;
-            }
-        }
-        if (colHasContent) {
+    for (int x = w - 1; x >= 0; --x) {
+        if (colHasContent(x, top, bottom)) {
             right = x;
             break;
         }
@@ -301,7 +300,8 @@ static QList<VipsImageInfo> loadAndPrepareImages(const QStringList& filePaths,
     return infos;
 }
 
-static VipsImage* stitchVipsImages(const QList<VipsImageInfo>& infos, const StitchSettings& settings)
+static VipsImage* stitchVipsImages(const QList<VipsImageInfo>& infos, const StitchSettings& settings,
+                                    QVector<QRect>* outRects = nullptr)
 {
     if (infos.isEmpty())
         return nullptr;
@@ -344,9 +344,8 @@ static VipsImage* stitchVipsImages(const QList<VipsImageInfo>& infos, const Stit
         return nullptr;
 
     VipsImage* current = canvas;
-    int x = 0, y = 0;
-    int col = 0;
 
+    // 预计算 Grid 单元格尺寸
     int cellW = 0, cellH = 0;
     if (settings.direction == StitchSettings::Grid) {
         for (const auto& info : infos) {
@@ -355,27 +354,34 @@ static VipsImage* stitchVipsImages(const QList<VipsImageInfo>& infos, const Stit
         }
     }
 
+    int col = 0;
     for (int i = 0; i < infos.size(); ++i) {
         const auto& info = infos.at(i);
+
+        // 统一计算每张图在画布中的 insert 坐标（左上角）。
+        // 修复历史 Bug：Vertical 之前误用自增后的 y，导致图片整体下移、尾部越界丢失。
+        int insertX = 0, insertY = 0;
         if (settings.direction == StitchSettings::Horizontal) {
-            x += info.displayWidth + settings.spacing;
-            int px = x - info.displayWidth - settings.spacing;
-            int py = (totalHeight - info.displayHeight) / 2;
+            // 累加已处理图片宽度 + 间距
+            for (int j = 0; j < i; ++j)
+                insertX += infos.at(j).displayWidth + settings.spacing;
+            insertY = (totalHeight - info.displayHeight) / 2; // 垂直居中
         } else if (settings.direction == StitchSettings::Vertical) {
-            y += info.displayHeight + settings.spacing;
-            int px = (totalWidth - info.displayWidth) / 2;
-            int py = y - info.displayHeight - settings.spacing;
-        } else {
-            x = (col % settings.gridColumns) * (cellW + settings.spacing);
-            y = (col / settings.gridColumns) * (cellH + settings.spacing);
+            // 累加已处理图片高度 + 间距
+            for (int j = 0; j < i; ++j)
+                insertY += infos.at(j).displayHeight + settings.spacing;
+            insertX = (totalWidth - info.displayWidth) / 2; // 水平居中（修复左对齐）
+        } else { // Grid
+            insertX = (col % settings.gridColumns) * (cellW + settings.spacing);
+            insertY = (col / settings.gridColumns) * (cellH + settings.spacing);
             ++col;
         }
 
+        if (outRects)
+            outRects->append(QRect(insertX, insertY, info.displayWidth, info.displayHeight));
+
         VipsImage* inserted = nullptr;
-        if (vips_insert(current, info.image, &inserted,
-                        settings.direction == StitchSettings::Horizontal ? (x - info.displayWidth - settings.spacing) : x,
-                        settings.direction == StitchSettings::Horizontal ? (totalHeight - info.displayHeight) / 2 : y,
-                        nullptr)) {
+        if (vips_insert(current, info.image, &inserted, insertX, insertY, nullptr)) {
             g_object_unref(current);
             return nullptr;
         }
@@ -397,7 +403,8 @@ static void freeVipsImageInfos(QList<VipsImageInfo>& infos)
 }
 
 // 估算 Stitch 最终输出像素数，用于在分配巨大画布前拒绝危险操作。
-static qint64 estimateOutputPixels(const QStringList& filePaths, const StitchSettings& settings)
+// 仅读取图片头信息估算最终输出尺寸，不加载像素数据。
+static QSize estimateOutputSize(const QStringList& filePaths, const StitchSettings& settings)
 {
     QList<QSize> sizes;
     sizes.reserve(filePaths.size());
@@ -409,7 +416,7 @@ static qint64 estimateOutputPixels(const QStringList& filePaths, const StitchSet
 
     const int n = sizes.size();
     if (n == 0)
-        return 0;
+        return QSize();
 
     if (settings.direction == StitchSettings::Horizontal) {
         int maxH = 0;
@@ -424,7 +431,7 @@ static qint64 estimateOutputPixels(const QStringList& filePaths, const StitchSet
                 totalW += qRound(s.width() * double(maxH) / s.height());
         }
         totalW += qint64(n - 1) * settings.spacing;
-        return totalW * maxH;
+        return QSize(int(totalW), maxH);
     }
 
     if (settings.direction == StitchSettings::Vertical) {
@@ -440,7 +447,7 @@ static qint64 estimateOutputPixels(const QStringList& filePaths, const StitchSet
                 totalH += qRound(s.height() * double(maxW) / s.width());
         }
         totalH += qint64(n - 1) * settings.spacing;
-        return maxW * totalH;
+        return QSize(maxW, int(totalH));
     }
 
     // Grid
@@ -453,14 +460,21 @@ static qint64 estimateOutputPixels(const QStringList& filePaths, const StitchSet
                     + qint64(settings.gridColumns - 1) * settings.spacing;
     qint64 totalH = qint64(settings.gridRows) * maxH
                     + qint64(settings.gridRows - 1) * settings.spacing;
-    return totalW * totalH;
+    return QSize(int(totalW), int(totalH));
+}
+
+// 估算 Stitch 最终输出像素数，用于在分配巨大画布前拒绝危险操作。
+static qint64 estimateOutputPixels(const QStringList& filePaths, const StitchSettings& settings)
+{
+    const QSize sz = estimateOutputSize(filePaths, settings);
+    return qint64(sz.width()) * qint64(sz.height());
 }
 
 static QImage vipsStitchPreview(const QStringList& filePaths, const StitchSettings& settings,
-                                 int maxLongEdge)
+                                 int maxLongEdge, QVector<QRect>* outRects = nullptr)
 {
     QList<VipsImageInfo> infos = loadAndPrepareImages(filePaths, settings, maxLongEdge);
-    VipsImage* stitched = stitchVipsImages(infos, settings);
+    VipsImage* stitched = stitchVipsImages(infos, settings, outRects);
     freeVipsImageInfos(infos);
 
     if (!stitched)
@@ -568,13 +582,20 @@ QString StitchEngine::process(const QStringList& filePaths, bool* ok)
 }
 
 QImage StitchEngine::preview(const QStringList& filePaths, const StitchSettings& settings,
-                              int maxLongEdge)
+                              int maxLongEdge, QVector<QRect>* inputRects)
 {
+    if (inputRects)
+        inputRects->clear();
+
 #ifdef USE_LIBVIPS
     if (!settings.removeWhiteEdges) {
-        QImage img = vipsStitchPreview(filePaths, settings, maxLongEdge);
-        if (!img.isNull())
+        QImage img = vipsStitchPreview(filePaths, settings, maxLongEdge, inputRects);
+        if (!img.isNull()) {
+            // autoCropEdges 会裁剪最终结果，使 rects 坐标失效，清空以保证高亮准确。
+            if (settings.autoCropEdges && inputRects)
+                inputRects->clear();
             return img;
+        }
     }
 #endif
 
@@ -669,9 +690,9 @@ QImage StitchEngine::preview(const QStringList& filePaths, const StitchSettings&
     result.fill(bg);
 
     QPainter painter(&result);
-    int x = 0, y = 0;
     int col = 0;
 
+    // 预计算 Grid 单元格尺寸
     auto cellSize = [&]() -> QSize {
         if (settings.direction != StitchSettings::Grid)
             return QSize();
@@ -685,25 +706,41 @@ QImage StitchEngine::preview(const QStringList& filePaths, const StitchSettings&
 
     for (int i = 0; i < images.size(); ++i) {
         const QImage& img = images[i];
+        int drawX = 0, drawY = 0;
         if (settings.direction == StitchSettings::Horizontal) {
-            painter.drawImage(x, 0, img);
-            x += img.width() + settings.spacing;
+            // 累加已绘制图片宽度 + 间距
+            for (int j = 0; j < i; ++j)
+                drawX += images[j].width() + settings.spacing;
+            drawY = (totalHeight - img.height()) / 2; // 垂直居中（与 VIPS 路径一致）
         } else if (settings.direction == StitchSettings::Vertical) {
-            painter.drawImage(0, y, img);
-            y += img.height() + settings.spacing;
+            // 累加已绘制图片高度 + 间距
+            for (int j = 0; j < i; ++j)
+                drawY += images[j].height() + settings.spacing;
+            drawX = (totalWidth - img.width()) / 2; // 水平居中（修复左对齐）
         } else {
-            int cx = (col % settings.gridColumns) * (cellSize.width() + settings.spacing);
-            int cy = (col / settings.gridColumns) * (cellSize.height() + settings.spacing);
-            painter.drawImage(cx, cy, img);
+            drawX = (col % settings.gridColumns) * (cellSize.width() + settings.spacing);
+            drawY = (col / settings.gridColumns) * (cellSize.height() + settings.spacing);
             ++col;
         }
+        painter.drawImage(drawX, drawY, img);
+        if (inputRects)
+            inputRects->append(QRect(drawX, drawY, img.width(), img.height()));
     }
     painter.end();
 
-    if (settings.autoCropEdges)
+    if (settings.autoCropEdges) {
         result = cropWhiteEdges(result);
+        // 裁剪后 rects 坐标失效，清空以保证高亮准确
+        if (inputRects)
+            inputRects->clear();
+    }
 
     return result;
+}
+
+QSize StitchEngine::estimateOutputSize(const QStringList& filePaths, const StitchSettings& settings)
+{
+    return ::yingtu::estimateOutputSize(filePaths, settings);
 }
 
 } // namespace yingtu

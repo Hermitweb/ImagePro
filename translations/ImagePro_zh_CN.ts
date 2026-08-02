@@ -486,6 +486,46 @@ Size: %2x%3</translation>
         <source>Batch: unsupported target tool</source>
         <translation>Batch: unsupported target tool</translation>
     </message>
+    <message>
+        <source>&amp;Check for Updates</source>
+        <translation>&amp;Check for Updates</translation>
+    </message>
+    <message>
+        <source>Check for Updates</source>
+        <translation>Check for Updates</translation>
+    </message>
+    <message>
+        <source>Auto-update is not available in this build.&lt;br&gt;Current version: %1</source>
+        <translation>Auto-update is not available in this build.&lt;br&gt;Current version: %1</translation>
+    </message>
+    <message>
+        <source>Checking for updates...</source>
+        <translation>Checking for updates...</translation>
+    </message>
+    <message>
+        <source>&lt;h2&gt;影图 ImagePro&lt;/h2&gt;&lt;p&gt;Version %1&lt;/p&gt;&lt;p&gt;A powerful image processing tool.&lt;/p&gt;</source>
+        <translation>&lt;h2&gt;影图 ImagePro&lt;/h2&gt;&lt;p&gt;Version %1&lt;/p&gt;&lt;p&gt;A powerful image processing tool.&lt;/p&gt;</translation>
+    </message>
+    <message>
+        <source>New version %1 available. Use Help → Check for Updates to install.</source>
+        <translation>New version %1 available. Use Help → Check for Updates to install.</translation>
+    </message>
+    <message>
+        <source>Update Available</source>
+        <translation>Update Available</translation>
+    </message>
+    <message>
+        <source>A new version %1 is available. Download and apply on exit?</source>
+        <translation>A new version %1 is available. Download and apply on exit?</translation>
+    </message>
+    <message>
+        <source>You are running the latest version.</source>
+        <translation>You are running the latest version.</translation>
+    </message>
+    <message>
+        <source>Update ready. It will be applied when you quit the app.</source>
+        <translation>Update ready. It will be applied when you quit the app.</translation>
+    </message>
 </context>
 <context>
     <name>yingtu::PdfEngine</name>
@@ -604,7 +644,7 @@ Size: %2x%3</translation>
     </message>
     <message>
         <source>BG Color:</source>
-        <translation>背景颜色：</translation>
+        <translation>BG Color:</translation>
     </message>
     <message>
         <source>Uniform Width</source>
@@ -612,11 +652,11 @@ Size: %2x%3</translation>
     </message>
     <message>
         <source>Remove White Edges</source>
-        <translation>去除白边</translation>
+        <translation>Remove White Edges</translation>
     </message>
     <message>
         <source>Auto Crop Edges</source>
-        <translation>自动裁剪边缘</translation>
+        <translation>Auto Crop Edges</translation>
     </message>
     <message>
         <source>Preset:</source>
@@ -1236,7 +1276,7 @@ Size: %2x%3</translation>
     </message>
     <message>
         <source>Image widths are inconsistent</source>
-        <translation>Image widths are inconsistent</translation>
+        <translation>图片宽度不一致</translation>
     </message>
     <message>
         <source>Ready</source>
@@ -1257,6 +1297,38 @@ Size: %2x%3</translation>
     <message>
         <source>Select Text Color</source>
         <translation>选择文字颜色</translation>
+    </message>
+    <message>
+        <source>Crop Input Margins</source>
+        <translation>裁剪输入白边</translation>
+    </message>
+    <message>
+        <source>Crop Output Margins</source>
+        <translation>裁剪输出白边</translation>
+    </message>
+    <message>
+        <source>V</source>
+        <translation>V</translation>
+    </message>
+    <message>
+        <source>H</source>
+        <translation>H</translation>
+    </message>
+    <message>
+        <source>Uniform Height</source>
+        <translation>统一高度</translation>
+    </message>
+    <message>
+        <source>%1 of %2 grid cells will be empty</source>
+        <translation>%2 个网格中 %1 个将为空</translation>
+    </message>
+    <message>
+        <source>%1 extra image(s) will be ignored</source>
+        <translation>%1 张多余图片将被忽略</translation>
+    </message>
+    <message>
+        <source>Image heights are inconsistent</source>
+        <translation>图片高度不一致</translation>
     </message>
 </context>
 <context>
@@ -1443,6 +1515,25 @@ Size: %2x%3</translation>
     <message>
         <source>PDF</source>
         <translation>PDF</translation>
+    </message>
+</context>
+<context>
+    <name>yingtu::VpkUpdateManager</name>
+    <message>
+        <source>Unknown error while checking for updates.</source>
+        <translation>Unknown error while checking for updates.</translation>
+    </message>
+    <message>
+        <source>No pending update to download.</source>
+        <translation>No pending update to download.</translation>
+    </message>
+    <message>
+        <source>Unknown error while preparing update.</source>
+        <translation>Unknown error while preparing update.</translation>
+    </message>
+    <message>
+        <source>Unknown error while downloading update.</source>
+        <translation>Unknown error while downloading update.</translation>
     </message>
 </context>
 <context>

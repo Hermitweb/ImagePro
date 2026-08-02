@@ -3,7 +3,9 @@
 #include "utils/PresetData.h"
 #include <QImage>
 #include <QObject>
+#include <QRect>
 #include <QStringList>
+#include <QVector>
 
 namespace yingtu {
 
@@ -41,8 +43,12 @@ public:
 
     // maxLongEdge 限制预览时长边的最大像素，避免加载完整大图导致内存爆炸。
     // 传 0 表示不限制（仅用于最终输出流程）。
+    // inputRects（可选）返回每张输入图在最终拼接图中的实际矩形，用于精确高亮定位。
     static QImage preview(const QStringList& filePaths, const StitchSettings& settings,
-                          int maxLongEdge = 0);
+                          int maxLongEdge = 0, QVector<QRect>* inputRects = nullptr);
+
+    // 仅读取图片头信息估算最终输出尺寸，不加载像素数据，用于状态栏快速显示。
+    static QSize estimateOutputSize(const QStringList& filePaths, const StitchSettings& settings);
 
 signals:
     void progress(int percent);

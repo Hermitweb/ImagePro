@@ -46,6 +46,7 @@ QList<StitchPreset> StitchPresetManager::loadPresets() const
         p.category = obj.value(QStringLiteral("category")).toString(QStringLiteral("Custom"));
         p.isBuiltIn = obj.value(QStringLiteral("isBuiltIn")).toBool(false);
         p.description = obj.value(QStringLiteral("description")).toString();
+        p.direction = obj.value(QStringLiteral("direction")).toInt(2);
         if (!p.id.isEmpty() && !p.name.isEmpty() && p.rows > 0 && p.columns > 0)
             result.append(p);
     }
@@ -70,6 +71,7 @@ bool StitchPresetManager::savePreset(const StitchPreset& preset)
                 p.category = obj.value(QStringLiteral("category")).toString(QStringLiteral("Custom"));
                 p.isBuiltIn = obj.value(QStringLiteral("isBuiltIn")).toBool(false);
                 p.description = obj.value(QStringLiteral("description")).toString();
+        p.direction = obj.value(QStringLiteral("direction")).toInt(2);
                 if (!p.id.isEmpty())
                     presets.append(p);
             }
@@ -98,6 +100,7 @@ bool StitchPresetManager::savePreset(const StitchPreset& preset)
         obj[QStringLiteral("category")] = p.category;
         obj[QStringLiteral("isBuiltIn")] = p.isBuiltIn;
         obj[QStringLiteral("description")] = p.description;
+        obj[QStringLiteral("direction")] = p.direction;
         arr.append(obj);
     }
 
@@ -126,6 +129,7 @@ bool StitchPresetManager::deletePreset(const QString& id)
                     p.category = obj.value(QStringLiteral("category")).toString(QStringLiteral("Custom"));
                     p.isBuiltIn = obj.value(QStringLiteral("isBuiltIn")).toBool(false);
                     p.description = obj.value(QStringLiteral("description")).toString();
+        p.direction = obj.value(QStringLiteral("direction")).toInt(2);
                     presets.append(p);
                 }
             }
@@ -143,6 +147,7 @@ bool StitchPresetManager::deletePreset(const QString& id)
         obj[QStringLiteral("category")] = p.category;
         obj[QStringLiteral("isBuiltIn")] = p.isBuiltIn;
         obj[QStringLiteral("description")] = p.description;
+        obj[QStringLiteral("direction")] = p.direction;
         arr.append(obj);
     }
 
