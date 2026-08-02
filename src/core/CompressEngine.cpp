@@ -123,9 +123,9 @@ CompressResult CompressEngine::compressSingle(const QString& filePath)
 
     bool ok = ImageLoader::saveImage(out, outputPath, fmt, q);
     if (!ok) {
-        Logger::error(QStringLiteral("Save failed: size=%1x%2 format=%3 path=%4 fmt=%5 quality=%6")
-                          .arg(out.width()).arg(out.height()).arg(out.format()).arg(outputPath).arg(fmt).arg(q),
-                      QStringLiteral("CompressEngine"));
+        IMGPRO_LOG_ERROR(QStringLiteral("Save failed: size=%1x%2 format=%3 path=%4 fmt=%5 quality=%6")
+                             .arg(out.width()).arg(out.height()).arg(out.format()).arg(outputPath).arg(fmt).arg(q),
+                         QStringLiteral("CompressEngine"));
         result.errorString = tr("Failed to save compressed image");
         return result;
     }

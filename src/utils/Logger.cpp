@@ -6,6 +6,7 @@
 #include <QFileInfo>
 #include <QStandardPaths>
 #include <QTextStream>
+#include <QThread>
 
 namespace yingtu {
 
@@ -50,7 +51,18 @@ void Logger::fatal(const QString& message, const QString& module)
     write(ErrorLevel::Fatal, message, module);
 }
 
-void Logger::write(ErrorLevel level, const QString& message, const QString& module)
+void Logger::error(const QString& message, const QString& module, const QString& context)
+{
+    write(ErrorLevel::Error, message, module, context);
+}
+
+void Logger::fatal(const QString& message, const QString& module, const QString& context)
+{
+    write(ErrorLevel::Fatal, message, module, context);
+}
+
+void Logger::write(ErrorLevel level, const QString& message, const QString& module,
+                   const QString& context)
 {
     QMutexLocker locker(&s_mutex);
 
@@ -65,10 +77,19 @@ void Logger::write(ErrorLevel level, const QString& message, const QString& modu
     const QString timestamp = QDateTime::currentDateTime().toString(QStringLiteral("yyyy-MM-dd hh:mm:ss"));
     const QString levelString = ErrorLevelHelper::displayName(level);
     const QString moduleString = module.isEmpty() ? QStringLiteral("General") : module;
+    // 线程 ID：多线程图像处理（QtConcurrent worker）诊断必需，便于定位跨线程问题。
+    const QString tidString = QStringLiteral("0x%1").arg(
+        reinterpret_cast<quintptr>(QThread::currentThreadId()), 0, 16);
+
+    QString line = QStringLiteral("[%1] [%2] [%3] [%4] %5")
+                       .arg(timestamp, levelString, moduleString, tidString, message);
+    // ERROR/FATAL 附带 function:line 上下文，满足"含堆栈"规格的可移植诊断需求。
+    if (!context.isEmpty())
+        line += QStringLiteral(" @ ") + context;
+    line += QLatin1Char('\n');
 
     QTextStream stream(&file);
-    stream << QStringLiteral("[%1] [%2] [%3] %4\n")
-                  .arg(timestamp, levelString, moduleString, message);
+    stream << line;
     stream.flush();
 }
 
