@@ -8,6 +8,8 @@
 #include "dialogs/ResultDialog.h"
 #include "app/ImageProApp.h"
 #include "app/ThemeManager.h"
+#include "app/ToastManager.h"
+#include "app/VpkUpdateManager.h"
 #include "core/CompressEngine.h"
 #include "core/ConvertEngine.h"
 #include "core/ExportManager.h"
@@ -42,6 +44,10 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <QtConcurrent>
+
+#ifndef IMAGEPRO_VERSION
+#define IMAGEPRO_VERSION "0.0.0-unknown"
+#endif
 
 namespace yingtu {
 
@@ -261,6 +267,17 @@ MainWindow::MainWindow(QWidget* parent)
     connectSignals();
 
     updateStatusBar();
+
+    // 启动后延迟后台静默检查更新（仅 release 构建启用 Velopack 时）。
+    // 用户若先手动触发检查则跳过，避免并发竞态。
+    if (VpkUpdateManager::instance().isVelopackEnabled()) {
+        QTimer::singleShot(3000, this, [this]() {
+            if (m_manualUpdateRequested)
+                return;
+            m_silentUpdateCheck = true;
+            VpkUpdateManager::instance().checkForUpdates();
+        });
+    }
 }
 
 void MainWindow::setupMenuBar()
@@ -311,11 +328,25 @@ void MainWindow::setupMenuBar()
     }
 
     QMenu* helpMenu = bar->addMenu(tr("&Help"));
+    helpMenu->addAction(tr("&Check for Updates"), this, [this]() {
+        auto& upd = VpkUpdateManager::instance();
+        if (!upd.isVelopackEnabled()) {
+            QMessageBox::information(this, tr("Check for Updates"),
+                                     tr("Auto-update is not available in this build.<br>"
+                                        "Current version: %1").arg(upd.currentVersion()));
+            return;
+        }
+        ToastManager::instance().showInfo(tr("Checking for updates..."), this);
+        m_silentUpdateCheck = false;
+        m_manualUpdateRequested = true;
+        upd.checkForUpdates();
+    });
     helpMenu->addAction(tr("&About"), this, [this]() {
         QMessageBox::about(this, tr("About 影图 ImagePro"),
                            tr("<h2>影图 ImagePro</h2>"
-                              "<p>Version 1.0.0</p>"
-                              "<p>A powerful image processing tool.</p>"));
+                              "<p>Version %1</p>"
+                              "<p>A powerful image processing tool.</p>")
+                               .arg(QString::fromLatin1(IMAGEPRO_VERSION)));
     });
 }
 
@@ -569,6 +600,44 @@ void MainWindow::connectSignals()
     connect(m_propertyPanel, &PropertyPanel::editClearRequested, m_editorWidget, &ImageEditorWidget::clearActions);
     connect(m_propertyPanel, &PropertyPanel::editHistoryJumpRequested,
             m_editorWidget, &ImageEditorWidget::jumpToHistoryIndex);
+
+    // ── Velopack 自动更新信号 ─────────────────────────────
+    auto& upd = VpkUpdateManager::instance();
+    connect(&upd, &VpkUpdateManager::updateAvailable, this, [this](const QString& version) {
+        if (m_silentUpdateCheck) {
+            // 后台检查：仅 toast 提示，不打断用户。
+            ToastManager::instance().showInfo(
+                tr("New version %1 available. Use Help → Check for Updates to install.").arg(version), this);
+            return;
+        }
+        const auto ret = QMessageBox::question(
+            this, tr("Update Available"),
+            tr("A new version %1 is available. Download and apply on exit?").arg(version),
+            QMessageBox::Yes | QMessageBox::No);
+        if (ret == QMessageBox::Yes)
+            VpkUpdateManager::instance().downloadAndApplyOnExit();
+    });
+    connect(&upd, &VpkUpdateManager::upToDate, this, [this]() {
+        // 后台检查的“已是最新”不打扰用户。
+        if (!m_silentUpdateCheck)
+            ToastManager::instance().showInfo(tr("You are running the latest version."), this);
+    });
+    connect(&upd, &VpkUpdateManager::checkFailed, this, [this](const QString& msg) {
+        if (!m_silentUpdateCheck)
+            ToastManager::instance().showWarning(msg, this);
+    });
+    connect(&upd, &VpkUpdateManager::downloadProgress, this, [this](int percent) {
+        if (m_statusBar) {
+            m_statusBar->setProgressVisible(true);
+            m_statusBar->setProgress(percent);
+        }
+    });
+    connect(&upd, &VpkUpdateManager::applyReady, this, [this]() {
+        if (m_statusBar)
+            m_statusBar->setProgressVisible(false);
+        ToastManager::instance().showInfo(
+            tr("Update ready. It will be applied when you quit the app."), this);
+    });
 }
 
 void MainWindow::onAddImages()

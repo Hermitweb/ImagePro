@@ -9,9 +9,10 @@ on:
     branches: [master, main]
 
 jobs:
-  build-windows:
+  # ── 构建 / 测试作业：master 与 PR，WITH_VELOPACK=OFF 保持绿色 ──
+  build:
+    if: github.event_name == 'pull_request' || !startsWith(github.ref, 'refs/tags/v')
     runs-on: windows-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,13 +32,11 @@ jobs:
 
       - name: Configure
         shell: msys2 {0}
-        run: |
-          cmake -B build -G Ninja -DBUILD_TESTS=ON
+        run: cmake -B build -G Ninja -DBUILD_TESTS=ON
 
       - name: Build
         shell: msys2 {0}
-        run: |
-          cmake --build build -j4
+        run: cmake --build build -j4
 
       - name: Test
         shell: msys2 {0}
@@ -54,12 +53,109 @@ jobs:
             build/ImagePro.exe
             build/*.dll
 
-      - name: Create Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v1
+  # ── 发布作业：tag 触发，WITH_VELOPACK=ON + vpk pack 上传 Releases ──
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set version from tag
+        shell: bash
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
         with:
-          files: |
-            build/ImagePro.exe
-            build/*.dll
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-qt5
+            mingw-w64-x86_64-libvips
+            mingw-w64-x86_64-pkg-config
+            mingw-w64-x86_64-tools-git
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Download & extract Velopack libc
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $rel = Invoke-RestMethod "https://api.github.com/repos/velopack/velopack/releases/latest" `
+                   -Headers @{ "User-Agent" = "github-actions" }
+          $asset = $rel.assets | Where-Object { $_.name -like "velopack_libc_*.zip" } | Select-Object -First 1
+          if (-not $asset) { throw "velopack_libc zip not found in latest release." }
+          Write-Host "Downloading $($asset.name)..."
+          Invoke-WebRequest $asset.browser_download_url -OutFile velopack_libc.zip -UseBasicParsing
+          Expand-Archive velopack_libc.zip -DestinationPath velopack-libc -Force
+          Write-Host "VELOPACK_ROOT = $env:GITHUB_WORKSPACE/velopack-libc"
+          Get-ChildItem velopack-libc -Recurse -Depth 1 | Select-Object FullName
+
+      - name: Configure (WITH_VELOPACK=ON)
+        shell: msys2 {0}
+        run: |
+          cmake -B build -G Ninja -DBUILD_TESTS=OFF \
+            -DWITH_VELOPACK=ON \
+            -DVELOPACK_ROOT="$GITHUB_WORKSPACE/velopack-libc"
+
+      - name: Build
+        shell: msys2 {0}
+        run: cmake --build build -j4
+
+      - name: Assemble deploy directory
+        shell: pwsh
+        run: |
+          $env:PATH = "C:/msys64/mingw64/bin;$env:PATH"
+          ./deploy.ps1 -BuildDir build -DeployDir deploy -MsysRoot C:/msys64 -SourceRoot .
+
+      - name: Install vpk
+        shell: pwsh
+        run: |
+          dotnet tool install -g vpk
+          echo "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Fetch previous release assets (for delta generation)
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          New-Item -ItemType Directory -Force -Path releases | Out-Null
+          vpk download github `
+            --repoUrl https://github.com/${{ github.repository }} `
+            -o releases `
+            --token ${{ secrets.GITHUB_TOKEN }}
+          Write-Host "Previous assets (if any):"
+          Get-ChildItem releases -ErrorAction SilentlyContinue | Select-Object Name
+
+      - name: vpk pack
+        shell: pwsh
+        run: |
+          vpk pack `
+            --packId ImagePro `
+            --packVersion ${{ env.VERSION }} `
+            --packDir deploy `
+            --mainExe ImagePro.exe `
+            --packTitle "影图 ImagePro" `
+            -o releases
+          Write-Host "Release assets:"
+          Get-ChildItem releases | Select-Object Name, Length
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          # Velopack 的 GitHub source 从最新 Release 读取 releases.win.json 并下载
+          # 其中引用的全部 nupkg，因此最新 Release 须包含 feed 中所有资产。
+          files: releases/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -94,6 +94,11 @@ private:
     QPointer<QFutureWatcher<struct PreviewTaskResult>> m_previewWatcher;
     QPointer<QFutureWatcher<QSize>> m_stitchSizeWatcher;
     QPointer<QProgressDialog> m_progressDialog;
+
+    // true 表示当前更新检查为后台静默检查（仅 toast，不弹模态对话框）。
+    bool m_silentUpdateCheck = false;
+    // 用户已手动触发过检查则不再执行启动后台检查，避免并发竞态。
+    bool m_manualUpdateRequested = false;
 };
 
 } // namespace yingtu
