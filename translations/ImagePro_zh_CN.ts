@@ -488,19 +488,19 @@ Size: %2x%3</translation>
     </message>
     <message>
         <source>&amp;Check for Updates</source>
-        <translation>&amp;Check for Updates</translation>
+        <translation>检查更新(&amp;C)</translation>
     </message>
     <message>
         <source>Check for Updates</source>
-        <translation>Check for Updates</translation>
+        <translation>检查更新</translation>
     </message>
     <message>
         <source>Auto-update is not available in this build.&lt;br&gt;Current version: %1</source>
-        <translation>Auto-update is not available in this build.&lt;br&gt;Current version: %1</translation>
+        <translation>此构建版本不支持自动更新。&lt;br&gt;当前版本：%1</translation>
     </message>
     <message>
         <source>Checking for updates...</source>
-        <translation>Checking for updates...</translation>
+        <translation>正在检查更新…</translation>
     </message>
     <message>
         <source>&lt;h2&gt;影图 ImagePro&lt;/h2&gt;&lt;p&gt;Version %1&lt;/p&gt;&lt;p&gt;A powerful image processing tool.&lt;/p&gt;</source>
@@ -508,23 +508,35 @@ Size: %2x%3</translation>
     </message>
     <message>
         <source>New version %1 available. Use Help → Check for Updates to install.</source>
-        <translation>New version %1 available. Use Help → Check for Updates to install.</translation>
+        <translation>新版本 %1 可用。请使用 帮助 → 检查更新 来安装。</translation>
     </message>
     <message>
         <source>Update Available</source>
-        <translation>Update Available</translation>
+        <translation>有可用更新</translation>
     </message>
     <message>
         <source>A new version %1 is available. Download and apply on exit?</source>
-        <translation>A new version %1 is available. Download and apply on exit?</translation>
+        <translation>新版本 %1 已可用。是否在退出时下载并应用？</translation>
     </message>
     <message>
         <source>You are running the latest version.</source>
-        <translation>You are running the latest version.</translation>
+        <translation>您正在使用最新版本。</translation>
     </message>
     <message>
         <source>Update ready. It will be applied when you quit the app.</source>
-        <translation>Update ready. It will be applied when you quit the app.</translation>
+        <translation>更新已就绪，将在退出应用时自动应用。</translation>
+    </message>
+    <message>
+        <source>Version %1</source>
+        <translation>版本 %1</translation>
+    </message>
+    <message>
+        <source>A powerful image processing tool.</source>
+        <translation>强大的图片处理工具。</translation>
+    </message>
+    <message>
+        <source>OK</source>
+        <translation>确定</translation>
     </message>
 </context>
 <context>
@@ -1521,19 +1533,19 @@ Size: %2x%3</translation>
     <name>yingtu::VpkUpdateManager</name>
     <message>
         <source>Unknown error while checking for updates.</source>
-        <translation>Unknown error while checking for updates.</translation>
+        <translation>检查更新时发生未知错误。</translation>
     </message>
     <message>
         <source>No pending update to download.</source>
-        <translation>No pending update to download.</translation>
+        <translation>没有待下载的更新。</translation>
     </message>
     <message>
         <source>Unknown error while preparing update.</source>
-        <translation>Unknown error while preparing update.</translation>
+        <translation>准备更新时发生未知错误。</translation>
     </message>
     <message>
         <source>Unknown error while downloading update.</source>
-        <translation>Unknown error while downloading update.</translation>
+        <translation>下载更新时发生未知错误。</translation>
     </message>
 </context>
 <context>

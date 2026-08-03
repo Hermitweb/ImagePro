@@ -281,6 +281,23 @@ ZH_MAP = {
     "Edit": "编辑",
     "Batch": "批处理",
     "No images to watermark": "没有可添加水印的图片",
+    # ── 更新相关 ──
+    "&Check for Updates": "检查更新(&C)",
+    "Check for Updates": "检查更新",
+    "Auto-update is not available in this build.<br>Current version: %1": "此构建版本不支持自动更新。<br>当前版本：%1",
+    "Checking for updates...": "正在检查更新…",
+    "New version %1 available. Use Help → Check for Updates to install.": "新版本 %1 可用。请使用 帮助 → 检查更新 来安装。",
+    "Update Available": "有可用更新",
+    "A new version %1 is available. Download and apply on exit?": "新版本 %1 已可用。是否在退出时下载并应用？",
+    "You are running the latest version.": "您正在使用最新版本。",
+    "Update ready. It will be applied when you quit the app.": "更新已就绪，将在退出应用时自动应用。",
+    "No pending update to download.": "没有待下载的更新。",
+    "Unknown error while checking for updates.": "检查更新时发生未知错误。",
+    "Unknown error while downloading update.": "下载更新时发生未知错误。",
+    "Unknown error while preparing update.": "准备更新时发生未知错误。",
+    "Version %1": "版本 %1",
+    "A powerful image processing tool.": "强大的图片处理工具。",
+    "OK": "确定",
 }
 
 

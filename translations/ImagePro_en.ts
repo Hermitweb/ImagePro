@@ -526,6 +526,18 @@ Size: %2x%3</translation>
         <source>Update ready. It will be applied when you quit the app.</source>
         <translation>Update ready. It will be applied when you quit the app.</translation>
     </message>
+    <message>
+        <source>Version %1</source>
+        <translation>Version %1</translation>
+    </message>
+    <message>
+        <source>A powerful image processing tool.</source>
+        <translation>A powerful image processing tool.</translation>
+    </message>
+    <message>
+        <source>OK</source>
+        <translation>OK</translation>
+    </message>
 </context>
 <context>
     <name>yingtu::PdfEngine</name>

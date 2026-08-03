@@ -473,6 +473,16 @@ QStringList ImageListModel::visibleFilePaths() const
     return paths;
 }
 
+QStringList ImageListModel::selectedFilePaths() const
+{
+    QStringList paths;
+    for (const auto& item : m_items) {
+        if (item.isSelected() && !item.isHidden())
+            paths.append(item.filePath());
+    }
+    return paths;
+}
+
 int ImageListModel::selectedCount() const
 {
     int count = 0;

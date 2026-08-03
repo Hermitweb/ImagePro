@@ -197,7 +197,18 @@ public:
         connect(m_tooltipTimer, &QTimer::timeout, this, &ImageListView::showPendingTooltip);
     }
 
+    void setStitchToggleMode(bool enabled) { m_stitchToggleMode = enabled; }
+
 protected:
+    QItemSelectionModel::SelectionFlags selectionCommand(const QModelIndex& index,
+                                                          const QEvent* event) const override
+    {
+        if (m_stitchToggleMode && index.isValid()) {
+            // 拼接模式：单击 toggle 选中状态（参与/取消拼接），无需 Ctrl 修饰键。
+            return QItemSelectionModel::Toggle | QItemSelectionModel::Rows;
+        }
+        return QListView::selectionCommand(index, event);
+    }
     void keyPressEvent(QKeyEvent* event) override
     {
         if (event->key() == Qt::Key_Escape) {
@@ -362,6 +373,7 @@ private:
     QRubberBand* m_rubberBand = nullptr;
     QPoint m_rubberBandOrigin;
     bool m_inRubberBand = false;
+    bool m_stitchToggleMode = false;
 };
 
 ImageListWidget::ImageListWidget(ImageListModel* model, QWidget* parent)
@@ -382,6 +394,11 @@ ImageListWidget::ImageListWidget(ImageListModel* model, QWidget* parent)
     m_view->setItemDelegate(new ImageItemDelegate(this, m_view));
 
     connect(m_view, &QListView::doubleClicked, this, [this](const QModelIndex& index) {
+        if (m_stitchSelectionMode && index.isValid()) {
+            // 双击前的 mousePress 已 toggle 了一次，这里回退以保持原选中状态。
+            m_view->selectionModel()->select(index,
+                QItemSelectionModel::Toggle | QItemSelectionModel::Rows);
+        }
         if (index.isValid())
             emit imageDoubleClicked(index.row());
     });
@@ -433,6 +450,27 @@ QModelIndexList ImageListWidget::selectedIndexes() const
     if (!m_view)
         return QModelIndexList();
     return m_view->selectionModel()->selectedIndexes();
+}
+
+void ImageListWidget::setStitchSelectionMode(bool enabled)
+{
+    m_stitchSelectionMode = enabled;
+    auto* view = qobject_cast<ImageListView*>(m_view);
+    if (view)
+        view->setStitchToggleMode(enabled);
+}
+
+void ImageListWidget::selectAllForStitch()
+{
+    if (!m_view || !m_model)
+        return;
+    m_view->selectionModel()->clear();
+    for (int i = 0; i < m_model->rowCount(); ++i) {
+        QModelIndex idx = m_model->index(i);
+        if (!m_model->data(idx, ImageListModel::HiddenRole).toBool())
+            m_view->selectionModel()->select(idx,
+                QItemSelectionModel::Select | QItemSelectionModel::Rows);
+    }
 }
 
 void ImageListWidget::dragEnterEvent(QDragEnterEvent* event)
@@ -561,6 +599,17 @@ void ImageListWidget::onModelCountChanged(int count)
     Q_UNUSED(count)
     updateEmptyState();
     loadVisibleRange();
+    // 拼接模式下新添加的图片自动选中参与拼接。
+    if (m_stitchSelectionMode && m_view && m_model) {
+        for (int i = 0; i < m_model->rowCount(); ++i) {
+            QModelIndex idx = m_model->index(i);
+            if (!m_view->selectionModel()->isSelected(idx) &&
+                !m_model->data(idx, ImageListModel::HiddenRole).toBool()) {
+                m_view->selectionModel()->select(idx,
+                    QItemSelectionModel::Select | QItemSelectionModel::Rows);
+            }
+        }
+    }
 }
 
 void ImageListWidget::onLoadingTick()

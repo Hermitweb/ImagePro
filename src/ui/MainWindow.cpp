@@ -23,6 +23,7 @@
 #include <QApplication>
 #include <QCoreApplication>
 #include <QCloseEvent>
+#include <QDialog>
 #include <QDir>
 #include <QDockWidget>
 #include <QFile>
@@ -33,6 +34,7 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QPushButton>
 #include <QProgressDialog>
 #include <QSettings>
 #include <QSplitter>
@@ -300,11 +302,30 @@ void MainWindow::setupMenuBar()
         upd.checkForUpdates();
     });
     helpMenu->addAction(tr("&About"), this, [this]() {
-        QMessageBox::about(this, tr("About 影图 ImagePro"),
-                           tr("<h2>影图 ImagePro</h2>"
-                              "<p>Version %1</p>"
-                              "<p>A powerful image processing tool.</p>")
-                               .arg(QString::fromLatin1(IMAGEPRO_VERSION)));
+        QDialog dlg(this);
+        dlg.setWindowTitle(tr("About 影图 ImagePro"));
+        QVBoxLayout* layout = new QVBoxLayout(&dlg);
+        QLabel* title = new QLabel(QStringLiteral("<h2>影图 ImagePro</h2>"));
+        title->setTextFormat(Qt::RichText);
+        title->setAlignment(Qt::AlignCenter);
+        QLabel* version = new QLabel(tr("Version %1").arg(QString::fromLatin1(IMAGEPRO_VERSION)));
+        version->setAlignment(Qt::AlignCenter);
+        QLabel* desc = new QLabel(tr("A powerful image processing tool."));
+        desc->setAlignment(Qt::AlignCenter);
+        QLabel* link = new QLabel(
+            QStringLiteral("<a href=\"https://github.com/Hermitweb/ImagePro\">GitHub: Hermitweb/ImagePro</a>"));
+        link->setTextFormat(Qt::RichText);
+        link->setOpenExternalLinks(true);
+        link->setAlignment(Qt::AlignCenter);
+        QPushButton* closeBtn = new QPushButton(tr("OK"), &dlg);
+        connect(closeBtn, &QPushButton::clicked, &dlg, &QDialog::accept);
+        layout->addWidget(title);
+        layout->addWidget(version);
+        layout->addWidget(desc);
+        layout->addWidget(link);
+        layout->addWidget(closeBtn, 0, Qt::AlignCenter);
+        dlg.setLayout(layout);
+        dlg.exec();
     });
 }
 
@@ -420,7 +441,12 @@ void MainWindow::connectSignals()
 
     connect(m_listWidget, &ImageListWidget::imageDoubleClicked, this, &MainWindow::onImageDoubleClicked);
     connect(m_listWidget, &ImageListWidget::imageSelected, this, &MainWindow::onImageSelected);
-    connect(m_listWidget, &ImageListWidget::imageSelectionChanged, this, &MainWindow::updateStatusBar);
+    connect(m_listWidget, &ImageListWidget::imageSelectionChanged, this, [this]() {
+        updateStatusBar();
+        // 拼接模式下选择变更（toggle 参与/取消）需要刷新预览。
+        if (m_currentTool == ToolType::Stitch)
+            m_previewDelayTimer->start();
+    });
     connect(m_listWidget, &ImageListWidget::deleteRequested, this, [this](int row) {
         m_model->removeImage(row);
         if (m_currentImageRow >= m_model->rowCount())
@@ -627,6 +653,11 @@ void MainWindow::onToolChanged(ToolType tool)
 
     m_previewWidget->setStitchMode(tool == ToolType::Stitch);
 
+    // 拼接模式：启用 toggle 选择，默认全选参与拼接。
+    if (tool == ToolType::Stitch)
+        m_listWidget->selectAllForStitch();
+    m_listWidget->setStitchSelectionMode(tool == ToolType::Stitch);
+
     if (tool == ToolType::Edit) {
         m_centerStack->setCurrentWidget(m_editorWidget);
         m_editorWidget->setCurrentTool(m_propertyPanel->currentEditAction());
@@ -729,6 +760,11 @@ void MainWindow::onProcessRequested()
 
     switch (m_currentTool) {
     case ToolType::Stitch: {
+        // 拼接仅使用选中的图片，无选中时回退到全部可见图片。
+        QStringList stitchPaths = m_model->selectedFilePaths();
+        if (stitchPaths.isEmpty())
+            stitchPaths = paths;
+
         StitchSettings settings = m_propertyPanel->stitchSettings();
 
         QString fmt = settings.outputFormat.toLower();
@@ -738,10 +774,10 @@ void MainWindow::onProcessRequested()
             defaultPath = settings.outputDir + QStringLiteral("/") + settings.baseName
                           + QStringLiteral(".") + fmt;
         } else {
-            QString sourceDir = commonParentDirectory(paths);
+            QString sourceDir = commonParentDirectory(stitchPaths);
             if (sourceDir.isEmpty())
-                sourceDir = QFileInfo(paths.first()).absolutePath();
-            QFileInfo fi(paths.first());
+                sourceDir = QFileInfo(stitchPaths.first()).absolutePath();
+            QFileInfo fi(stitchPaths.first());
             defaultPath = sourceDir + QStringLiteral("/") + fi.completeBaseName()
                           + QStringLiteral(".") + fmt;
         }
@@ -768,14 +804,14 @@ void MainWindow::onProcessRequested()
         }
 
         settings.explicitOutputPath = selectedPath;
-        runEngineAsync<StitchEngine>(settings, paths,
-            tr("Stitching..."), [this, paths](const QString& out) {
+        runEngineAsync<StitchEngine>(settings, stitchPaths,
+            tr("Stitching..."), [this, stitchPaths](const QString& out) {
                 if (out.isEmpty())
                     return;
                 m_statusBar->setMessage(tr("Saved: %1").arg(out));
                 ResultInfo info;
                 info.title = tr("Stitch Complete");
-                info.message = tr("Successfully stitched %1 images").arg(paths.size());
+                info.message = tr("Successfully stitched %1 images").arg(stitchPaths.size());
                 info.files << out;
                 info.totalFileSize = QFileInfo(out).size();
                 ImageInfo ii = ImageLoader::loadInfo(out);
@@ -1152,7 +1188,9 @@ void MainWindow::onBatchProcess()
 void MainWindow::onImageDoubleClicked(int row)
 {
     m_currentImageRow = row;
-    updatePreview();
+    // 拼接模式下双击显示单张预览（applyToolEffect=false），
+    // 其他模式正常更新预览。
+    updatePreview(m_currentTool != ToolType::Stitch);
 }
 
 void MainWindow::onImageSelected(int row)
@@ -1173,13 +1211,18 @@ void MainWindow::updatePreview(bool applyToolEffect)
         return;
     }
 
-    // 拼接模式下始终显示拼接合成效果，点击图片列表仅用于选择/高亮，不切换单张预览。
-    if (m_currentTool == ToolType::Stitch)
-        applyToolEffect = true;
+    // 拼接模式下：applyToolEffect=true 显示选中图片拼接效果，
+    // applyToolEffect=false（双击）显示单张预览。
+    const bool showStitch = (m_currentTool == ToolType::Stitch) && applyToolEffect;
+
+    if (showStitch && m_model->selectedFilePaths().isEmpty()) {
+        m_previewWidget->clear();
+        return;
+    }
 
     const bool hasCurrentRow = m_currentImageRow >= 0 && m_currentImageRow < m_model->rowCount();
     const ImageItem* item = hasCurrentRow ? m_model->itemAt(m_currentImageRow) : nullptr;
-    if (m_currentTool != ToolType::Stitch && (!hasCurrentRow || !item || !item->isValid())) {
+    if (!showStitch && (!hasCurrentRow || !item || !item->isValid())) {
         m_previewWidget->clear();
         return;
     }
@@ -1195,7 +1238,8 @@ void MainWindow::updatePreview(bool applyToolEffect)
     PreviewTaskInput input;
     input.tool = m_currentTool;
     input.currentFilePath = item ? item->filePath() : QString();
-    input.allFilePaths = m_model->filePaths();
+    // 拼接预览仅使用选中的图片，其他模式使用全部可见图片。
+    input.allFilePaths = showStitch ? m_model->selectedFilePaths() : m_model->filePaths();
     input.previewSize = m_previewWidget->viewportSize();
     if (input.previewSize.isEmpty())
         input.previewSize = QSize(1280, 720);
@@ -1248,7 +1292,9 @@ void MainWindow::updateStatusBar()
 
     if (m_currentTool == ToolType::Stitch && m_model->rowCount() > 0) {
         // 仅读取图片头信息估算输出尺寸，不加载像素数据，远快于跑完整拼接。
-        QStringList paths = m_model->filePaths();
+        QStringList paths = m_model->selectedFilePaths();
+        if (paths.isEmpty())
+            paths = m_model->filePaths();
         StitchSettings settings = m_propertyPanel->stitchSettings();
         m_statusBar->setOutputSize(StitchEngine::estimateOutputSize(paths, settings));
     } else if (m_currentImageRow >= 0 && m_currentImageRow < m_model->rowCount()) {

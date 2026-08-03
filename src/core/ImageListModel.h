@@ -67,6 +67,7 @@ public:
     QStringList filePaths() const;
     QStringList allFilePaths() const;
     QStringList visibleFilePaths() const;
+    QStringList selectedFilePaths() const;
     int selectedCount() const;
     int validCount() const;
     int visibleCount() const;

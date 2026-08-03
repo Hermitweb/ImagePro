@@ -19,6 +19,10 @@ public:
     void setEmptyHint(const QString& hint);
     QModelIndexList selectedIndexes() const;
 
+    // 拼接模式：单击 toggle 选中（参与拼接），双击单张预览。
+    void setStitchSelectionMode(bool enabled);
+    void selectAllForStitch();
+
     ImageListModel* model() const { return m_model; }
     int loadingAngle() const { return m_loadingAngle; }
     QSize cellSize() const { return QSize(m_cellWidth, m_cellHeight); }
@@ -71,6 +75,7 @@ private:
     int m_thumbSize = 192;
     int m_thumbMarginH = 4;
     int m_topMargin = 4;
+    bool m_stitchSelectionMode = false;
 };
 
 } // namespace yingtu
