@@ -22,6 +22,8 @@ public:
     // 拼接模式：单击 toggle 选中（参与拼接），双击单张预览。
     void setStitchSelectionMode(bool enabled);
     void selectAllForStitch();
+    void clearStitchSelection();
+    void invertStitchSelection();
 
     ImageListModel* model() const { return m_model; }
     int loadingAngle() const { return m_loadingAngle; }

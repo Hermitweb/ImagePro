@@ -1342,6 +1342,26 @@ Size: %2x%3</translation>
         <source>Image heights are inconsistent</source>
         <translation>Image heights are inconsistent</translation>
     </message>
+    <message>
+        <source>Batch Select</source>
+        <translation>Batch Select</translation>
+    </message>
+    <message>
+        <source>Batch select images for stitching</source>
+        <translation>Batch select images for stitching</translation>
+    </message>
+    <message>
+        <source>Select All</source>
+        <translation>Select All</translation>
+    </message>
+    <message>
+        <source>Clear Selection</source>
+        <translation>Clear Selection</translation>
+    </message>
+    <message>
+        <source>Invert Selection</source>
+        <translation>Invert Selection</translation>
+    </message>
 </context>
 <context>
     <name>yingtu::ResizeEngine</name>

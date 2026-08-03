@@ -473,6 +473,27 @@ void ImageListWidget::selectAllForStitch()
     }
 }
 
+void ImageListWidget::clearStitchSelection()
+{
+    if (!m_view || !m_model)
+        return;
+    m_view->selectionModel()->clear();
+}
+
+void ImageListWidget::invertStitchSelection()
+{
+    if (!m_view || !m_model)
+        return;
+    for (int i = 0; i < m_model->rowCount(); ++i) {
+        QModelIndex idx = m_model->index(i);
+        if (m_model->data(idx, ImageListModel::HiddenRole).toBool())
+            continue;
+        // Toggle 每一项的选中状态，实现反选。
+        m_view->selectionModel()->select(idx,
+            QItemSelectionModel::Toggle | QItemSelectionModel::Rows);
+    }
+}
+
 void ImageListWidget::dragEnterEvent(QDragEnterEvent* event)
 {
     if (event->mimeData()->hasUrls())
@@ -599,17 +620,7 @@ void ImageListWidget::onModelCountChanged(int count)
     Q_UNUSED(count)
     updateEmptyState();
     loadVisibleRange();
-    // 拼接模式下新添加的图片自动选中参与拼接。
-    if (m_stitchSelectionMode && m_view && m_model) {
-        for (int i = 0; i < m_model->rowCount(); ++i) {
-            QModelIndex idx = m_model->index(i);
-            if (!m_view->selectionModel()->isSelected(idx) &&
-                !m_model->data(idx, ImageListModel::HiddenRole).toBool()) {
-                m_view->selectionModel()->select(idx,
-                    QItemSelectionModel::Select | QItemSelectionModel::Rows);
-            }
-        }
-    }
+    // 拼接模式下新添加的图片默认不参与拼接，由用户手动点击加入。
 }
 
 void ImageListWidget::onLoadingTick()

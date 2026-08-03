@@ -203,7 +203,7 @@ MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
 {
     setWindowTitle(tr("影图 ImagePro"));
-    setWindowIcon(QIcon(QStringLiteral(":/icons/app.svg")));
+    setWindowIcon(QIcon(QStringLiteral(":/icons/app.png")));
     resize(1280, 800);
     setMinimumSize(800, 600);
 
@@ -316,7 +316,7 @@ void MainWindow::setupMenuBar()
 
         // 应用图标
         QLabel* iconLabel = new QLabel(&dlg);
-        QPixmap iconPix(QStringLiteral(":/icons/app.svg"));
+        QPixmap iconPix(QStringLiteral(":/icons/app.png"));
         if (!iconPix.isNull())
             iconLabel->setPixmap(iconPix.scaled(64, 64, Qt::KeepAspectRatio, Qt::SmoothTransformation));
         iconLabel->setAlignment(Qt::AlignCenter);
@@ -507,6 +507,21 @@ void MainWindow::connectSignals()
 
     connect(m_propertyPanel, &PropertyPanel::previewRequested, this, &MainWindow::onPreviewRequested);
     connect(m_propertyPanel, &PropertyPanel::processRequested, this, &MainWindow::onProcessRequested);
+    connect(m_propertyPanel, &PropertyPanel::stitchSelectAllRequested, this, [this]() {
+        m_listWidget->selectAllForStitch();
+        if (m_currentTool == ToolType::Stitch)
+            updateToolPreview();
+    });
+    connect(m_propertyPanel, &PropertyPanel::stitchClearSelectionRequested, this, [this]() {
+        m_listWidget->clearStitchSelection();
+        if (m_currentTool == ToolType::Stitch)
+            updateToolPreview();
+    });
+    connect(m_propertyPanel, &PropertyPanel::stitchInvertSelectionRequested, this, [this]() {
+        m_listWidget->invertStitchSelection();
+        if (m_currentTool == ToolType::Stitch)
+            updateToolPreview();
+    });
     connect(m_propertyPanel, &PropertyPanel::settingsChanged, this, [this]() {
         if (m_currentTool == ToolType::Edit && m_editorWidget)
             m_editorWidget->setCurrentTool(m_propertyPanel->currentEditAction());
@@ -687,9 +702,9 @@ void MainWindow::onToolChanged(ToolType tool)
 
     m_previewWidget->setStitchMode(tool == ToolType::Stitch);
 
-    // 拼接模式：启用 toggle 选择，默认全选参与拼接。
+    // 拼接模式：启用 toggle 选择，默认不选中任何图片（用户手动点击加入拼接）。
     if (tool == ToolType::Stitch)
-        m_listWidget->selectAllForStitch();
+        m_listWidget->clearStitchSelection();
     m_listWidget->setStitchSelectionMode(tool == ToolType::Stitch);
 
     if (tool == ToolType::Edit) {
@@ -1222,14 +1237,19 @@ void MainWindow::onBatchProcess()
 void MainWindow::onImageDoubleClicked(int row)
 {
     m_currentImageRow = row;
-    // 拼接模式下双击显示单张预览（applyToolEffect=false），
-    // 其他模式正常更新预览。
+    // 拼接模式下双击显示单张预览（applyToolEffect=false），其他模式正常更新预览。
+    // 双击前的 toggle/回退会触发 imageSelectionChanged 启动延迟刷新，
+    // 这里停止定时器，避免拼接预览在 200ms 后覆盖单图预览。
+    if (m_currentTool == ToolType::Stitch && m_previewDelayTimer)
+        m_previewDelayTimer->stop();
     updatePreview(m_currentTool != ToolType::Stitch);
 }
 
 void MainWindow::onImageSelected(int row)
 {
-    if (row == m_currentImageRow)
+    // 拼接 toggle 模式下，同一行的选中状态可能变化（双击回退后再次点击），
+    // 不能因 row 未变就跳过刷新；其他模式 row 未变确实无需更新。
+    if (row == m_currentImageRow && m_currentTool != ToolType::Stitch)
         return;
     m_currentImageRow = row;
     if (m_currentTool == ToolType::Stitch)

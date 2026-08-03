@@ -1342,6 +1342,26 @@ Size: %2x%3</translation>
         <source>Image heights are inconsistent</source>
         <translation>图片高度不一致</translation>
     </message>
+    <message>
+        <source>Batch Select</source>
+        <translation>批量选择</translation>
+    </message>
+    <message>
+        <source>Batch select images for stitching</source>
+        <translation>批量选择图片参与拼接</translation>
+    </message>
+    <message>
+        <source>Select All</source>
+        <translation>全选</translation>
+    </message>
+    <message>
+        <source>Clear Selection</source>
+        <translation>清空选择</translation>
+    </message>
+    <message>
+        <source>Invert Selection</source>
+        <translation>反选</translation>
+    </message>
 </context>
 <context>
     <name>yingtu::ResizeEngine</name>

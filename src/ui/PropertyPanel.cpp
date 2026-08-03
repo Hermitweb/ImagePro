@@ -27,6 +27,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMenu>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QScopedValueRollback>
@@ -159,6 +160,17 @@ void PropertyPanel::buildStitchPanel()
     QVBoxLayout* settingsLayout = new QVBoxLayout(settingsContent);
     settingsLayout->setContentsMargins(0, 0, 0, 0);
     settingsLayout->setSpacing(8);
+
+    // 批量选择操作：全选 / 清空 / 反选（默认不选中任何图片，由用户手动加入拼接）。
+    m_stitchBatchBtn = new QPushButton(tr("Batch Select"), settingsContent);
+    m_stitchBatchBtn->setToolTip(tr("Batch select images for stitching"));
+    QMenu* batchMenu = new QMenu(m_stitchBatchBtn);
+    batchMenu->addAction(tr("Select All"), this, &PropertyPanel::stitchSelectAllRequested);
+    batchMenu->addAction(tr("Clear Selection"), this, &PropertyPanel::stitchClearSelectionRequested);
+    batchMenu->addAction(tr("Invert Selection"), this, &PropertyPanel::stitchInvertSelectionRequested);
+    m_stitchBatchBtn->setMenu(batchMenu);
+    m_stitchBatchBtn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    settingsLayout->addWidget(m_stitchBatchBtn);
 
     m_stitchDirection = new QComboBox(settingsContent);
     m_stitchDirection->addItem(tr("Vertical"), static_cast<int>(StitchSettings::Vertical));

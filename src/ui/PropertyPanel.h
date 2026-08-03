@@ -71,6 +71,9 @@ signals:
     void editRedoRequested();
     void editClearRequested();
     void editHistoryJumpRequested(int index);
+    void stitchSelectAllRequested();
+    void stitchClearSelectionRequested();
+    void stitchInvertSelectionRequested();
 
 private slots:
     void onSettingsChanged();
@@ -182,6 +185,7 @@ private:
     QWidget* m_stitchGridRowWidget = nullptr;
     QComboBox* m_stitchOutputFormat = nullptr;
     QSlider* m_stitchQuality = nullptr;
+    QPushButton* m_stitchBatchBtn = nullptr;
 
     QComboBox* m_stitchPresetCategory = nullptr;
     QComboBox* m_stitchPreset = nullptr;

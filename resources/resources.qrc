@@ -4,6 +4,7 @@
         <file alias="dark.qss">themes/dark.qss</file>
     </qresource>
     <qresource prefix="/icons">
+        <file>icons/app.png</file>
         <file>icons/app.svg</file>
         <file>icons/arrow-down-dark.svg</file>
         <file>icons/arrow-down-light.svg</file>

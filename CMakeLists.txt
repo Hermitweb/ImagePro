@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(ImagePro VERSION 1.3.1 LANGUAGES CXX)
+project(ImagePro VERSION 1.4.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -215,7 +215,7 @@ if(WITH_VELOPACK)
     target_compile_definitions(ImageProLib PUBLIC WITH_VELOPACK)
 endif()
 
-add_executable(ImagePro WIN32 src/main.cpp ${RESOURCE_FILES} ${QM_FILES})
+add_executable(ImagePro WIN32 src/main.cpp ${RESOURCE_FILES} ${QM_FILES} resources/app.rc)
 
 target_link_libraries(ImagePro PRIVATE ImageProLib)
 

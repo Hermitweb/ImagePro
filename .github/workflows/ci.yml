@@ -159,17 +159,33 @@ jobs:
         shell: pwsh
         run: |
           # 将 Setup.exe 和 Portable.zip 重命名为 ImagePro-win-<版本号>-XXX 格式。
-          # nupkg / releases.win.json / assets.win.json / RELEASES 保持原名（Velopack 依赖）。
+          # nupkg / releases.win.json / RELEASES 保持原名（Velopack 依赖）。
+          # 同时更新 assets.win.json 使其与实际文件名一致，避免 404。
           $ver = "${{ env.VERSION }}"
           $setup = "releases\ImagePro-win-Setup.exe"
           $portable = "releases\ImagePro-win-Portable.zip"
+          $newSetup = "ImagePro-win-${ver}-Setup.exe"
+          $newPortable = "ImagePro-win-${ver}-Portable.zip"
           if (Test-Path $setup) {
-            Rename-Item $setup "ImagePro-win-${ver}-Setup.exe"
-            Write-Host "Renamed Setup -> ImagePro-win-${ver}-Setup.exe"
+            Rename-Item $setup $newSetup
+            Write-Host "Renamed Setup -> $newSetup"
           }
           if (Test-Path $portable) {
-            Rename-Item $portable "ImagePro-win-${ver}-Portable.zip"
-            Write-Host "Renamed Portable -> ImagePro-win-${ver}-Portable.zip"
+            Rename-Item $portable $newPortable
+            Write-Host "Renamed Portable -> $newPortable"
+          }
+          # 同步更新 assets.win.json
+          $assetsPath = "releases\assets.win.json"
+          if (Test-Path $assetsPath) {
+            $assets = Get-Content $assetsPath -Raw | ConvertFrom-Json
+            foreach ($a in $assets) {
+              if ($a.RelativeFileName -eq "ImagePro-win-Setup.exe")
+                { $a.RelativeFileName = $newSetup }
+              elseif ($a.RelativeFileName -eq "ImagePro-win-Portable.zip")
+                { $a.RelativeFileName = $newPortable }
+            }
+            $assets | ConvertTo-Json -Compress | Set-Content $assetsPath -Encoding UTF8
+            Write-Host "Updated assets.win.json to match renamed files"
           }
           Write-Host "Release assets (final):"
           Get-ChildItem releases | Select-Object Name, Length
@@ -177,8 +193,7 @@ jobs:
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
-          # Velopack 的 GitHub source 从最新 Release 读取 releases.win.json 并下载
-          # 其中引用的全部 nupkg，因此最新 Release 须包含 feed 中所有资产。
+          name: ImagePro-win-${{ env.VERSION }}
           files: releases/*
           generate_release_notes: true
           draft: false
