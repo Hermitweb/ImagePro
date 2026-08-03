@@ -1108,35 +1108,35 @@ Size: %2x%3</translation>
     </message>
     <message>
         <source>Stitch Settings</source>
-        <translation>Stitch Settings</translation>
+        <translation>拼接设置</translation>
     </message>
     <message>
         <source>Grid Presets</source>
-        <translation>Grid Presets</translation>
+        <translation>网格预设</translation>
     </message>
     <message>
         <source>All</source>
-        <translation>All</translation>
+        <translation>全部</translation>
     </message>
     <message>
         <source>Social</source>
-        <translation>Social</translation>
+        <translation>社交分享</translation>
     </message>
     <message>
         <source>ID Photo</source>
-        <translation>ID Photo</translation>
+        <translation>证件照片</translation>
     </message>
     <message>
         <source>Output Settings</source>
-        <translation>Output Settings</translation>
+        <translation>输出设置</translation>
     </message>
     <message>
         <source>Create</source>
-        <translation>Create</translation>
+        <translation>创建</translation>
     </message>
     <message>
         <source>File Name:</source>
-        <translation>File Name:</translation>
+        <translation>文件名：</translation>
     </message>
     <message>
         <source>Filter</source>
@@ -1232,7 +1232,7 @@ Size: %2x%3</translation>
     </message>
     <message>
         <source> [needs %1]</source>
-        <translation> [needs %1]</translation>
+        <translation> [需 %1 张]</translation>
     </message>
     <message>
         <source>Error</source>
@@ -1248,11 +1248,11 @@ Size: %2x%3</translation>
     </message>
     <message>
         <source>At least 2 images are required</source>
-        <translation>At least 2 images are required</translation>
+        <translation>至少需要 2 张图片</translation>
     </message>
     <message>
         <source>Spacing is out of range</source>
-        <translation>Spacing is out of range</translation>
+        <translation>间距超出范围</translation>
     </message>
     <message>
         <source>Output directory is empty</source>
@@ -1284,7 +1284,7 @@ Size: %2x%3</translation>
     </message>
     <message>
         <source>e.g. {name}_{index}</source>
-        <translation>e.g. {name}_{index}</translation>
+        <translation>例如：{name}_{index}</translation>
     </message>
     <message>
         <source>Bold</source>
@@ -1308,11 +1308,11 @@ Size: %2x%3</translation>
     </message>
     <message>
         <source>V</source>
-        <translation>V</translation>
+        <translation>竖</translation>
     </message>
     <message>
         <source>H</source>
-        <translation>H</translation>
+        <translation>横</translation>
     </message>
     <message>
         <source>Uniform Height</source>
