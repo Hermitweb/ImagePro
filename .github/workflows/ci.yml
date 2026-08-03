@@ -152,7 +152,26 @@ jobs:
             --mainExe ImagePro.exe `
             --packTitle "影图 ImagePro" `
             -o releases
-          Write-Host "Release assets:"
+          Write-Host "Release assets (before rename):"
+          Get-ChildItem releases | Select-Object Name, Length
+
+      - name: Rename assets to 项目名+平台+版本号 format
+        shell: pwsh
+        run: |
+          # 将 Setup.exe 和 Portable.zip 重命名为 ImagePro-win-<版本号>-XXX 格式。
+          # nupkg / releases.win.json / assets.win.json / RELEASES 保持原名（Velopack 依赖）。
+          $ver = "${{ env.VERSION }}"
+          $setup = "releases\ImagePro-win-Setup.exe"
+          $portable = "releases\ImagePro-win-Portable.zip"
+          if (Test-Path $setup) {
+            Rename-Item $setup "ImagePro-win-${ver}-Setup.exe"
+            Write-Host "Renamed Setup -> ImagePro-win-${ver}-Setup.exe"
+          }
+          if (Test-Path $portable) {
+            Rename-Item $portable "ImagePro-win-${ver}-Portable.zip"
+            Write-Host "Renamed Portable -> ImagePro-win-${ver}-Portable.zip"
+          }
+          Write-Host "Release assets (final):"
           Get-ChildItem releases | Select-Object Name, Length
 
       - name: Upload release assets

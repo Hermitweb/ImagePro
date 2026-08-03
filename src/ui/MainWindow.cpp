@@ -23,6 +23,7 @@
 #include <QApplication>
 #include <QCoreApplication>
 #include <QCloseEvent>
+#include <QActionGroup>
 #include <QDialog>
 #include <QDir>
 #include <QDockWidget>
@@ -273,6 +274,8 @@ void MainWindow::setupMenuBar()
     }, Qt::ALT + Qt::SHIFT + Qt::Key_D);
 
     QMenu* langMenu = viewMenu->addMenu(tr("&Language"));
+    QActionGroup* langGroup = new QActionGroup(langMenu);
+    langGroup->setExclusive(true);
     for (const QString& code : ImageProApp::supportedLanguages()) {
         QAction* action = langMenu->addAction(ImageProApp::languageName(code), this, [this, code]() {
             auto* app = qobject_cast<ImageProApp*>(qApp);
@@ -284,6 +287,7 @@ void MainWindow::setupMenuBar()
             }
         });
         action->setCheckable(true);
+        action->setActionGroup(langGroup);
         action->setChecked(qobject_cast<ImageProApp*>(qApp)->currentLanguage() == code);
     }
 
@@ -304,27 +308,57 @@ void MainWindow::setupMenuBar()
     helpMenu->addAction(tr("&About"), this, [this]() {
         QDialog dlg(this);
         dlg.setWindowTitle(tr("About 影图 ImagePro"));
+        dlg.setFixedSize(360, 280);
+
         QVBoxLayout* layout = new QVBoxLayout(&dlg);
-        QLabel* title = new QLabel(QStringLiteral("<h2>影图 ImagePro</h2>"));
+        layout->setSpacing(12);
+        layout->setContentsMargins(28, 24, 28, 20);
+
+        // 应用图标
+        QLabel* iconLabel = new QLabel(&dlg);
+        QPixmap iconPix(QStringLiteral(":/icons/app.svg"));
+        if (!iconPix.isNull())
+            iconLabel->setPixmap(iconPix.scaled(64, 64, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+        iconLabel->setAlignment(Qt::AlignCenter);
+        layout->addWidget(iconLabel);
+
+        // 标题
+        QLabel* title = new QLabel(QStringLiteral("<b style='font-size:16px;'>影图 ImagePro</b>"), &dlg);
         title->setTextFormat(Qt::RichText);
         title->setAlignment(Qt::AlignCenter);
-        QLabel* version = new QLabel(tr("Version %1").arg(QString::fromLatin1(IMAGEPRO_VERSION)));
+        layout->addWidget(title);
+
+        // 版本
+        QLabel* version = new QLabel(tr("Version %1").arg(QString::fromLatin1(IMAGEPRO_VERSION)), &dlg);
         version->setAlignment(Qt::AlignCenter);
-        QLabel* desc = new QLabel(tr("A powerful image processing tool."));
+        version->setStyleSheet(QStringLiteral("color: gray;"));
+        layout->addWidget(version);
+
+        // 描述
+        QLabel* desc = new QLabel(tr("A powerful image processing tool."), &dlg);
         desc->setAlignment(Qt::AlignCenter);
+        layout->addWidget(desc);
+
+        // GitHub 链接
         QLabel* link = new QLabel(
-            QStringLiteral("<a href=\"https://github.com/Hermitweb/ImagePro\">GitHub: Hermitweb/ImagePro</a>"));
+            QStringLiteral("<a href=\"https://github.com/Hermitweb/ImagePro\" style='text-decoration:none;'>🔗 GitHub: Hermitweb/ImagePro</a>"), &dlg);
         link->setTextFormat(Qt::RichText);
         link->setOpenExternalLinks(true);
         link->setAlignment(Qt::AlignCenter);
-        QPushButton* closeBtn = new QPushButton(tr("OK"), &dlg);
-        connect(closeBtn, &QPushButton::clicked, &dlg, &QDialog::accept);
-        layout->addWidget(title);
-        layout->addWidget(version);
-        layout->addWidget(desc);
         layout->addWidget(link);
+
+        // 分隔线
+        QFrame* separator = new QFrame(&dlg);
+        separator->setFrameShape(QFrame::HLine);
+        separator->setFrameShadow(QFrame::Sunken);
+        layout->addWidget(separator);
+
+        // 关闭按钮
+        QPushButton* closeBtn = new QPushButton(tr("OK"), &dlg);
+        closeBtn->setMinimumWidth(80);
+        connect(closeBtn, &QPushButton::clicked, &dlg, &QDialog::accept);
         layout->addWidget(closeBtn, 0, Qt::AlignCenter);
-        dlg.setLayout(layout);
+
         dlg.exec();
     });
 }
@@ -1200,7 +1234,8 @@ void MainWindow::onImageSelected(int row)
     m_currentImageRow = row;
     if (m_currentTool == ToolType::Stitch)
         m_previewWidget->setStitchHighlightedInput(row);
-    updatePreview();
+    // 拼接模式下显示拼接预览（使用选中图片），其他模式显示单张原图。
+    updatePreview(m_currentTool == ToolType::Stitch);
 }
 
 void MainWindow::updatePreview(bool applyToolEffect)
