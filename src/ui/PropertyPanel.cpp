@@ -470,7 +470,7 @@ void PropertyPanel::buildWatermarkPanel()
             this, &PropertyPanel::onWatermarkTypeChanged);
 
     m_watermarkText = new QLineEdit(panel);
-    m_watermarkText->setText(QStringLiteral("影图 ImagePro"));
+    m_watermarkText->setText(QStringLiteral("影图"));
     layout->addWidget(createFormRow(tr("Text:"), m_watermarkText));
 
     QWidget* wmImageRow = new QWidget(panel);

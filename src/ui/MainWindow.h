@@ -99,6 +99,12 @@ private:
     bool m_silentUpdateCheck = false;
     // 用户已手动触发过检查则不再执行启动后台检查，避免并发竞态。
     bool m_manualUpdateRequested = false;
+
+    // 标记当前是否已为预览任务设置 WaitCursor。
+    // updatePreview 可能被多次调用（立即 + 200ms 延迟），若前一个任务被 cancel，
+    // 其 finished 信号被抑制，restoreOverrideCursor 不会执行，
+    // 导致 override cursor 栈泄漏、光标卡在忙碌状态。用标志位确保配对。
+    bool m_previewCursorOverridden = false;
 };
 
 } // namespace yingtu

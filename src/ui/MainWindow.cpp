@@ -202,7 +202,7 @@ static PreviewTaskResult generatePreview(const PreviewTaskInput& input)
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
 {
-    setWindowTitle(tr("影图 ImagePro"));
+    setWindowTitle(tr("影图"));
     setWindowIcon(QIcon(QStringLiteral(":/icons/app.png")));
     resize(1280, 800);
     setMinimumSize(800, 600);
@@ -226,6 +226,11 @@ MainWindow::MainWindow(QWidget* parent)
     m_stitchSizeWatcher = new QFutureWatcher<QSize>(this);
 
     connectSignals();
+
+    // ToolBarWidget 在构造期间已发出 toolChanged(Stitch)，但此时 connectSignals
+    // 尚未执行、信号未连接，导致拼接模式（toggle 选择 / 拼接画布 / 清空选择）在
+    // 启动时未初始化。这里显式同步一次默认工具状态，确保拼接模式立即可用。
+    onToolChanged(ToolType::Stitch);
 
     updateStatusBar();
 
@@ -307,7 +312,7 @@ void MainWindow::setupMenuBar()
     });
     helpMenu->addAction(tr("&About"), this, [this]() {
         QDialog dlg(this);
-        dlg.setWindowTitle(tr("About 影图 ImagePro"));
+        dlg.setWindowTitle(tr("About 影图"));
         dlg.setFixedSize(360, 280);
 
         QVBoxLayout* layout = new QVBoxLayout(&dlg);
@@ -323,7 +328,7 @@ void MainWindow::setupMenuBar()
         layout->addWidget(iconLabel);
 
         // 标题
-        QLabel* title = new QLabel(QStringLiteral("<b style='font-size:16px;'>影图 ImagePro</b>"), &dlg);
+        QLabel* title = new QLabel(QStringLiteral("<b style='font-size:16px;'>影图</b>"), &dlg);
         title->setTextFormat(Qt::RichText);
         title->setAlignment(Qt::AlignCenter);
         layout->addWidget(title);
@@ -1252,10 +1257,16 @@ void MainWindow::onImageSelected(int row)
     if (row == m_currentImageRow && m_currentTool != ToolType::Stitch)
         return;
     m_currentImageRow = row;
-    if (m_currentTool == ToolType::Stitch)
+    if (m_currentTool == ToolType::Stitch) {
         m_previewWidget->setStitchHighlightedInput(row);
-    // 拼接模式下显示拼接预览（使用选中图片），其他模式显示单张原图。
-    updatePreview(m_currentTool == ToolType::Stitch);
+        // 拼接预览由 imageSelectionChanged → 200ms 延迟定时器统一触发，
+        // 这里不立即调用 updatePreview，否则会与定时器触发的 updateToolPreview
+        // 重复执行：前一个任务被 cancel 后 finished 信号被抑制，
+        // setOverrideCursor/restoreOverrideCursor 不配对，光标卡在忙碌状态。
+        return;
+    }
+    // 非拼接模式显示单张原图预览。
+    updatePreview(false);
 }
 
 void MainWindow::updatePreview(bool applyToolEffect)
@@ -1315,7 +1326,13 @@ void MainWindow::updatePreview(bool applyToolEffect)
                          && (m_currentTool == ToolType::Stitch || m_currentTool == ToolType::Compress
                              || m_currentTool == ToolType::Watermark || m_currentTool == ToolType::Resize);
     if (needsProgress) {
-        QApplication::setOverrideCursor(Qt::WaitCursor);
+        // 用标志位避免重复 push WaitCursor：当前任务被 cancel 时 finished 信号
+        // 被抑制，restoreOverrideCursor 不会执行；若再次 setOverrideCursor 会导致
+        // 栈中残留多个 WaitCursor，光标永久卡在忙碌状态。
+        if (!m_previewCursorOverridden) {
+            QApplication::setOverrideCursor(Qt::WaitCursor);
+            m_previewCursorOverridden = true;
+        }
         m_statusBar->setState(StatusBarWidget::State::Processing);
         m_statusBar->setMessage(tr("Updating preview..."));
     }
@@ -1419,7 +1436,11 @@ void MainWindow::onPreviewFinished()
 {
     PreviewTaskResult result = m_previewWatcher->result();
 
-    QApplication::restoreOverrideCursor();
+    // 仅在曾经设置过 WaitCursor 时恢复，保证与 updatePreview 中的 set 配对。
+    if (m_previewCursorOverridden) {
+        QApplication::restoreOverrideCursor();
+        m_previewCursorOverridden = false;
+    }
     m_statusBar->setState(StatusBarWidget::State::Ready);
     m_statusBar->setMessage(tr("Ready"));
 

@@ -13,8 +13,8 @@ ImageProApp::ImageProApp(int& argc, char** argv)
     : QApplication(argc, argv)
 {
     setOrganizationName(QStringLiteral("yingtu"));
-    setApplicationName(QStringLiteral("影图 ImagePro"));
-    setApplicationDisplayName(QStringLiteral("影图 ImagePro"));
+    setApplicationName(QStringLiteral("影图"));
+    setApplicationDisplayName(QStringLiteral("影图"));
 }
 
 void ImageProApp::initialize()

@@ -15,7 +15,7 @@ enum class WatermarkType {
 
 struct WatermarkSettings {
     WatermarkType type = WatermarkType::Text;
-    QString text = QStringLiteral("影图 ImagePro");
+    QString text = QStringLiteral("影图");
     QString imagePath;
     QString fontFamily = QStringLiteral("Microsoft YaHei");
     int fontSize = 24;

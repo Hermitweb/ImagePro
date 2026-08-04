@@ -538,6 +538,14 @@ Size: %2x%3</translation>
         <source>OK</source>
         <translation>OK</translation>
     </message>
+    <message>
+        <source>影图</source>
+        <translation>影图</translation>
+    </message>
+    <message>
+        <source>About 影图</source>
+        <translation>About 影图</translation>
+    </message>
 </context>
 <context>
     <name>yingtu::PdfEngine</name>

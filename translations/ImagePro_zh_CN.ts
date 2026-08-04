@@ -194,11 +194,11 @@
     </message>
     <message>
         <source>About 影图 ImagePro</source>
-        <translation>关于 影图 ImagePro</translation>
+        <translation>About 影图 ImagePro</translation>
     </message>
     <message>
         <source>&lt;h2&gt;影图 ImagePro&lt;/h2&gt;&lt;p&gt;Version 1.0.0&lt;/p&gt;&lt;p&gt;A powerful image processing tool.&lt;/p&gt;</source>
-        <translation>&lt;h2&gt;影图 ImagePro&lt;/h2&gt;&lt;p&gt;版本 1.0.0&lt;/p&gt;&lt;p&gt;一款强大的图片处理工具。&lt;/p&gt;</translation>
+        <translation>&lt;h2&gt;影图 ImagePro&lt;/h2&gt;&lt;p&gt;Version 1.0.0&lt;/p&gt;&lt;p&gt;A powerful image processing tool.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>Zoom Out</source>
@@ -410,41 +410,41 @@
     </message>
     <message>
         <source>&amp;PDF</source>
-        <translation>&amp;PDF</translation>
+        <translation>PDF(&amp;P)</translation>
     </message>
     <message>
         <source>Image Info</source>
-        <translation>Image Info</translation>
+        <translation>图片信息</translation>
     </message>
     <message>
         <source>File: %1
 Size: %2x%3</source>
-        <translation>File: %1
-Size: %2x%3</translation>
+        <translation>文件：%1
+尺寸：%2x%3</translation>
     </message>
     <message>
         <source>Save PDF</source>
-        <translation>Save PDF</translation>
+        <translation>保存 PDF</translation>
     </message>
     <message>
         <source>PDF Files (*.pdf)</source>
-        <translation>PDF Files (*.pdf)</translation>
+        <translation>PDF 文件 (*.pdf)</translation>
     </message>
     <message>
         <source>Exporting PDF...</source>
-        <translation>Exporting PDF...</translation>
+        <translation>正在导出 PDF…</translation>
     </message>
     <message>
         <source>Exported PDF: %1</source>
-        <translation>Exported PDF: %1</translation>
+        <translation>已导出 PDF：%1</translation>
     </message>
     <message>
         <source>PDF Export Complete</source>
-        <translation>PDF Export Complete</translation>
+        <translation>PDF 导出完成</translation>
     </message>
     <message>
         <source>Successfully exported %1 images to PDF</source>
-        <translation>Successfully exported %1 images to PDF</translation>
+        <translation>成功导出 %1 张图片为 PDF</translation>
     </message>
     <message>
         <source>Save Converted Image</source>
@@ -538,12 +538,20 @@ Size: %2x%3</translation>
         <source>OK</source>
         <translation>确定</translation>
     </message>
+    <message>
+        <source>影图</source>
+        <translation>影图</translation>
+    </message>
+    <message>
+        <source>About 影图</source>
+        <translation>关于 影图</translation>
+    </message>
 </context>
 <context>
     <name>yingtu::PdfEngine</name>
     <message>
         <source>No images to export.</source>
-        <translation>No images to export.</translation>
+        <translation>没有可导出的图片。</translation>
     </message>
 </context>
 <context>
@@ -1184,7 +1192,7 @@ Size: %2x%3</translation>
     </message>
     <message>
         <source>&lt;b&gt;PDF Export&lt;/b&gt;</source>
-        <translation>&lt;b&gt;PDF Export&lt;/b&gt;</translation>
+        <translation>&lt;b&gt;PDF 导出&lt;/b&gt;</translation>
     </message>
     <message>
         <source>A4</source>
@@ -1196,31 +1204,31 @@ Size: %2x%3</translation>
     </message>
     <message>
         <source>Letter</source>
-        <translation>Letter</translation>
+        <translation>信纸</translation>
     </message>
     <message>
         <source>Page Size:</source>
-        <translation>Page Size:</translation>
+        <translation>页面大小：</translation>
     </message>
     <message>
         <source>Single Per Page</source>
-        <translation>Single Per Page</translation>
+        <translation>每页单张</translation>
     </message>
     <message>
         <source>Fit to Page</source>
-        <translation>Fit to Page</translation>
+        <translation>适应页面</translation>
     </message>
     <message>
         <source>Grid 2x2</source>
-        <translation>Grid 2x2</translation>
+        <translation>网格 2×2</translation>
     </message>
     <message>
         <source>Grid 3x3</source>
-        <translation>Grid 3x3</translation>
+        <translation>网格 3×3</translation>
     </message>
     <message>
         <source>Layout:</source>
-        <translation>Layout:</translation>
+        <translation>布局：</translation>
     </message>
     <message>
         <source>Resolution:</source>
@@ -1228,19 +1236,19 @@ Size: %2x%3</translation>
     </message>
     <message>
         <source>Margins:</source>
-        <translation>Margins:</translation>
+        <translation>边距：</translation>
     </message>
     <message>
         <source>Output:</source>
-        <translation>Output:</translation>
+        <translation>输出：</translation>
     </message>
     <message>
         <source>Save PDF</source>
-        <translation>Save PDF</translation>
+        <translation>保存 PDF</translation>
     </message>
     <message>
         <source>PDF Files (*.pdf)</source>
-        <translation>PDF Files (*.pdf)</translation>
+        <translation>PDF 文件 (*.pdf)</translation>
     </message>
     <message>
         <source> [needs %1]</source>

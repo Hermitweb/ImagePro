@@ -1,4 +1,4 @@
-# 影图 ImagePro
+# 影图
 
 基于 Qt 5 + libvips 的跨平台桌面图像处理工具。
 
