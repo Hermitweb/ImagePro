@@ -166,14 +166,21 @@ jobs:
         if: matrix.msvc
         shell: pwsh
         run: |
-          $nsisDirs = @(
-            "$env:ProgramFiles(x86)\NSIS",
+          # ⚠ 带括号的环境变量名必须写成 ${env:ProgramFiles(x86)}：
+          #   $env:ProgramFiles(x86) 会被解析成「对字符串调用函数」而拿到错值。
+          $dirs = @()
+          $cmd = Get-Command makensis.exe -ErrorAction SilentlyContinue
+          if ($cmd) { $dirs += (Split-Path $cmd.Source -Parent) }
+          $dirs += @(
+            "${env:ProgramFiles(x86)}\NSIS",
             "$env:ProgramFiles\NSIS",
+            "C:\hostedtoolcache\windows\NSIS",
             "C:\msys64\mingw64\bin"
-          ) | Where-Object { Test-Path "$_\makensis.exe" }
-          if (-not $nsisDirs) { throw "找不到 makensis" }
-          "PATH=$($nsisDirs -join ';');$env:PATH" >> $env:GITHUB_ENV
-          Write-Host "NSIS: $($nsisDirs -join ', ')"
+          ) | Where-Object { Test-Path (Join-Path $_ "makensis.exe") }
+          $dirs = $dirs | Select-Object -Unique
+          if (-not $dirs) { throw "找不到 makensis（NSIS 未安装）" }
+          "PATH=$($dirs -join ';');$env:PATH" >> $env:GITHUB_ENV
+          Write-Host "NSIS: $($dirs -join ', ')"
 
       # 生成器用 Visual Studio 而不是 Ninja：
       # 中文 VS 下 cl.exe 的 /showIncludes 前缀是「注意: 包含文件:」，

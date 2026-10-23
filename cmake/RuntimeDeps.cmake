@@ -122,14 +122,29 @@ endif()
 message(STATUS "ImagePro: 工具链 bin = ${IMAGEPRO_TOOLCHAIN_BIN}")
 
 # Qt 自身的 bin 目录：官方预编译包（MSVC 路线）里 windeployqt 就在这儿。
-# 从 Qt5Core_DIR（<prefix>/lib/cmake/Qt5Core）反推前缀。
+#
+# ⚠ 不能靠拼接 Qt5Core_DIR 的字符串来推前缀：
+#   CI 里 CMAKE_PREFIX_PATH 是 MSYS 风格路径（/mingw-w64-ucrt-x86_64），
+#   拼出来的 "/mingw-w64-ucrt-x86_64/bin" 会被 Windows 解析成
+#   C:\mingw-w64-ucrt-x86_64\bin（不存在），
+#   于是 Qt5Test.dll 没被收集 → 测试进程直接崩（0xC0000135，且无任何输出）。
+# 改从 Qt 的导入目标取绝对路径。
 set(_imagepro_qt_bin "")
-if(Qt5Core_DIR)
+if(TARGET Qt5::Core)
+    get_target_property(_qt5core_location Qt5::Core IMPORTED_LOCATION)
+    if(_qt5core_location)
+        get_filename_component(_qt5core_libdir "${_qt5core_location}" DIRECTORY)
+        get_filename_component(_qt5_prefix "${_qt5core_libdir}/.." ABSOLUTE)
+        set(_imagepro_qt_bin "${_qt5_prefix}/bin")
+    endif()
+endif()
+if(NOT _imagepro_qt_bin AND Qt5Core_DIR)
     get_filename_component(_qt_core_dir "${Qt5Core_DIR}" ABSOLUTE)
-    get_filename_component(_qt_lib_dir "${_qt_core_dir}" DIRECTORY)   # <prefix>/lib/cmake
+    get_filename_component(_qt_lib_dir "${_qt_core_dir}" DIRECTORY)
     get_filename_component(_qt_prefix "${_qt_lib_dir}/../.." ABSOLUTE)
     set(_imagepro_qt_bin "${_qt_prefix}/bin")
 endif()
+message(STATUS "ImagePro: Qt bin = ${_imagepro_qt_bin}")
 
 # windeployqt 的查找必须**按目录顺序**逐个探测，不能交给 find_program：
 # find_program 是「名字优先」的循环 —— 先在所有路径里找 windeployqt-qt5.exe，
