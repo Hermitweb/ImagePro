@@ -127,6 +127,39 @@
   `qt5` 元包在 ucrt64 仓库没有（拆成 qt5-base / qt5-svg / qt5-tools）、
   `pkg-config` 的包名是 `pkgconf`、`tools-git` 已改名 `tools`、
   clangarm64 的编译器包是 `clang` 而不是 `gcc`。
+### 发布链路的修复（v1.5.0 发布前追溯）
+
+为了把发布真正跑通，这一轮把发布链路上的一系列真实阻断一一排除：
+
+- **MSYS2 已把 libvips 从 msvcrt（MINGW64）仓库移除**：项目依赖 libvips，而仓库里只剩
+  UCRT64 / CLANG64 / CLANGARM64 提供。CI 上所有 MINGW64 作业因「target not found:
+  mingw-w64-x86_64-libvips」在装依赖时就失败。发布主线路改为 **UCRT64**，
+  并把包名逐条核对到各环境**实际存在**的名字：
+  `qt5` 元包在 ucrt64 仓库没有（拆成 qt5-base / qt5-svg / qt5-tools）、
+  `pkg-config` 的包名是 `pkgconf`、`tools-git` 已改名 `tools`、
+  clangarm64 的编译器包是 `clang` 而不是 `gcc`。
+- **静态分析与格式门禁用错的 clang 工具**：CI 的 static-analysis 作业用的是 Windows 版 LLVM 的
+  clang-tidy（C:/Program Files/LLVM/bin），它解析不了 MSYS2 风格路径下的 Qt 头文件
+  （「QtCore/qchar.h file not found」），产生十万条假告警。现在 find_program 优先在
+  **构建所用工具链自带**的 bin 里找（为此把 Format / StaticAnalysis 两个模块挪到
+  RuntimeDeps 之后引入）。
+- **ARM64 编译失败（libvips 哨兵）**：libvips 8.18.7 的头文件给 vips_jpegsave 等函数加了
+  G_GNUC_NULL_TERMINATED，clang 的 -Wsentinel 只接受 nullptr（NULL 不接受，GCC 接受）。
+  因此只有 ARM64 工具链（clang）报错。 10 处 libvips 调用统一改用 nullptr。
+- **x86 作业的三个环境问题**：生成器写死「Visual Studio 17 2022」（runner 上已是 VS 18）；
+  Qt 根目录按架构名匹配会落空（aqt 对 32 位 MSVC 的目录命名是 msvc2019，去了 win32_ 前缀）；
+  `${{ env.RUNNER_TEMP }}` 展开为空（GitHub 的 env 上下文不含 runner 默认环境变量）；
+  windows runner 并未预装 NSIS。
+- **测试在 CI 上不可靠**：CI runner 没有交互式桌面，Windows QPA 的窗口渲染会直接崩溃（QTest 的
+  stdout 是块缓冲，崩溃后连一行输出都看不到）。改用 offscreen 平台，它用的是 Qt 的基础字体引擎，
+  只从 QT_QPA_FONTDIR 读字体 —— 不指定就找不到字体、文字渲染为空，测试里「文字标注应该画出
+  可见字形」的断言就会失败。现在指向 C:/Windows/Fonts，并让测试目录自带运行库
+  （不再靠 PATH 借用 MSYS2 前缀的 DLL）。
+- **本地多架构脚本的两个陷阱**：`-DCMAKE_BUILD_TYPE=$BuildType` 必须加引号
+  （PowerShell 把未加引号且以 - 开头的 -NAME=$var 当作「参数名=值」解析，值里的变量**不展开**，
+  cmake 会收到字面量）；单配置生成器（Ninja）下 cpack 不能带 -C Release（会去找
+  <build>/Release/ 子目录，安装步骤静默失败、产物不生成）。
+
 - **MSVC 目标的架构判定错误**：`CMAKE_SYSTEM_PROCESSOR` 在 MSVC 下报的是**宿主**
   架构（Win32 工程仍是 AMD64），导致运行库校验与产物命名都按 x64 处理
   （x86 的安装包会被命名成 `win64`）。改为从编译器路径

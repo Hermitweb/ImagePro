@@ -172,6 +172,8 @@ target_include_directories(ImageProLib PUBLIC
 # libvips 的 pkg-config 附带其它依赖的编译宏（如 -DUHDR_USING_SHARED_LIBRARY），
 # 必须原样传递，否则头文件里的导出宏与实际链接方式不符。
 target_compile_options(ImageProLib PRIVATE ${VIPS_CFLAGS_OTHER})
+# libvips 预编译包路径需要的编译定义（如 G_STATIC_CONST）。
+target_compile_definitions(ImageProLib PRIVATE ${VIPS_COMPILE_DEFINITIONS})
 imagepro_apply_warnings(ImageProLib PRIVATE)
 
 target_link_libraries(ImageProLib PUBLIC
