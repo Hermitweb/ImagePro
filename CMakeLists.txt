@@ -31,8 +31,6 @@ if(NOT DEFINED CMAKE_PREFIX_PATH)
 endif()
 
 include(cmake/Warnings.cmake)
-include(cmake/Format.cmake)
-include(cmake/StaticAnalysis.cmake)
 
 # ── 依赖 ─────────────────────────────────────────────────────────
 find_package(Qt5 REQUIRED COMPONENTS Widgets Concurrent Svg Test Network LinguistTools)
@@ -316,6 +314,11 @@ add_custom_command(TARGET ImagePro POST_BUILD
 # 运行时依赖收集（Windows）。必须在 add_executable 之后引入：
 # 该模块向 ImagePro 目标追加 POST_BUILD 命令。
 include(cmake/RuntimeDeps.cmake)
+
+# 格式化与静态分析放在 RuntimeDeps 之后：
+# 它们需要知道「构建用的工具链自带的 clang-format / clang-tidy 在哪里」。
+include(cmake/Format.cmake)
+include(cmake/StaticAnalysis.cmake)
 
 # ── 安装规则 ─────────────────────────────────────────────────────
 # 让 `cmake --install` / CPack 产出可直接运行的目录，而不只是裸 exe。

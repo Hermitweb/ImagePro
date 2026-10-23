@@ -48,6 +48,10 @@ jobs:
       - name: Test
         shell: msys2 {0}
         run: |
+          # CI runner 没有交互式桌面，Windows 的 QPA 渲染路径会直接崩溃。
+          # 改用 offscreen 平台插件（内存里渲染）。
+          # 只在 CI 里设：本地有桌面，真实平台能更如实地验证布局。
+          export QT_QPA_PLATFORM=offscreen
           ctest --test-dir build --output-on-failure || {
             echo "::group::失败用例的详细输出"
             for t in build/tests/test_*.exe; do
@@ -218,7 +222,9 @@ jobs:
       - name: Test (${{ matrix.arch }}, MSVC)
         if: matrix.msvc
         shell: pwsh
-        run: ctest --test-dir build -C Release --output-on-failure
+        run: |
+          $env:QT_QPA_PLATFORM = "offscreen"
+          ctest --test-dir build -C Release --output-on-failure
 
       - name: Package (${{ matrix.arch }}, MSVC)
         if: matrix.msvc
@@ -258,6 +264,7 @@ jobs:
         if: ${{ !matrix.msvc }}
         shell: msys2 {0}
         run: |
+          export QT_QPA_PLATFORM=offscreen
           ctest --test-dir build --output-on-failure || {
             echo "::group::失败用例的详细输出"
             for t in build/tests/test_*.exe; do

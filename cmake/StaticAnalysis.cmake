@@ -10,11 +10,18 @@
 # 否则解析 MSYS2 的 /mingw64/include 路径会失败。用同一个 MSYS2 环境里的
 # clang-tidy 即可满足（CI 安装 mingw-w64-x86_64-clang-tools-extra）。
 
+# 工具链必须与编译器一致（说明见文件头的注释）：
+# 用 Windows 版 LLVM 的 clang-tidy 去解析 MSYS2 的 Qt 头文件会因为它不识别
+# MSYS2 风格的 include 路径，报几千条「文件找不到」的假告警。
+# 因此把「构建所用工具链自带的目录」放在最前面。
 find_program(IMAGEPRO_CLANG_TIDY
     NAMES clang-tidy clang-tidy-23 clang-tidy-22 clang-tidy-21 clang-tidy-20
           clang-tidy-19 clang-tidy-18 clang-tidy-17 clang-tidy-16
     HINTS
+        "${IMAGEPRO_TOOLCHAIN_BIN}"
+        "C:/msys64/ucrt64/bin"
         "C:/msys64/mingw64/bin"
+        "C:/msys64/clangarm64/bin"
         "C:/Program Files/LLVM/bin"
         "E:/Microsoft Visual Studio/2022/BuildTools/VC/Tools/Llvm/x64/bin"
     DOC "clang-tidy 可执行文件路径"

@@ -11,12 +11,17 @@
 # 各版本 clang-format 对目录递归的支持不一致（19 已移除 --recursive），
 # 显式列表跨版本稳定，也不会误伤 src/ 之外的第三方文件。
 
+# 同理：优先用构建所用工具链自带的 clang-format。
+# 不同版本的格式化结果可能不一致，本地与 CI 必须用同一个。
 find_program(IMAGEPRO_CLANG_FORMAT
     NAMES clang-format clang-format-19 clang-format-18 clang-format-17 clang-format-16
     HINTS
+        "${IMAGEPRO_TOOLCHAIN_BIN}"
+        "C:/msys64/ucrt64/bin"
+        "C:/msys64/mingw64/bin"
+        "C:/msys64/clangarm64/bin"
         "C:/Program Files/LLVM/bin"
         "E:/Microsoft Visual Studio/2022/BuildTools/VC/Tools/Llvm/x64/bin"
-        "C:/msys64/mingw64/bin"
     DOC "clang-format 可执行文件路径"
 )
 
