@@ -210,9 +210,12 @@ x86 需要两份预编译包，请用 -QtRoot / -VipsRoot 指定：
     }
     Push-Location $buildDir
     try {
-        & cpack -G ZIP -B package -C Release
+        # 单配置生成器（Ninja）不能加 -C Release：
+        # 它会让 CPack 去找 <build>/Release/ 子目录（单配置没有），
+        # 安装步骤静默失败、产物不生成。
+        & cpack -G ZIP -B package
         if ($LASTEXITCODE -ne 0) { throw '打包失败' }
-        & cpack -G NSIS -B package -C Release
+        & cpack -G NSIS -B package
         if ($LASTEXITCODE -ne 0) { throw 'NSIS 打包失败' }
         & $cmake --build . --config Release --target portable
         if ($LASTEXITCODE -ne 0) { throw '便捷版打包失败' }
@@ -236,7 +239,7 @@ x86 需要两份预编译包，请用 -QtRoot / -VipsRoot 指定：
 # 把包前缀当目录用会得到「找不到编译器」这种误导性的报错。
 $archMap = @{
     'x64'      = @{ msystem = 'MINGW64';   dir = 'mingw64';   pkg = 'mingw-w64-x86_64';       pe = 'x64'; variant = '' }
-    'x64-ucrt' = @{ msystem = 'UCRT64';    dir = 'ucrt64';    pkg = 'mingw-w64-ucrt-x86_64';   pe = 'x64'; variant = 'ucrt' }
+    'x64-ucrt' = @{ msystem = 'UCRT64';    dir = 'ucrt64';    pkg = 'mingw-w64-ucrt-x86_64';   pe = 'x64'; variant = '' }
     'arm64'    = @{ msystem = 'CLANGARM64'; dir = 'clangarm64'; pkg = 'mingw-w64-clang-aarch64'; pe = 'arm64'; variant = '' }
 }
 
@@ -335,8 +338,13 @@ $variantArgs = @()
 if ($cfg.variant) { $variantArgs = @("-DIMAGEPRO_PACKAGE_VARIANT=$($cfg.variant)") }
 
 Write-Host "==> 配置 CMake..."
+# ⚠ -DCMAKE_BUILD_TYPE 必须加引号：PowerShell 把未加引号且以 - 开头的
+#   -NAME=$var 当作「参数名=值」解析，值里的变量**不展开** ——
+#   cmake 会收到字面量 "$BuildType"，Ninja 随后在 rules.ninja 里报
+#   "expected newline, got lexing error"。
+#   （注释不能放在反引号续行中间 —— 那会打断续行。）
 & $tools['cmake'] -S $PSScriptRoot -B $buildDir -G Ninja `
-    -DCMAKE_BUILD_TYPE=$BuildType `
+    "-DCMAKE_BUILD_TYPE=$BuildType" `
     -DBUILD_TESTS=ON `
     -DIMAGEPRO_WERROR=ON `
     "-DCMAKE_PREFIX_PATH=$prefixPath" `

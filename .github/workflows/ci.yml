@@ -47,7 +47,17 @@ jobs:
 
       - name: Test
         shell: msys2 {0}
-        run: ctest --test-dir build --output-on-failure
+        run: |
+          ctest --test-dir build --output-on-failure || {
+            echo "::group::失败用例的详细输出"
+            for t in build/tests/test_*.exe; do
+              echo "---- $t"
+              "$t" -v2 2>&1 | tail -40
+              echo "exit=${PIPESTATUS[0]}"
+            done
+            echo "::endgroup::"
+            exit 1
+          }
 
       - name: Upload Artifact
         if: github.event_name != 'pull_request'
@@ -245,7 +255,17 @@ jobs:
       - name: Test (${{ matrix.arch }})
         if: ${{ !matrix.msvc }}
         shell: msys2 {0}
-        run: ctest --test-dir build --output-on-failure
+        run: |
+          ctest --test-dir build --output-on-failure || {
+            echo "::group::失败用例的详细输出"
+            for t in build/tests/test_*.exe; do
+              echo "---- $t"
+              "$t" -v2 2>&1 | tail -40
+              echo "exit=${PIPESTATUS[0]}"
+            done
+            echo "::endgroup::"
+            exit 1
+          }
 
       - name: Package (${{ matrix.arch }})
         if: ${{ !matrix.msvc }}
