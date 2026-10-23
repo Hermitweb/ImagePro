@@ -32,6 +32,16 @@ endif()
 
 include(cmake/Warnings.cmake)
 
+# VS 18（Visual Studio 2026）移除了 stdext 命名空间，而 Qt 5.15 的头文件（qlist.h / qvector.h / qvarlengtharray.h）
+# 仍在用它构造受检数组迭代器 → "'stdext': identifier not found"。
+# 强制先包含兼容头，把相关宏改写为等价的「直接用指针」形式。
+#
+# 必须放在**创建任何目标之前**：add_compile_options 只对之后创建的目标生效，
+# 放在 add_executable 之后时 ImagePro 自己拿不到这个选项。
+if(MSVC)
+    add_compile_options("/FI${CMAKE_CURRENT_SOURCE_DIR}/src/msvc_qt_compat.h")
+endif()
+
 # ── 依赖 ─────────────────────────────────────────────────────────
 find_package(Qt5 REQUIRED COMPONENTS Widgets Concurrent Svg Test Network LinguistTools)
 
@@ -284,12 +294,6 @@ endif()
 add_executable(ImagePro WIN32 src/main.cpp ${RCC_SOURCES} ${QM_FILES} ${IMAGEPRO_RC_SOURCES})
 
 if(MSVC)
-    # VS 18 移除了 stdext 命名空间，而 Qt 5.15 的头文件仍在用它
-    # → 强制先包含兼容头，把相关宏改写为等价的「直接用指针」形式。
-    # 用目录级选项（而不是 target 级）：只链 Qt5::Gui 的目标
-    # （如 tests/generate_fixtures）也要包含 Qt 的头文件，
-    # target 级的 PUBLIC 选项传不到它们。
-    add_compile_options("/FI${CMAKE_CURRENT_SOURCE_DIR}/src/msvc_qt_compat.h")
     # 把我们的清单交给链接器合并（MSVC 官方推荐做法）。
     # 链接器默认已开启 /MANIFEST（VS 工程模板里 GenerateManifest=true），
     # 无需重复指定；这里只补输入。
