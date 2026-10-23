@@ -146,14 +146,17 @@ jobs:
         run: |
           python -m pip install --upgrade pip aqtinstall
           python -m aqt install-qt windows desktop 5.15.2 ${{ matrix.qt_arch }} `
-                  --outputdir "${{ env.RUNNER_TEMP }}\qt"
+                  --outputdir "$env:RUNNER_TEMP\qt"
           # aqt 解到 <outputdir>/<version>/<arch>，这一层即 Qt 根目录。
           # ⚠ ${{ matrix.qt_arch }} 必须带引号：GitHub 会把它替换成裸词，
           #   不加引号会变成 Where-Object { $_.Name -eq win32_msvc2019 }，
           #   PowerShell 把 win32_msvc2019 当成命令名 → 解析错误。
-          $qtRoot = (Get-ChildItem "${{ env.RUNNER_TEMP }}\qt" -Directory -Recurse |
+          # 匹配到的那个目录本身就是 Qt 根目录（含 bin/ lib/ include/）：
+          # aqt 的布局是 <outputdir>/<version>/<arch>。
+          # 取 Parent 会多上一层，CMAKE_PREFIX_PATH 就指到错地方了。
+          $qtRoot = (Get-ChildItem "$env:RUNNER_TEMP\qt" -Directory -Recurse |
                      Where-Object { $_.Name -eq '${{ matrix.qt_arch }}' } |
-                     Select-Object -First 1).Parent.FullName
+                     Select-Object -First 1).FullName
           "CMAKE_PREFIX_PATH=$qtRoot" >> $env:GITHUB_ENV
           "QT_ROOT_DIR=$qtRoot" >> $env:GITHUB_ENV
           Write-Host "Qt root: $qtRoot"
@@ -162,30 +165,29 @@ jobs:
         if: matrix.msvc
         shell: pwsh
         run: |
-          $vipsDir = "${{ env.RUNNER_TEMP }}\libvips"
+          $vipsDir = "$env:RUNNER_TEMP\libvips"
           New-Item -ItemType Directory -Force -Path $vipsDir | Out-Null
-          $tgz = "${{ env.RUNNER_TEMP }}\vips.tar.gz"
+          $tgz = "$env:RUNNER_TEMP\vips.tar.gz"
           Invoke-WebRequest -Uri "${{ matrix.vips_url }}" -OutFile $tgz
           tar -xzf $tgz -C $vipsDir
           "IMAGEPRO_VIPS_ROOT=$vipsDir" >> $env:GITHUB_ENV
           Write-Host "libvips root: $vipsDir"
 
-      # CPack 的 NSIS 生成器在自己的 PATH / 注册表里找 makensis，
-      # 只设 CPACK_NSIS_MAKE_NSIS 不够（它还要定位 NSIS 的 Plugins/Include）。
+      # windows runner 并未预装 NSIS（其他作业靠 MSYS2 的 nsis 包），
+      # 这里用 choco 补一个；后面还要能定位 NSIS 的 Plugins/Include。
       - name: Ensure NSIS on PATH
         if: matrix.msvc
         shell: pwsh
         run: |
           # ⚠ 带括号的环境变量名必须写成 ${env:ProgramFiles(x86)}：
           #   $env:ProgramFiles(x86) 会被解析成「对字符串调用函数」而拿到错值。
+          choco install nsis -y --no-progress --limit-output
           $dirs = @()
           $cmd = Get-Command makensis.exe -ErrorAction SilentlyContinue
           if ($cmd) { $dirs += (Split-Path $cmd.Source -Parent) }
           $dirs += @(
             "${env:ProgramFiles(x86)}\NSIS",
-            "$env:ProgramFiles\NSIS",
-            "C:\hostedtoolcache\windows\NSIS",
-            "C:\msys64\mingw64\bin"
+            "$env:ProgramFiles\NSIS"
           ) | Where-Object { Test-Path (Join-Path $_ "makensis.exe") }
           $dirs = $dirs | Select-Object -Unique
           if (-not $dirs) { throw "找不到 makensis（NSIS 未安装）" }
