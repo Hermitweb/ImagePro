@@ -52,6 +52,10 @@ jobs:
           # 改用 offscreen 平台插件（内存里渲染）。
           # 只在 CI 里设：本地有桌面，真实平台能更如实地验证布局。
           export QT_QPA_PLATFORM=offscreen
+          # offscreen 平台用的是 Qt 的基础字体引擎，它只从 QT_QPA_FONTDIR
+          # 指定的目录读取字体；找不到字体时文字会渲染为空，
+          # 测试里“文字标注应该画出可见字形”的断言就会失败。
+          export QT_QPA_FONTDIR="C:/Windows/Fonts"
           ctest --test-dir build --output-on-failure || {
             echo "::group::失败用例的详细输出"
             # set +e：默认 shell 带 -e，一个用例非零退出就会中断整个脚本，
@@ -237,6 +241,7 @@ jobs:
         shell: pwsh
         run: |
           $env:QT_QPA_PLATFORM = "offscreen"
+          $env:QT_QPA_FONTDIR = "C:/Windows/Fonts"
           ctest --test-dir build -C Release --output-on-failure
 
       - name: Package (${{ matrix.arch }}, MSVC)
@@ -278,6 +283,10 @@ jobs:
         shell: msys2 {0}
         run: |
           export QT_QPA_PLATFORM=offscreen
+          # offscreen 平台用的是 Qt 的基础字体引擎，它只从 QT_QPA_FONTDIR
+          # 指定的目录读取字体；找不到字体时文字会渲染为空，
+          # 测试里“文字标注应该画出可见字形”的断言就会失败。
+          export QT_QPA_FONTDIR="C:/Windows/Fonts"
           ctest --test-dir build --output-on-failure || {
             echo "::group::失败用例的详细输出"
             # set +e：默认 shell 带 -e，一个用例非零退出就会中断整个脚本，

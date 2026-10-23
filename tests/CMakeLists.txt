@@ -34,27 +34,29 @@ function(add_imagepro_test name source)
 
     add_test(NAME ${name} COMMAND ${name})
 
-    # 多配置生成器（MSVC / Visual Studio）下，测试可执行文件落在
-    # <build>/tests/<Config>/，而运行时依赖（Qt DLL、libvips、MSVC CRT）
-    # 收集在 <build>/runtime/ 并同步到主程序所在的 <build>/<Config>/。
-    # 测试程序因此找不到 DLL，表现为 0xC0000135（STATUS_DLL_NOT_FOUND）。
-    # 这里把运行库一并复制到测试目录；依赖 ImagePro 保证 runtime/ 已收集完毕。
+    # 测试程序需要在自己的目录里看到运行时依赖（Qt DLL / libvips / MSVC CRT）：
+    # 测试程序在 build/tests/（Ninja）或 build/tests/<Config>/（VS 多配置），
+    # 而运行时依赖被收在 build/runtime/ 并同步到主程序目录；
+    # 不同步就只能靠 PATH 借用 MSYS2 前缀的 DLL，在 CI 上很不稳。
+    #
+    # 同步动作放在**一个独立目标**里做，而不是每个测试目标各自拷贝：
+    # 多个测试项目**并行**构建时，各自往同一个目录拷贝会互相抢文件锁，
+    # 随机报 "Error copying directory ... Permission denied"。
     # GENERATOR_IS_MULTI_CONFIG 是**全局属性**，不是变量
     # （用同名变量去判断会永远得到空值，条件恒假）。
     get_property(_imagepro_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
-    if(_imagepro_multi_config AND IMAGEPRO_RUNTIME_DIR)
-        # 多配置生成器（MSVC / Visual Studio）下，测试可执行文件落在
-        # <build>/tests/<Config>/，而运行时依赖（Qt DLL、libvips、MSVC CRT）
-        # 收集在 <build>/runtime/ —— 测试程序因此找不到 DLL，
-        # 表现为 0xC0000135（STATUS_DLL_NOT_FOUND）。
-        #
-        # 同步动作放在**一个独立目标**里做，而不是每个测试目标各自拷贝：
-        # 多个测试项目并行构建时，各自往同一个目录拷贝会互相抢文件锁，
-        # 随机报 "Error copying directory ... Permission denied"。
+    if(IMAGEPRO_RUNTIME_DIR)
         if(NOT TARGET imagepro_test_runtime)
+            if(_imagepro_multi_config)
+                set(_test_out_dir "${CMAKE_BINARY_DIR}/tests/$<CONFIG>")
+            else()
+                set(_test_out_dir "${CMAKE_BINARY_DIR}/tests")
+            endif()
+
             add_custom_target(imagepro_test_runtime
+                COMMAND ${CMAKE_COMMAND} -E make_directory "${_test_out_dir}"
                 COMMAND ${CMAKE_COMMAND} -E copy_directory
-                        "${IMAGEPRO_RUNTIME_DIR}" "${CMAKE_BINARY_DIR}/tests/$<CONFIG>"
+                        "${IMAGEPRO_RUNTIME_DIR}" "${_test_out_dir}"
                 DEPENDS ImagePro
                 COMMENT "同步运行时依赖到测试可执行文件目录"
                 VERBATIM
