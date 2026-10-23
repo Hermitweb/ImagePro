@@ -119,6 +119,14 @@
      各自往同一个目录拷贝，互相抢文件锁，随机报
      `Error copying directory ... Permission denied`。
      改为单一目标 `imagepro_test_runtime` 统一同步。
+- **MSYS2 已把 libvips 从 msvcrt（MINGW64）仓库移除**：项目依赖 libvips，
+  而仓库里只剩 UCRT64 / CLANG64 / CLANGARM64 提供。
+  CI 上所有 MINGW64 作业因「target not found: mingw-w64-x86_64-libvips」在装依赖时就失败。
+  发布主线路改为 **UCRT64**（通用的 MSYS2 作业与多架构矩阵全部切换），
+  并把包名逐条核对到各环境**实际存在**的名字：
+  `qt5` 元包在 ucrt64 仓库没有（拆成 qt5-base / qt5-svg / qt5-tools）、
+  `pkg-config` 的包名是 `pkgconf`、`tools-git` 已改名 `tools`、
+  clangarm64 的编译器包是 `clang` 而不是 `gcc`。
 - **MSVC 目标的架构判定错误**：`CMAKE_SYSTEM_PROCESSOR` 在 MSVC 下报的是**宿主**
   架构（Win32 工程仍是 AMD64），导致运行库校验与产物命名都按 x64 处理
   （x86 的安装包会被命名成 `win64`）。改为从编译器路径

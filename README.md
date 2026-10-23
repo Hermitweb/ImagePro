@@ -105,15 +105,15 @@ cpack -G NSIS                # 仅安装程序（需 makensis）
 
 | 架构 | 工具链 | 说明 |
 |---|---|---|
-| **x64** | MSYS2 `MINGW64`（主线路）或 `UCRT64` | 本地开发与日常发布 |
+| **x64** | MSYS2 `UCRT64` | 发布主线路：MSYS2 已把 libvips 从 msvcrt（MINGW64）仓库移除，只有 UCRT64 / CLANG64 / CLANGARM64 还提供 |
 | **x86** | MSVC + Qt 官方 `win32_msvc2019` 包 + libvips 官方 `win32-ia32` 包 | MSYS2 **没有** 32 位 Qt5，也没有 32 位 libvips，只能走预编译包 |
 | **ARM64** | MSYS2 `CLANGARM64`（aarch64） | **必须在原生 ARM64 Windows（Windows 11 on ARM）上构建** |
 
 一键构建脚本 `build-arch.ps1`：
 
 ```powershell
-# x64（MSYS2 MINGW64）
-./build-arch.ps1 -Arch x64
+# x64（MSYS2 UCRT64，发行主线路）
+./build-arch.ps1 -Arch x64-ucrt
 
 # x86（MSVC）：先准备两份预编译包
 python -m aqt install-qt windows desktop 5.15.2 win32_msvc2019 -O D:/devtools/qt

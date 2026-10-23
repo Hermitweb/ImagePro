@@ -6,7 +6,7 @@
     两条工具链路线：
 
     【MSYS2 路线】x64 / x64-ucrt / arm64
-      x64      MINGW64（msvcrt）或 UCRT64
+      x64      UCRT64（发行主线路）；MINGW64（msvcrt）仅供本地旧环境使用
       arm64    CLANGARM64（aarch64，含 Qt5 与 libvips）
 
       ⚠ ARM64 必须在**原生 ARM64 Windows**（Windows 11 on ARM）上构建：
@@ -23,7 +23,12 @@
 
     每个架构的构建目录相互独立（build-<arch>），互不干扰。
 .PARAMETER Arch
-    x64 | x64-ucrt | x86 | arm64
+    x64-ucrt | x64 | x86 | arm64
+
+    ⚠ MSYS2 已把 libvips 从 msvcrt（MINGW64）仓库移除，
+      新机器上只有 UCRT64 / CLANG64 / CLANGARM64 仍提供 libvips。
+      本项目依赖 libvips，所以发布主线路是 x64-ucrt（默认值）；
+      x64（MINGW64）仅在本机还留着旧版 libvips 时可用。
 .PARAMETER MsysRoot
     MSYS2 根目录，默认 C:/msys64
 .PARAMETER BuildType
@@ -47,7 +52,7 @@
 #>
 param(
     [ValidateSet('x64', 'x64-ucrt', 'x86', 'arm64')]
-    [string]$Arch = 'x64',
+    [string]$Arch = 'x64-ucrt',
     [string]$MsysRoot = 'C:/msys64',
     [string]$BuildType = 'Release',
     [string]$HostToolsBin = '',

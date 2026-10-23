@@ -25,15 +25,17 @@ jobs:
       - name: Setup MSYS2
         uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
+          msystem: UCRT64
           update: true
           install: >-
-            mingw-w64-x86_64-cmake
-            mingw-w64-x86_64-ninja
-            mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-qt5
-            mingw-w64-x86_64-libvips
-            mingw-w64-x86_64-pkg-config
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-qt5-base
+            mingw-w64-ucrt-x86_64-qt5-svg
+            mingw-w64-ucrt-x86_64-qt5-tools
+            mingw-w64-ucrt-x86_64-libvips
+            mingw-w64-ucrt-x86_64-pkgconf
 
       - name: Configure
         shell: msys2 {0}
@@ -60,14 +62,22 @@ jobs:
   # 每个架构一套工具链，产出对应的安装包与便捷版。
   #
   # 架构与工具链的对应关系（均为实测可行路径）：
-  #   x64      MSYS2 MINGW64（msvcrt）—— 本地开发与发布主线路
-  #   x64-ucrt MSYS2 UCRT64
-  #   arm64    MSYS2 CLANGARM64（aarch64，含 Qt5 与 libvips）
-  #            ⚠ 必须在**原生 ARM64 Windows** 上构建：MSYS2 的 CLANGARM64
-  #              前缀里连编译器都是 ARM64 原生程序，无法在 x64 上交叉编译。
-  #              故该条目跑在 windows-11-arm runner 上。
-  #   x86      MSVC + Qt 官方 win32_msvc2019 预编译包 + libvips 官方预编译包
-  #            （MSYS2 没有 32 位 Qt，也没有 32 位 libvips）
+  #   x64    MSYS2 UCRT64 —— 发布主线路
+  #          ⚠ 为什么不是 MINGW64（msvcrt）：MSYS2 已把 libvips 从 msvcrt
+  #            仓库移除（ucrt64 / clang64 / clangarm64 仍保留），
+  #            而本项目依赖 libvips，msvcrt 组合在 CI 上已无法安装依赖。
+  #   arm64  MSYS2 CLANGARM64（aarch64，含 Qt5 与 libvips）
+  #          ⚠ 必须在**原生 ARM64 Windows** 上构建：MSYS2 的 CLANGARM64
+  #            前缀里连编译器都是 ARM64 原生程序，无法在 x64 上交叉编译。
+  #            故该条目跑在 windows-11-arm runner 上。
+  #   x86    MSVC + Qt 官方 win32_msvc2019 预编译包 + libvips 官方预编译包
+  #          （MSYS2 没有 32 位 Qt，也没有 32 位 libvips）
+  #
+  # 包名按各环境**实际存在**的名字逐条列出（不能想当然）：
+  #   qt5 元包在 ucrt64 仓库没有 → 拆成 qt5-base / qt5-svg / qt5-tools；
+  #   pkg-config 的包名是 pkgconf；
+  #   gendef/dlltool（在 tools 里）在旧版叫 tools-git；
+  #   clangarm64 的编译器包叫 clang，不是 gcc。
   build-arch:
     runs-on: ${{ matrix.os }}
     strategy:
@@ -76,17 +86,34 @@ jobs:
         include:
           - arch: x64
             os: windows-latest
-            msystem: MINGW64
-            prefix: mingw-w64-x86_64
-          - arch: x64-ucrt
-            os: windows-latest
             msystem: UCRT64
             prefix: mingw-w64-ucrt-x86_64
-            variant: ucrt
+            packages: |
+              mingw-w64-ucrt-x86_64-cmake
+              mingw-w64-ucrt-x86_64-ninja
+              mingw-w64-ucrt-x86_64-gcc
+              mingw-w64-ucrt-x86_64-qt5-base
+              mingw-w64-ucrt-x86_64-qt5-svg
+              mingw-w64-ucrt-x86_64-qt5-tools
+              mingw-w64-ucrt-x86_64-libvips
+              mingw-w64-ucrt-x86_64-pkgconf
+              mingw-w64-ucrt-x86_64-nsis
           - arch: arm64
             os: windows-11-arm
             msystem: CLANGARM64
             prefix: mingw-w64-clang-aarch64
+            # ARM64 没有 nsis 包（NSIS 是宿主程序，x64 版即可）；
+            # 若 runner 预装了 NSIS，CPack 会自动多产出一个 NSIS 安装包，
+            # 否则该架构只有 ZIP 与便捷版。
+            packages: |
+              mingw-w64-clang-aarch64-cmake
+              mingw-w64-clang-aarch64-ninja
+              mingw-w64-clang-aarch64-clang
+              mingw-w64-clang-aarch64-qt5-base
+              mingw-w64-clang-aarch64-qt5-svg
+              mingw-w64-clang-aarch64-qt5-tools
+              mingw-w64-clang-aarch64-libvips
+              mingw-w64-clang-aarch64-pkgconf
           - arch: x86
             os: windows-latest
             msvc: true
@@ -111,8 +138,11 @@ jobs:
           python -m aqt install-qt windows desktop 5.15.2 ${{ matrix.qt_arch }} `
                   --outputdir "${{ env.RUNNER_TEMP }}\qt"
           # aqt 解到 <outputdir>/<version>/<arch>，这一层即 Qt 根目录。
+          # ⚠ ${{ matrix.qt_arch }} 必须带引号：GitHub 会把它替换成裸词，
+          #   不加引号会变成 Where-Object { $_.Name -eq win32_msvc2019 }，
+          #   PowerShell 把 win32_msvc2019 当成命令名 → 解析错误。
           $qtRoot = (Get-ChildItem "${{ env.RUNNER_TEMP }}\qt" -Directory -Recurse |
-                     Where-Object { $_.Name -eq ${{ matrix.qt_arch }} } |
+                     Where-Object { $_.Name -eq '${{ matrix.qt_arch }}' } |
                      Select-Object -First 1).Parent.FullName
           "CMAKE_PREFIX_PATH=$qtRoot" >> $env:GITHUB_ENV
           "QT_ROOT_DIR=$qtRoot" >> $env:GITHUB_ENV
@@ -187,15 +217,7 @@ jobs:
         with:
           msystem: ${{ matrix.msystem }}
           update: true
-          install: >-
-            ${{ matrix.prefix }}-cmake
-            ${{ matrix.prefix }}-ninja
-            ${{ matrix.prefix }}-gcc
-            ${{ matrix.prefix }}-qt5
-            ${{ matrix.prefix }}-qt5-tools
-            ${{ matrix.prefix }}-libvips
-            ${{ matrix.prefix }}-pkg-config
-            ${{ matrix.prefix }}-nsis
+          install: ${{ matrix.packages }}
 
       # shell 写 `msys2 {0}` 即可：{0} 会替换成本作业 setup-msys2 的 msystem 输入，
       # 因此矩阵里每个架构条目都自动进入对应的 MSYS2 环境
@@ -206,8 +228,7 @@ jobs:
         run: |
           cmake -B build -G Ninja -DBUILD_TESTS=ON -DIMAGEPRO_WERROR=ON \
                 -DCMAKE_PREFIX_PATH="/${{ matrix.prefix }}" \
-                -DCMAKE_INSTALL_PREFIX="/${{ matrix.prefix }}" \
-                ${{ matrix.variant && format('-DIMAGEPRO_PACKAGE_VARIANT={0}', matrix.variant) || '' }}
+                -DCMAKE_INSTALL_PREFIX="/${{ matrix.prefix }}"
 
       - name: Build (${{ matrix.arch }})
         if: ${{ !matrix.msvc }}
@@ -250,15 +271,17 @@ jobs:
       - name: Setup MSYS2
         uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
+          msystem: UCRT64
           update: true
           install: >-
-            mingw-w64-x86_64-cmake
-            mingw-w64-x86_64-ninja
-            mingw-w64-x86_64-qt5
-            mingw-w64-x86_64-libvips
-            mingw-w64-x86_64-pkg-config
-            mingw-w64-x86_64-clang-tools-extra
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-qt5-base
+            mingw-w64-ucrt-x86_64-qt5-svg
+            mingw-w64-ucrt-x86_64-qt5-tools
+            mingw-w64-ucrt-x86_64-libvips
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-clang-tools-extra
 
       - name: Configure
         shell: msys2 {0}
@@ -281,16 +304,18 @@ jobs:
       - name: Setup MSYS2
         uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
+          msystem: UCRT64
           update: true
           install: >-
-            mingw-w64-x86_64-cmake
-            mingw-w64-x86_64-ninja
-            mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-qt5
-            mingw-w64-x86_64-libvips
-            mingw-w64-x86_64-pkg-config
-            mingw-w64-x86_64-clang-tools-extra
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-qt5-base
+            mingw-w64-ucrt-x86_64-qt5-svg
+            mingw-w64-ucrt-x86_64-qt5-tools
+            mingw-w64-ucrt-x86_64-libvips
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-clang-tools-extra
 
       - name: Configure
         shell: msys2 {0}
@@ -313,16 +338,18 @@ jobs:
       - name: Setup MSYS2
         uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
+          msystem: UCRT64
           update: true
           install: >-
-            mingw-w64-x86_64-cmake
-            mingw-w64-x86_64-ninja
-            mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-qt5
-            mingw-w64-x86_64-libvips
-            mingw-w64-x86_64-pkg-config
-            mingw-w64-x86_64-tools-git
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-qt5-base
+            mingw-w64-ucrt-x86_64-qt5-svg
+            mingw-w64-ucrt-x86_64-qt5-tools
+            mingw-w64-ucrt-x86_64-libvips
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-tools
 
       - name: Download & extract Velopack libc
         shell: pwsh
@@ -358,17 +385,18 @@ jobs:
       - name: Setup MSYS2
         uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
+          msystem: UCRT64
           update: true
           install: >-
-            mingw-w64-x86_64-cmake
-            mingw-w64-x86_64-ninja
-            mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-qt5
-            mingw-w64-x86_64-qt5-tools
-            mingw-w64-x86_64-libvips
-            mingw-w64-x86_64-pkg-config
-            mingw-w64-x86_64-nsis
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-qt5-base
+            mingw-w64-ucrt-x86_64-qt5-svg
+            mingw-w64-ucrt-x86_64-qt5-tools
+            mingw-w64-ucrt-x86_64-libvips
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-nsis
 
       - name: Configure
         shell: msys2 {0}
@@ -422,17 +450,18 @@ jobs:
         id: msys
         uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
+          msystem: UCRT64
           update: true
           install: >-
-            mingw-w64-x86_64-cmake
-            mingw-w64-x86_64-ninja
-            mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-qt5
-            mingw-w64-x86_64-qt5-tools
-            mingw-w64-x86_64-libvips
-            mingw-w64-x86_64-pkg-config
-            mingw-w64-x86_64-tools-git
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-qt5-base
+            mingw-w64-ucrt-x86_64-qt5-svg
+            mingw-w64-ucrt-x86_64-qt5-tools
+            mingw-w64-ucrt-x86_64-libvips
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-tools
 
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v4
@@ -473,8 +502,8 @@ jobs:
           # setup-msys2 的安装位置不固定（非 C:/msys64），用其输出定位 mingw64/bin。
           $msys = $env:MSYS2_LOC
           Write-Host "MSYS2 location: $msys"
-          $env:PATH = "$msys/mingw64/bin;$env:PATH"
-          ./deploy.ps1 -BuildDir build -DeployDir deploy -MsysRoot $msys -SourceRoot .
+          $env:PATH = "$msys/ucrt64/bin;$env:PATH"
+          ./deploy.ps1 -BuildDir build -DeployDir deploy -MsysRoot $msys -MingwSubdir ucrt64 -SourceRoot .
 
       - name: Install vpk
         shell: pwsh

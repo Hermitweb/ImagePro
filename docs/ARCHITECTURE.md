@@ -383,7 +383,7 @@ A 的缩略图写到 B 的行上。按 id 匹配是唯一稳定的方式。
 
 | 架构 | 工具链 | 关键约束 |
 |---|---|---|
-| x64 | MSYS2 `MINGW64` / `UCRT64` | 主线路，本地开发与发布 |
+| x64 | MSYS2 `UCRT64` | 发布主线路。MSYS2 已把 libvips 从 msvcrt（MINGW64）仓库移除，只有 UCRT64 / CLANG64 / CLANGARM64 还提供 |
 | x86 | MSVC + Qt 官方 `win32_msvc2019` + libvips 官方 `win32-ia32` | MSYS2 没有 32 位 Qt5，也没有 32 位 libvips |
 | ARM64 | MSYS2 `CLANGARM64` | 只能在**原生 ARM64 Windows** 上构建 |
 

@@ -5,16 +5,25 @@
 .DESCRIPTION
     给定已构建的 build 目录（含 ImagePro.exe），运行 windeployqt 并递归收集
     Qt / libvips / MinGW 运行时 / velopack.dll / 翻译文件到目标部署目录。
+.PARAMETER MingwSubdir
+    MSYS2 前缀目录名（mingw64 / ucrt64 / clang64 / clangarm64）。
+    决定从哪里取 windeployqt 与 MinGW 运行库 —— 必须与构建该 exe 的
+    环境一致，否则会把错误架构的 DLL 打进安装包。
+    发行主线是 UCRT64（MSYS2 已把 libvips 从 msvcrt 仓库移除）。
 #>
 param(
     [Parameter(Mandatory = $true)][string]$BuildDir,
     [string]$DeployDir = "$PSScriptRoot/deploy/ImagePro",
     [string]$MsysRoot = "C:/msys64",
+    [string]$MingwSubdir = "ucrt64",
     [string]$SourceRoot = "$PSScriptRoot"
 )
 
 $ErrorActionPreference = "Stop"
-$mingwBin = "$MsysRoot/mingw64/bin"
+$mingwBin = "$MsysRoot/$MingwSubdir/bin"
+if (-not (Test-Path $mingwBin)) {
+    throw "MSYS2 前缀不存在：$mingwBin（-MingwSubdir 指定错了？）"
+}
 $env:PATH = "$mingwBin;$env:PATH"
 
 if (-not (Test-Path "$BuildDir/ImagePro.exe")) {
