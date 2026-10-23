@@ -90,8 +90,9 @@
   - CI `build-arch` 矩阵修正：ARM64 改跑在原生 `windows-11-arm` runner 上
     （MSYS2 的 CLANGARM64 前缀里连编译器都是 ARM64 原生程序，x64 上无法交叉编译），
     x86 走完整的 MSVC + aqtinstall + libvips 预编译包链路；
-    同时修掉一个既有缺陷 —— 矩阵里 shell 写死 `msys2 {0}`，
-    会让 UCRT64 / CLANGARM64 条目实际在 MINGW64 里构建，表面绿灯、产物架构是错的。
+    同时修掉一个会让**整个 workflow 无法加载**的硬错误 ——
+    `${{ env:RUNNER_TEMP }}` 写成了冒号（GitHub 的表达式是 `env.RUNNER_TEMP`），
+    表达式解析器直接拒绝整个文件，CI 表现为「0 秒失败 / workflow file issue」。
 - **命令行自检的中文是乱码**：`QTextStream(FILE*)` + `setCodec("UTF-8")` 在 Windows 上
   会把 QString 先转成 UTF-8、再把每个字节当 Latin-1 码位转一次 —— **双重编码**
   （「影」写成 `C3 A5 C2 BD C2 B1` 而不是 `E5 BD B1`），终端里看到的是「å½±å›¾」。

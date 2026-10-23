@@ -109,9 +109,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip aqtinstall
           python -m aqt install-qt windows desktop 5.15.2 ${{ matrix.qt_arch }} `
-                  --outputdir "${{ env:RUNNER_TEMP }}\qt"
+                  --outputdir "${{ env.RUNNER_TEMP }}\qt"
           # aqt 解到 <outputdir>/<version>/<arch>，这一层即 Qt 根目录。
-          $qtRoot = (Get-ChildItem "${{ env:RUNNER_TEMP }}\qt" -Directory -Recurse |
+          $qtRoot = (Get-ChildItem "${{ env.RUNNER_TEMP }}\qt" -Directory -Recurse |
                      Where-Object { $_.Name -eq ${{ matrix.qt_arch }} } |
                      Select-Object -First 1).Parent.FullName
           "CMAKE_PREFIX_PATH=$qtRoot" >> $env:GITHUB_ENV
@@ -124,7 +124,7 @@ jobs:
         run: |
           $vipsDir = "${{ env.RUNNER_TEMP }}\libvips"
           New-Item -ItemType Directory -Force -Path $vipsDir | Out-Null
-          $tgz = "${{ env:RUNNER_TEMP }}\vips.tar.gz"
+          $tgz = "${{ env.RUNNER_TEMP }}\vips.tar.gz"
           Invoke-WebRequest -Uri "${{ matrix.vips_url }}" -OutFile $tgz
           tar -xzf $tgz -C $vipsDir
           "IMAGEPRO_VIPS_ROOT=$vipsDir" >> $env:GITHUB_ENV
@@ -197,12 +197,12 @@ jobs:
             ${{ matrix.prefix }}-pkg-config
             ${{ matrix.prefix }}-nsis
 
-      # 注意：shell 必须指定具体 msystem。
-      # 写死 `msys2 {0}` 会让 UCRT64 / CLANGARM64 条目实际在 MINGW64 里构建，
-      # 表面绿灯，实际产物架构是错的。
+      # shell 写 `msys2 {0}` 即可：{0} 会替换成本作业 setup-msys2 的 msystem 输入，
+      # 因此矩阵里每个架构条目都自动进入对应的 MSYS2 环境
+      # （MINGW64 / UCRT64 / CLANGARM64），无需在 shell 里再引用矩阵变量。
       - name: Configure (${{ matrix.arch }})
         if: ${{ !matrix.msvc }}
-        shell: msys2 ${{ matrix.msystem }}
+        shell: msys2 {0}
         run: |
           cmake -B build -G Ninja -DBUILD_TESTS=ON -DIMAGEPRO_WERROR=ON \
                 -DCMAKE_PREFIX_PATH="/${{ matrix.prefix }}" \
@@ -211,17 +211,17 @@ jobs:
 
       - name: Build (${{ matrix.arch }})
         if: ${{ !matrix.msvc }}
-        shell: msys2 ${{ matrix.msystem }}
+        shell: msys2 {0}
         run: cmake --build build -j4
 
       - name: Test (${{ matrix.arch }})
         if: ${{ !matrix.msvc }}
-        shell: msys2 ${{ matrix.msystem }}
+        shell: msys2 {0}
         run: ctest --test-dir build --output-on-failure
 
       - name: Package (${{ matrix.arch }})
         if: ${{ !matrix.msvc }}
-        shell: msys2 ${{ matrix.msystem }}
+        shell: msys2 {0}
         run: |
           cd build
           cpack -G ZIP -B package
