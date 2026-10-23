@@ -65,7 +65,9 @@ jobs:
               echo "---- $t"
               # QTest 的文件日志是增量落盘的，进程崩溃也不会丢掉已写部分。
               rm -f test_report.txt
-              "$t" -v2 -o test_report.txt,txt
+              # 必须有超时：直接重跑没有 ctest 的 120 上限，
+              # 一个卡住的用例就能把作业无限挂住。
+              timeout 60 "$t" -v2 -o test_report.txt,txt
               echo "exit=$?"
               tail -40 test_report.txt 2>/dev/null
             done
@@ -105,7 +107,9 @@ jobs:
   build-arch:
     # x86 条目不阻断发布：runner 镜像只有 VS 18（与 Qt 5.15 不兼容），
     # x86 发布产物由本地 MSVC 2022 工具链产出（已完整验证）。
-    continue-on-error: ${{ matrix.msvc }}
+    # 必须是布尔值：非 MSVC 条目上 matrix.msvc 未定义，
+    # 展开成空字符串会让 GitHub 直接丢弃整个作业（发布作业随之被跳过）。
+    continue-on-error: ${{ matrix.msvc == true }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -303,7 +307,9 @@ jobs:
               echo "---- $t"
               # QTest 的文件日志是增量落盘的，进程崩溃也不会丢掉已写部分。
               rm -f test_report.txt
-              "$t" -v2 -o test_report.txt,txt
+              # 必须有超时：直接重跑没有 ctest 的 120 上限，
+              # 一个卡住的用例就能把作业无限挂住。
+              timeout 60 "$t" -v2 -o test_report.txt,txt
               echo "exit=$?"
               tail -40 test_report.txt 2>/dev/null
             done

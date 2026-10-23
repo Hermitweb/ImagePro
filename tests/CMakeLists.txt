@@ -66,7 +66,7 @@ function(add_imagepro_test name source)
     endif()
 
     set_tests_properties(${name} PROPERTIES
-        TIMEOUT 120
+        TIMEOUT 60
         ENVIRONMENT "VIPS_MODULE_PATH=${VIPS_EMPTY_MODULE_DIR}"
     )
 
