@@ -284,6 +284,10 @@ endif()
 add_executable(ImagePro WIN32 src/main.cpp ${RCC_SOURCES} ${QM_FILES} ${IMAGEPRO_RC_SOURCES})
 
 if(MSVC)
+    # VS 18 移除了 stdext 命名空间，而 Qt 5.15 的头文件仍在用它
+    # → 强制先包含兼容头，把相关宏改写为等价的「直接用指针」形式。
+    target_compile_options(ImageProLib PUBLIC
+        "/FI${CMAKE_CURRENT_SOURCE_DIR}/src/msvc_qt_compat.h")
     # 把我们的清单交给链接器合并（MSVC 官方推荐做法）。
     # 链接器默认已开启 /MANIFEST（VS 工程模板里 GenerateManifest=true），
     # 无需重复指定；这里只补输入。

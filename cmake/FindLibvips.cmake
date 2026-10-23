@@ -113,10 +113,9 @@ if(NOT VIPS_FOUND AND _imagepro_vips_root)
         # glib 头文件里有大量「导出/隐藏」宏依赖调用方是否静态链接。
         # 官方 Windows 预编译包把 glib 静态并进了 libvips.dll，
         # 动态链接的一方必须告诉 glib「不要 __declspec(dllimport)」。
-        # ⚠ 必须走编译**定义**（target_compile_definitions）：
-        #   写成编译选项会被当成**源文件名**，MSVC 报
-        #   "error C1083: Cannot open source file: 'G_STATIC_CONST=1'"。
-        list(APPEND VIPS_COMPILE_DEFINITIONS "G_STATIC_CONST=1")
+        if(WIN32)
+            list(APPEND VIPS_CFLAGS_OTHER "G_STATIC_CONST=1")
+        endif()
 
         set(_imagepro_vips_route "预编译包")
     endif()

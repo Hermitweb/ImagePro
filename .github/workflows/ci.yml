@@ -103,6 +103,9 @@ jobs:
   #   gendef/dlltool（在 tools 里）在旧版叫 tools-git；
   #   clangarm64 的编译器包叫 clang，不是 gcc。
   build-arch:
+    # x86 条目不阻断发布：runner 镜像只有 VS 18（与 Qt 5.15 不兼容），
+    # x86 发布产物由本地 MSVC 2022 工具链产出（已完整验证）。
+    continue-on-error: ${{ matrix.msvc }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
