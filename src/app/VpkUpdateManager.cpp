@@ -14,10 +14,6 @@
 
 namespace yingtu {
 
-// Velopack 从该 URL 拉取 releases.<platform>.json（由 vpk pack 上传到 GitHub Releases）。
-// 传入 GitHub 仓库地址时，Velopack 会自动解析 Releases 资产。
-static constexpr const char* kUpdateUrl = "https://github.com/Hermitweb/ImagePro";
-
 VpkUpdateManager& VpkUpdateManager::instance()
 {
     static VpkUpdateManager s_instance;
@@ -43,6 +39,11 @@ QString VpkUpdateManager::currentVersion() const
 
 #ifdef WITH_VELOPACK
 
+// Velopack 从该 URL 拉取 releases.<platform>.json（由 vpk pack 上传到 GitHub Releases）。
+// 传入 GitHub 仓库地址时，Velopack 会自动解析 Releases 资产。
+// 定义在 WITH_VELOPACK 内：非 Velopack 构建用不到它，放在外面会产生未使用告警。
+static constexpr const char* kUpdateUrl = "https://github.com/Hermitweb/ImagePro";
+
 // 工作线程返回的检查结果（不跨线程抛异常）。
 struct CheckResult {
     bool ok = false;
@@ -63,9 +64,8 @@ void VpkUpdateManager::progressCallback(void* userData, size_t progress)
     if (!self)
         return;
     const int percent = static_cast<int>(progress);
-    QMetaObject::invokeMethod(self, [self, percent]() {
-        emit self->downloadProgress(percent);
-    }, Qt::QueuedConnection);
+    QMetaObject::invokeMethod(
+        self, [self, percent]() { emit self->downloadProgress(percent); }, Qt::QueuedConnection);
 }
 
 void VpkUpdateManager::checkForUpdates()
@@ -76,8 +76,7 @@ void VpkUpdateManager::checkForUpdates()
         if (r.ok) {
             if (r.update) {
                 m_pendingUpdate = r.update;
-                const QString version =
-                    QString::fromStdString(r.update->TargetFullRelease.Version);
+                const QString version = QString::fromStdString(r.update->TargetFullRelease.Version);
                 emit updateAvailable(version);
             } else {
                 emit upToDate();

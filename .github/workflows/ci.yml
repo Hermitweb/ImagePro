@@ -8,10 +8,15 @@ on:
   pull_request:
     branches: [master, main]
 
+# 同一分支上的新推送取消旧运行，避免浪费 CI 资源。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # ── 构建 / 测试作业：master 与 PR，WITH_VELOPACK=OFF 保持绿色 ──
+  # IMAGEPRO_WERROR=ON：警告即错误，作为编译期质量门禁。
   build:
-    if: github.event_name == 'pull_request' || !startsWith(github.ref, 'refs/tags/v')
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -32,7 +37,7 @@ jobs:
 
       - name: Configure
         shell: msys2 {0}
-        run: cmake -B build -G Ninja -DBUILD_TESTS=ON
+        run: cmake -B build -G Ninja -DBUILD_TESTS=ON -DIMAGEPRO_WERROR=ON
 
       - name: Build
         shell: msys2 {0}
@@ -40,9 +45,7 @@ jobs:
 
       - name: Test
         shell: msys2 {0}
-        run: |
-          cd build
-          ctest --output-on-failure
+        run: ctest --test-dir build --output-on-failure
 
       - name: Upload Artifact
         if: github.event_name != 'pull_request'
@@ -53,12 +56,360 @@ jobs:
             build/ImagePro.exe
             build/*.dll
 
+  # ── 多架构构建矩阵 ────────────────────────────────────────────
+  # 每个架构一套工具链，产出对应的安装包与便捷版。
+  #
+  # 架构与工具链的对应关系（均为实测可行路径）：
+  #   x64      MSYS2 MINGW64（msvcrt）—— 本地开发与发布主线路
+  #   x64-ucrt MSYS2 UCRT64
+  #   arm64    MSYS2 CLANGARM64（aarch64，含 Qt5 与 libvips）
+  #            ⚠ 必须在**原生 ARM64 Windows** 上构建：MSYS2 的 CLANGARM64
+  #              前缀里连编译器都是 ARM64 原生程序，无法在 x64 上交叉编译。
+  #              故该条目跑在 windows-11-arm runner 上。
+  #   x86      MSVC + Qt 官方 win32_msvc2019 预编译包 + libvips 官方预编译包
+  #            （MSYS2 没有 32 位 Qt，也没有 32 位 libvips）
+  build-arch:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            os: windows-latest
+            msystem: MINGW64
+            prefix: mingw-w64-x86_64
+          - arch: x64-ucrt
+            os: windows-latest
+            msystem: UCRT64
+            prefix: mingw-w64-ucrt-x86_64
+            variant: ucrt
+          - arch: arm64
+            os: windows-11-arm
+            msystem: CLANGARM64
+            prefix: mingw-w64-clang-aarch64
+          - arch: x86
+            os: windows-latest
+            msvc: true
+            qt_arch: win32_msvc2019
+            vips_url: https://github.com/lovell/sharp-libvips/releases/download/v8.16.1/libvips-8.16.1-win32-ia32.tar.gz
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── MSVC 路线（x86）──
+      - name: Setup MSVC (x86)
+        if: matrix.msvc
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+
+      - name: Install Qt (${{ matrix.qt_arch }})
+        if: matrix.msvc
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip aqtinstall
+          python -m aqt install-qt windows desktop 5.15.2 ${{ matrix.qt_arch }} `
+                  --outputdir "${{ env:RUNNER_TEMP }}\qt"
+          # aqt 解到 <outputdir>/<version>/<arch>，这一层即 Qt 根目录。
+          $qtRoot = (Get-ChildItem "${{ env:RUNNER_TEMP }}\qt" -Directory -Recurse |
+                     Where-Object { $_.Name -eq ${{ matrix.qt_arch }} } |
+                     Select-Object -First 1).Parent.FullName
+          "CMAKE_PREFIX_PATH=$qtRoot" >> $env:GITHUB_ENV
+          "QT_ROOT_DIR=$qtRoot" >> $env:GITHUB_ENV
+          Write-Host "Qt root: $qtRoot"
+
+      - name: Install libvips (x86 prebuilt)
+        if: matrix.msvc
+        shell: pwsh
+        run: |
+          $vipsDir = "${{ env.RUNNER_TEMP }}\libvips"
+          New-Item -ItemType Directory -Force -Path $vipsDir | Out-Null
+          $tgz = "${{ env:RUNNER_TEMP }}\vips.tar.gz"
+          Invoke-WebRequest -Uri "${{ matrix.vips_url }}" -OutFile $tgz
+          tar -xzf $tgz -C $vipsDir
+          "IMAGEPRO_VIPS_ROOT=$vipsDir" >> $env:GITHUB_ENV
+          Write-Host "libvips root: $vipsDir"
+
+      # CPack 的 NSIS 生成器在自己的 PATH / 注册表里找 makensis，
+      # 只设 CPACK_NSIS_MAKE_NSIS 不够（它还要定位 NSIS 的 Plugins/Include）。
+      - name: Ensure NSIS on PATH
+        if: matrix.msvc
+        shell: pwsh
+        run: |
+          $nsisDirs = @(
+            "$env:ProgramFiles(x86)\NSIS",
+            "$env:ProgramFiles\NSIS",
+            "C:\msys64\mingw64\bin"
+          ) | Where-Object { Test-Path "$_\makensis.exe" }
+          if (-not $nsisDirs) { throw "找不到 makensis" }
+          "PATH=$($nsisDirs -join ';');$env:PATH" >> $env:GITHUB_ENV
+          Write-Host "NSIS: $($nsisDirs -join ', ')"
+
+      # 生成器用 Visual Studio 而不是 Ninja：
+      # 中文 VS 下 cl.exe 的 /showIncludes 前缀是「注意: 包含文件:」，
+      # CMake 会把它写进 rules.ninja 的 msvc_deps_prefix，
+      # 而 Ninja 的词法器不接受非 ASCII 字节 →
+      #   rules.ninja: expected newline, got lexing error
+      # 该前缀由 VS 安装语言决定，VSLANG=1033 也改不动。
+      - name: Configure (${{ matrix.arch }}, MSVC)
+        if: matrix.msvc
+        shell: pwsh
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A Win32 `
+                -DBUILD_TESTS=ON `
+                -DIMAGEPRO_WERROR=ON `
+                "-DCMAKE_PREFIX_PATH=$env:CMAKE_PREFIX_PATH" `
+                "-DIMAGEPRO_VIPS_ROOT=$env:IMAGEPRO_VIPS_ROOT"
+
+      - name: Build (${{ matrix.arch }}, MSVC)
+        if: matrix.msvc
+        shell: pwsh
+        run: cmake --build build --config Release -j4
+
+      - name: Test (${{ matrix.arch }}, MSVC)
+        if: matrix.msvc
+        shell: pwsh
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Package (${{ matrix.arch }}, MSVC)
+        if: matrix.msvc
+        shell: pwsh
+        run: |
+          cd build
+          cpack -G ZIP -B package -C Release
+          cpack -G NSIS -B package -C Release
+          cmake --build . --config Release --target portable
+
+      # ── MSYS2 路线（x64 / x64-ucrt / arm64）──
+      - name: Setup MSYS2 (${{ matrix.msystem }})
+        if: ${{ !matrix.msvc }}
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{ matrix.msystem }}
+          update: true
+          install: >-
+            ${{ matrix.prefix }}-cmake
+            ${{ matrix.prefix }}-ninja
+            ${{ matrix.prefix }}-gcc
+            ${{ matrix.prefix }}-qt5
+            ${{ matrix.prefix }}-qt5-tools
+            ${{ matrix.prefix }}-libvips
+            ${{ matrix.prefix }}-pkg-config
+            ${{ matrix.prefix }}-nsis
+
+      # 注意：shell 必须指定具体 msystem。
+      # 写死 `msys2 {0}` 会让 UCRT64 / CLANGARM64 条目实际在 MINGW64 里构建，
+      # 表面绿灯，实际产物架构是错的。
+      - name: Configure (${{ matrix.arch }})
+        if: ${{ !matrix.msvc }}
+        shell: msys2 ${{ matrix.msystem }}
+        run: |
+          cmake -B build -G Ninja -DBUILD_TESTS=ON -DIMAGEPRO_WERROR=ON \
+                -DCMAKE_PREFIX_PATH="/${{ matrix.prefix }}" \
+                -DCMAKE_INSTALL_PREFIX="/${{ matrix.prefix }}" \
+                ${{ matrix.variant && format('-DIMAGEPRO_PACKAGE_VARIANT={0}', matrix.variant) || '' }}
+
+      - name: Build (${{ matrix.arch }})
+        if: ${{ !matrix.msvc }}
+        shell: msys2 ${{ matrix.msystem }}
+        run: cmake --build build -j4
+
+      - name: Test (${{ matrix.arch }})
+        if: ${{ !matrix.msvc }}
+        shell: msys2 ${{ matrix.msystem }}
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Package (${{ matrix.arch }})
+        if: ${{ !matrix.msvc }}
+        shell: msys2 ${{ matrix.msystem }}
+        run: |
+          cd build
+          cpack -G ZIP -B package
+          cpack -G NSIS -B package
+          cmake --build . --target portable
+
+      # 产物名用 ArchPackages- 前缀：与其它作业的 artifact 区分开，
+      # 发布作业据此精确下载多架构产物（避免误收同名 artifact）。
+      - name: Upload Artifact (${{ matrix.arch }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArchPackages-${{ matrix.arch }}-${{ github.run_number }}
+          path: |
+            build/package/*
+            build/*-portable-*.zip
+
+  # ── 格式门禁：clang-format 检查 ─────────────────────────────────
+  # 格式标准的唯一来源是仓库根目录的 .clang-format。
+  # 任何与标准不符的改动都会让本作业失败，避免格式噪音进入主干。
+  format:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-qt5
+            mingw-w64-x86_64-libvips
+            mingw-w64-x86_64-pkg-config
+            mingw-w64-x86_64-clang-tools-extra
+
+      - name: Configure
+        shell: msys2 {0}
+        run: cmake -B build -G Ninja -DBUILD_TESTS=OFF
+
+      - name: Format check
+        shell: msys2 {0}
+        run: cmake --build build --target format-check
+
+  # ── 静态分析门禁：clang-tidy ────────────────────────────────────
+  # 与 build 一样是阻断门禁：任何告警都让作业失败。
+  # 工具链必须与编译器一致（都用 MSYS2 的 MinGW），
+  # 否则 clang-tidy 无法解析 /mingw64/include 下的 Qt 头文件。
+  static-analysis:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-qt5
+            mingw-w64-x86_64-libvips
+            mingw-w64-x86_64-pkg-config
+            mingw-w64-x86_64-clang-tools-extra
+
+      - name: Configure
+        shell: msys2 {0}
+        run: cmake -B build -G Ninja -DBUILD_TESTS=OFF -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+      - name: Run clang-tidy
+        shell: msys2 {0}
+        run: cmake --build build --target tidy
+
+  # ── Velopack ABI 门禁 ──────────────────────────────────────────
+  # 以 -DWITH_VELOPACK=ON 完整编译一次：链接通过即说明 VpkUpdateManager
+  # 使用的 C++ API 符号与 velopack_libc DLL 一致（ABI 正确）。
+  # 此前只有 tag 构建才覆盖这条路径，ABI 破坏会等到发版才发现。
+  velopack-abi:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-qt5
+            mingw-w64-x86_64-libvips
+            mingw-w64-x86_64-pkg-config
+            mingw-w64-x86_64-tools-git
+
+      - name: Download & extract Velopack libc
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $rel = Invoke-RestMethod "https://api.github.com/repos/velopack/velopack/releases/latest" `
+                   -Headers @{ "User-Agent" = "github-actions" }
+          $asset = $rel.assets | Where-Object { $_.name -like "velopack_libc_*.zip" } | Select-Object -First 1
+          if (-not $asset) { throw "velopack_libc zip not found in latest release." }
+          Invoke-WebRequest $asset.browser_download_url -OutFile velopack_libc.zip -UseBasicParsing
+          Expand-Archive velopack_libc.zip -DestinationPath velopack-libc -Force
+
+      - name: Configure (WITH_VELOPACK=ON)
+        shell: msys2 {0}
+        run: |
+          cmake -B build -G Ninja -DBUILD_TESTS=OFF -DIMAGEPRO_WERROR=ON \
+            -DWITH_VELOPACK=ON \
+            -DVELOPACK_ROOT="$GITHUB_WORKSPACE/velopack-libc"
+
+      - name: Build
+        shell: msys2 {0}
+        run: cmake --build build -j4
+
+  # ── 打包门禁：CPack 生成 ZIP 与 NSIS 安装程序 ───────────────────
+  # 验证安装规则与 NSIS 脚本配置在 CI 里真实可用，
+  # 而不是只在配置阶段「看起来没问题」。
+  package:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-qt5
+            mingw-w64-x86_64-qt5-tools
+            mingw-w64-x86_64-libvips
+            mingw-w64-x86_64-pkg-config
+            mingw-w64-x86_64-nsis
+
+      - name: Configure
+        shell: msys2 {0}
+        run: cmake -B build -G Ninja -DBUILD_TESTS=OFF -DIMAGEPRO_WERROR=ON
+
+      - name: Build
+        shell: msys2 {0}
+        run: cmake --build build -j4
+
+      - name: Pack (ZIP + NSIS)
+        shell: msys2 {0}
+        run: |
+          cd build
+          cpack -G ZIP
+          cpack -G NSIS
+
+      - name: Verify artifacts
+        shell: msys2 {0}
+        run: |
+          ls -la build/package/ || ls -la build/*.exe build/*.zip
+          echo "--- artifacts ---"
+          find build -maxdepth 2 -name "*.zip" -o -maxdepth 2 -name "*.exe" | grep -v "^build/ImagePro.exe$"
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ImagePro-Packages-${{ github.run_number }}
+          path: |
+            build/*.zip
+            build/*.exe
+            build/package/*
+
   # ── 发布作业：tag 触发，WITH_VELOPACK=ON + vpk pack 上传 Releases ──
   release:
     if: startsWith(github.ref, 'refs/tags/v')
+    # 发布前必须过门禁：格式、静态分析、多架构构建都绿了才发版。
+    needs: [format, static-analysis, build-arch]
     runs-on: windows-latest
     permissions:
       contents: write
+      actions: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -106,6 +457,7 @@ jobs:
         shell: msys2 {0}
         run: |
           cmake -B build -G Ninja -DBUILD_TESTS=OFF \
+            -DIMAGEPRO_WERROR=ON \
             -DWITH_VELOPACK=ON \
             -DVELOPACK_ROOT="$GITHUB_WORKSPACE/velopack-libc"
 
@@ -134,13 +486,17 @@ jobs:
         shell: pwsh
         continue-on-error: true
         run: |
-          New-Item -ItemType Directory -Force -Path releases | Out-Null
+          # 下载到**独立目录**，不要放进 releases/：
+          # releases/ 是本次发布的输出目录，里面只应放新产物。
+          # 混在一起的话，上个版本的 Setup.exe / Portable.zip 会随新版本一起
+          # 被上传，Release 页面里就混进了旧版安装包。
+          New-Item -ItemType Directory -Force -Path releases-prev | Out-Null
           vpk download github `
             --repoUrl https://github.com/${{ github.repository }} `
-            -o releases `
+            -o releases-prev `
             --token ${{ secrets.GITHUB_TOKEN }}
           Write-Host "Previous assets (if any):"
-          Get-ChildItem releases -ErrorAction SilentlyContinue | Select-Object Name
+          Get-ChildItem releases-prev -ErrorAction SilentlyContinue | Select-Object Name
 
       - name: vpk pack
         shell: pwsh
@@ -204,6 +560,28 @@ jobs:
             Write-Host "Updated assets.win.json to match renamed files"
           }
           Write-Host "Release assets (final):"
+          Get-ChildItem releases | Select-Object Name, Length
+
+      # 多架构产物：把 x64 / x64-ucrt / x86 / arm64 各自的 NSIS 安装包与便捷版
+      # 一并挂到 Release —— 这才是「多架构发布版本」的落点。
+      # 文件名已带架构标识（win64 / win64-ucrt / win32 / winarm64），四个变体互不重名。
+      - name: Download multi-arch packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ArchPackages-*
+          path: arch-packages
+
+      - name: Collect multi-arch assets
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path releases | Out-Null
+          Get-ChildItem arch-packages -Recurse -File |
+            Where-Object { $_.Extension -in '.exe', '.zip' } |
+            ForEach-Object {
+              Copy-Item $_.FullName (Join-Path 'releases' $_.Name) -Force
+              Write-Host "multi-arch asset: $($_.Name)"
+            }
+          Write-Host "Release assets (with multi-arch):"
           Get-ChildItem releases | Select-Object Name, Length
 
       - name: Upload release assets

@@ -1,5 +1,6 @@
 #include "ResultDialog.h"
 #include "core/ExportManager.h"
+#include "utils/FileUtils.h"
 #include <QDesktopServices>
 #include <QFileInfo>
 #include <QGridLayout>
@@ -11,19 +12,7 @@
 
 namespace yingtu {
 
-static QString formatFileSize(qint64 bytes)
-{
-    if (bytes < 1024)
-        return QStringLiteral("%1 B").arg(bytes);
-    if (bytes < 1024 * 1024)
-        return QStringLiteral("%1 KB").arg(bytes / 1024.0, 0, 'f', 1);
-    if (bytes < 1024 * 1024 * 1024)
-        return QStringLiteral("%1 MB").arg(bytes / (1024.0 * 1024.0), 0, 'f', 1);
-    return QStringLiteral("%1 GB").arg(bytes / (1024.0 * 1024.0 * 1024.0), 0, 'f', 1);
-}
-
-ResultDialog::ResultDialog(const ResultInfo& info, QWidget* parent)
-    : QDialog(parent)
+ResultDialog::ResultDialog(const ResultInfo& info, QWidget* parent) : QDialog(parent)
 {
     setWindowTitle(info.title.isEmpty() ? tr("Processing Complete") : info.title);
     resize(480, 360);
@@ -43,14 +32,16 @@ ResultDialog::ResultDialog(const ResultInfo& info, QWidget* parent)
     int row = 0;
     if (info.totalFileSize > 0) {
         infoLayout->addWidget(new QLabel(tr("File Size:"), this), row, 0);
-        infoLayout->addWidget(new QLabel(formatFileSize(info.totalFileSize), this), row, 1);
+        infoLayout->addWidget(new QLabel(FileUtils::formatFileSize(info.totalFileSize), this), row,
+                              1);
         ++row;
     }
     if (info.resolution.isValid() && info.resolution.width() > 0 && info.resolution.height() > 0) {
         infoLayout->addWidget(new QLabel(tr("Resolution:"), this), row, 0);
         infoLayout->addWidget(new QLabel(QStringLiteral("%1 x %2")
                                              .arg(info.resolution.width())
-                                             .arg(info.resolution.height()), this),
+                                             .arg(info.resolution.height()),
+                                         this),
                               row, 1);
         ++row;
     }

@@ -1,0 +1,76 @@
+# clang-tidy 配置（影图 ImagePro）
+#
+# 用法：
+#   clang-tidy -p build $(git ls-files 'src/*.cpp')
+#
+# 目标不是"零告警"，而是拦住真正会变成线上缺陷的模式：
+#   * 未初始化 / 悬垂指针 / 窄化转换
+#   * 忘记检查返回值（尤其是 write / commit / open）
+#   * 有符号溢出、除零
+#   * 隐式拷贝导致性能塌陷
+#
+# 与本项目强相关的 Qt 注意事项：
+#   * QObject 的拷贝构造函数不可用 —— moc_* 规则对 QObject 子类必须关闭；
+#   * QImage / QPixmap 的隐式共享是有意设计，performance-* 的拷贝检查对它们不适用；
+#   * Qt 容器与隐式转换较多，readability-implicit-bool-conversion 会大量误报。
+
+Checks: >
+  bugprone-*,
+  cert-*,
+  clang-analyzer-*,
+  performance-*,
+  portability-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-narrowing-conversions,
+  -performance-no-automatic-move,
+  -cert-err58-cpp,
+  -clang-analyzer-cplusplus.NewDeleteLeaks,
+  -clang-analyzer-cplusplus.NewDelete,
+  -clang-diagnostic-sentinel,
+  -portability-avoid-pragma-once,
+  -performance-enum-size,
+  -performance-use-std-move
+
+WarningsAsErrors: ''
+# 头文件过滤正则。
+#
+# 必须与路径分隔符无关：Windows 上 clang-tidy 报出的头文件路径是混合分隔符
+# （如 D:\proj\src\utils/FileUtils.h），写成 'src/.*' 会匹配不到，
+# 导致头文件里的问题全部被静默忽略。
+HeaderFilterRegex: '.*[\\/]src[\\/].*'
+FormatStyle: none
+
+CheckOptions:
+  - key: readability-function-size.LineThreshold
+    value: '120'
+  - key: readability-function-size.StatementThreshold
+    value: '80'
+  # Qt 的信号/槽与重载很多，放宽参数个数限制。
+  - key: readability-function-cognitive-complexity.Threshold
+    value: '50'
+  - key: bugprone-branch-clone.Threshold
+    value: '3'
+  # 成员命名：Qt 惯例 m_ 前缀，识别为类成员。
+  - key: readability-identifier-naming.ClassMember
+    value: 'm_[a-z][a-zA-Z0-9]*'
+
+# 各条排除项的理由：
+#
+#   portability-avoid-pragma-once
+#       本项目统一用 #pragma once（MSVC/GCC/Clang 均支持），
+#       改用 include guard 只会增加噪音，不带来任何收益。
+#
+#   performance-enum-size
+#       建议把枚举底层类型压到 1/2 字节。这是微优化，却会改变 ABI 与
+#       序列化宽度；Qt 项目惯例使用默认 int 底层类型。
+#
+#   performance-use-std-move
+#       Qt 的 QString/QImage 等是隐式共享类型，显式 std::move 反而
+#       容易写出「移走之后再用」的错误，且 Qt 官方风格不鼓励对
+#       隐式共享类型使用 std::move。
+#
+#   clang-diagnostic-sentinel
+#       libvips 的可变参函数（如 vips_thumbnail(..., nullptr)）没有标注
+#       sentinel 属性，编译器会误报「missing sentinel in function call」。
+#       这是 libvips C API 的固有形态，无法在调用方规避。
+

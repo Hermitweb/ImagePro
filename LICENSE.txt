@@ -1,0 +1,19 @@
+影图 (ImagePro) — 许可声明
+================================
+
+Copyright (c) yingtu. 保留所有权利。
+
+本项目为内部项目，未经著作权人书面许可，不得复制、修改、分发、
+再发布或用于任何商业用途。
+
+第三方组件
+----------
+
+本项目在运行时依赖以下开源组件，其许可条款适用于相应组件本身：
+
+  Qt 5 (LGPL v3 / 商业许可)   — https://www.qt.io/licensing
+  libvips (LGPL v2.1+)        — https://www.libvips.org/
+  MinGW-w64 / GCC (GPLv3 + 例外条款) — https://www.mingw-w64.org/
+  zlib / libpng / libjpeg-turbo / libwebp / OpenJPEG 等（各自条款）
+
+这些组件以动态链接方式随发行版分发，不修改其源代码。

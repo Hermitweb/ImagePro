@@ -14,6 +14,7 @@ class TestStitch : public QObject
 private slots:
     void testStitchVertical();
     void testStitchGrid();
+    void testStitchUniformWidthWithMixedSizes();
     void testStitchPreview();
     void testStitchPreviewMaxLongEdge();
     void testStitchAutoCropEdges();
@@ -90,6 +91,57 @@ void TestStitch::testStitchGrid()
 
     QImage stitched = ImageLoader::loadImage(output);
     QVERIFY(!stitched.isNull());
+}
+
+void TestStitch::testStitchUniformWidthWithMixedSizes()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    // 不同宽度的图片 + Vertical + uniformWidth：会进入「缩放统一宽度」分支，
+    // 也就是 StitchEngine::loadAndPrepareImages 中引用计数出错的那条路径
+    // （曾对输入图重复 g_object_unref，使缩放结果的管线引用到已释放的图像）。
+    // 除尺寸外必须校验像素颜色：释放后使用不一定立刻崩溃，但常常读出错误内容，
+    // 只断言 isNull() 是抓不到的。
+    QImage a(100, 60, QImage::Format_RGB32);
+    a.fill(Qt::red);
+    QImage b(150, 40, QImage::Format_RGB32);
+    b.fill(Qt::blue);
+
+    const QString pathA = dir.path() + QStringLiteral("/a.png");
+    const QString pathB = dir.path() + QStringLiteral("/b.png");
+    QVERIFY(ImageLoader::saveImage(a, pathA));
+    QVERIFY(ImageLoader::saveImage(b, pathB));
+
+    StitchSettings settings;
+    settings.direction = StitchSettings::Vertical;
+    settings.uniformWidth = true;
+    settings.spacing = 0;
+    settings.outputDir = dir.path();
+    settings.baseName = QStringLiteral("uniform");
+
+    StitchEngine engine;
+    engine.setSettings(settings);
+
+    bool ok = false;
+    QString output = engine.process(QStringList() << pathA << pathB, &ok);
+    QVERIFY(ok);
+    QVERIFY(QFile::exists(output));
+
+    QImage stitched = ImageLoader::loadImage(output);
+    QVERIFY(!stitched.isNull());
+
+    // 统一到最大宽度 150，高度按比例缩放：60 -> 90，40 -> 40
+    QCOMPARE(stitched.width(), 150);
+    QCOMPARE(stitched.height(), 90 + 40);
+
+    const QRgb topPixel = stitched.pixel(75, 20);
+    QVERIFY2(qRed(topPixel) > 200 && qBlue(topPixel) < 60,
+             "upper half should come from the red image");
+
+    const QRgb bottomPixel = stitched.pixel(75, 100);
+    QVERIFY2(qBlue(bottomPixel) > 200 && qRed(bottomPixel) < 60,
+             "lower half should come from the blue image");
 }
 
 void TestStitch::testStitchPreview()

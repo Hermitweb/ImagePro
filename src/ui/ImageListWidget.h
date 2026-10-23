@@ -34,7 +34,10 @@ signals:
     void imageDoubleClicked(int row);
     void imageSelected(int row);
     void imageSelectionChanged();
-    void deleteRequested(int row);
+    // 批量移除请求。统一走信号而不是在控件内直接改 model，便于 MainWindow
+    // 修正 m_currentImageRow 并刷新预览（原先 Delete 键与右键「移除」直接调用
+    // m_model->removeImages，绕过了这些处理）。
+    void removeRequested(const QModelIndexList& indexes);
     void rotateRequested(int row);
     void flipHorizontalRequested(int row);
     void flipVerticalRequested(int row);
@@ -50,6 +53,8 @@ protected:
     void resizeEvent(QResizeEvent* event) override;
     void showEvent(QShowEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
+    // 语言切换：重新套用常驻文本。
+    void changeEvent(QEvent* event) override;
 
 private slots:
     void showContextMenu(const QPoint& pos);
@@ -58,8 +63,8 @@ private slots:
     void onModelCountChanged(int count);
 
 private:
-    void setupView();
     void updateEmptyState();
+    void retranslateUi();
     void buildMenu(QMenu& menu, const QModelIndex& index);
     void updatePanelWidth();
     void updateGridMetrics(int panelWidth);

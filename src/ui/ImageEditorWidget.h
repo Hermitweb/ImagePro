@@ -14,6 +14,9 @@ public:
     explicit ImageEditorWidget(QWidget* parent = nullptr);
 
     void setBaseImage(const QImage& image);
+    // 切换编辑文档：documentKey 变化时清空标注与历史，避免上一张图的标注
+    // 串到新图上。预览刷新（同一文档）会保留用户正在编辑的标注。
+    void setDocumentImage(const QImage& image, const QString& documentKey);
     void setCurrentTool(const EditAction& actionTemplate);
     void clearActions();
     void undo();
@@ -71,6 +74,8 @@ private:
     SelectionState m_selection;
     QList<EditAction> m_history;
     int m_historyIndex = -1;
+    // 当前编辑文档的标识（文件路径）。为空表示尚未绑定文档。
+    QString m_documentKey;
 
     // 渲染缓存：仅在底图、标注或选中项变化时重绘，避免每帧复制大图
     QImage m_canvasCache;

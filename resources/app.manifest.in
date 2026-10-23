@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <assemblyIdentity type="win32" name="ImagePro" version="@IMAGEPRO_MANIFEST_VERSION@"
+                    processorArchitecture="*"/>
+  <description>影图 ImagePro —— 跨平台图像处理工具</description>
+
+  <!-- Windows 10 / 11 兼容性声明。
+       没有这段时，Windows 会把程序当成 Win7 之前的应用：
+       - 不给 DPI 感知，界面在 125%/150% 缩放下会被系统位图拉伸而模糊；
+       - 不认长路径（>260 字符）的路径；
+       - GetVersionEx 等 API 会返回被伪造的旧版本号。 -->
+  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+    <application>
+      <!-- Windows 10 / 11 -->
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"/>
+      <!-- Windows 8.1 -->
+      <supportedOS Id="{1f676c76-80e1-4239-95bb-83d0f6d0da78}"/>
+      <!-- Windows 8 -->
+      <supportedOS Id="{4a2f28e3-53b9-4441-ba9c-d69d4a4a6e38}"/>
+      <!-- Windows 7 -->
+      <supportedOS Id="{35138b9a-5d96-4fbd-8e2d-a2440225f93a}"/>
+    </application>
+  </compatibility>
+
+  <!-- 声明为「按显示器 DPI 感知」。这是 Qt5 高分屏缩放能正确工作的前提：
+       缺少这段时，Windows 会对整个窗口做位图拉伸，界面会发虚且点击位置偏移。 -->
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2, PerMonitor, System</dpiAwareness>
+      <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true/pm</dpiAware>
+      <!-- 允许超过 260 字符的路径（Win10 1607+ 需显式开启）。 -->
+      <longPathAware xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">true</longPathAware>
+      <!-- 使用 UTF-8 作为活动代码页，避免中文路径在非 UTF-8 系统区域设置下乱码。 -->
+      <activeCodePage xmlns="http://schemas.microsoft.com/SMI/2019/WindowsSettings">UTF-8</activeCodePage>
+    </windowsSettings>
+  </application>
+
+  <!-- 与 UAC 交互：不请求管理员权限。
+       提权只发生在明确需要管理员的操作（注册/卸载服务），
+       那时由程序自身弹 UAC 对话框。 -->
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
+    <security>
+      <requestedPrivileges>
+        <requestedExecutionLevel level="asInvoker" uiAccess="false"/>
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
+</assembly>

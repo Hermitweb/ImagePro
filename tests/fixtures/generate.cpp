@@ -57,7 +57,10 @@ static QImage makeNumbered(int w, int h, int n)
 int main(int argc, char* argv[])
 {
     QGuiApplication app(argc, argv);
-    const QString base = QStringLiteral("tests/fixtures");
+    // 默认输出到仓库根目录下的 tests/fixtures；可用第一个参数覆盖，
+    // 便于从 build 目录运行（原先硬编码相对路径，只能从仓库根目录执行）。
+    const QString base =
+        (argc > 1) ? QString::fromLocal8Bit(argv[1]) : QStringLiteral("tests/fixtures");
 
     // 单张测试图：不同尺寸与内容
     save(base + QStringLiteral("/sample_800x600_red.jpg"), makeColor(800, 600, Qt::red));
@@ -76,7 +79,8 @@ int main(int argc, char* argv[])
 
     // 九宫格编号图
     for (int i = 1; i <= 9; ++i)
-        save(base + QStringLiteral("/grid/grid_%1.png").arg(i, 2, 10, QChar('0')), makeNumbered(300, 300, i));
+        save(base + QStringLiteral("/grid/grid_%1.png").arg(i, 2, 10, QChar('0')),
+             makeNumbered(300, 300, i));
 
     return 0;
 }

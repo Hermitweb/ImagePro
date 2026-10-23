@@ -1,4 +1,5 @@
 #include "PdfEngine.h"
+#include "utils/ErrorHandler.h"
 #include "utils/ImageLoader.h"
 #include <QFileInfo>
 #include <QPageSize>
@@ -8,18 +9,19 @@
 
 namespace yingtu {
 
-PdfEngine::PdfEngine(QObject* parent)
-    : QObject(parent)
-{
-}
+PdfEngine::PdfEngine(QObject* parent) : QObject(parent) {}
 
 QSizeF PdfEngine::pageSizeMm(PdfSettings::PageSize size)
 {
     switch (size) {
-    case PdfSettings::A4: return QSizeF(210.0, 297.0);
-    case PdfSettings::A5: return QSizeF(148.0, 210.0);
-    case PdfSettings::Letter: return QSizeF(215.9, 279.4);
-    case PdfSettings::Custom: return QSizeF(210.0, 297.0);
+    case PdfSettings::A4:
+        return QSizeF(210.0, 297.0);
+    case PdfSettings::A5:
+        return QSizeF(148.0, 210.0);
+    case PdfSettings::Letter:
+        return QSizeF(215.9, 279.4);
+    case PdfSettings::Custom:
+        return QSizeF(210.0, 297.0);
     }
     return QSizeF(210.0, 297.0);
 }
@@ -27,7 +29,9 @@ QSizeF PdfEngine::pageSizeMm(PdfSettings::PageSize size)
 QString PdfEngine::process(const QStringList& filePaths, bool* ok)
 {
     if (filePaths.isEmpty()) {
-        if (ok) *ok = false;
+        if (ok)
+            *ok = false;
+        ErrorHandler::instance().report(ErrorCode::EMPTY_FOLDER, tr("No images to export."));
         emit error(tr("No images to export."));
         return QString();
     }
@@ -36,7 +40,8 @@ QString PdfEngine::process(const QStringList& filePaths, bool* ok)
     if (outputPath.isEmpty()) {
         if (filePaths.size() == 1) {
             QFileInfo fi(filePaths.first());
-            outputPath = fi.absolutePath() + QStringLiteral("/") + fi.completeBaseName() + QStringLiteral(".pdf");
+            outputPath = fi.absolutePath() + QStringLiteral("/") + fi.completeBaseName() +
+                         QStringLiteral(".pdf");
         } else {
             QFileInfo fi(filePaths.first());
             outputPath = fi.absolutePath() + QStringLiteral("/output.pdf");
@@ -45,9 +50,10 @@ QString PdfEngine::process(const QStringList& filePaths, bool* ok)
 
     QPdfWriter writer(outputPath);
     writer.setResolution(m_settings.dpi);
-    QSizeF pageMm = (m_settings.pageSize == PdfSettings::Custom && !m_settings.customPageSize.isEmpty())
-                        ? m_settings.customPageSize
-                        : pageSizeMm(m_settings.pageSize);
+    QSizeF pageMm =
+        (m_settings.pageSize == PdfSettings::Custom && !m_settings.customPageSize.isEmpty())
+            ? m_settings.customPageSize
+            : pageSizeMm(m_settings.pageSize);
     writer.setPageSize(QPageSize(pageMm, QPageSize::Millimeter));
 
     QPainter painter(&writer);
@@ -62,15 +68,21 @@ QString PdfEngine::process(const QStringList& filePaths, bool* ok)
     const qreal contentW = pageW - left - right;
     const qreal contentH = pageH - top - bottom;
 
+    // 统计真正画进 PDF 的图片数，用于末尾判定是否真的产出了内容。
+    int drawnCount = 0;
+
     auto drawImage = [&](const QImage& img) {
-        if (img.isNull()) return;
+        if (img.isNull())
+            return;
         QRectF target;
         if (m_settings.layout == PdfSettings::FitToPage) {
-            QImage scaled = img.scaled(contentW * m_settings.dpi / 25.4,
-                                       contentH * m_settings.dpi / 25.4,
-                                       Qt::KeepAspectRatio, Qt::SmoothTransformation);
-            qreal x = left * m_settings.dpi / 25.4 + (contentW * m_settings.dpi / 25.4 - scaled.width()) / 2.0;
-            qreal y = top * m_settings.dpi / 25.4 + (contentH * m_settings.dpi / 25.4 - scaled.height()) / 2.0;
+            QImage scaled =
+                img.scaled(contentW * m_settings.dpi / 25.4, contentH * m_settings.dpi / 25.4,
+                           Qt::KeepAspectRatio, Qt::SmoothTransformation);
+            qreal x = left * m_settings.dpi / 25.4 +
+                      (contentW * m_settings.dpi / 25.4 - scaled.width()) / 2.0;
+            qreal y = top * m_settings.dpi / 25.4 +
+                      (contentH * m_settings.dpi / 25.4 - scaled.height()) / 2.0;
             target = QRectF(x, y, scaled.width(), scaled.height());
             painter.drawImage(target, scaled);
         } else if (m_settings.layout == PdfSettings::SinglePerPage) {
@@ -100,6 +112,7 @@ QString PdfEngine::process(const QStringList& filePaths, bool* ok)
             target = QRectF(x, y, w, h);
             painter.drawImage(target, img);
         }
+        ++drawnCount;
     };
 
     if (m_settings.layout == PdfSettings::Grid2x2 || m_settings.layout == PdfSettings::Grid3x3) {
@@ -120,7 +133,8 @@ QString PdfEngine::process(const QStringList& filePaths, bool* ok)
             qreal offsetY = top + row * cellH;
 
             QImage img = ImageLoader::loadImage(filePaths.at(i));
-            if (img.isNull()) continue;
+            if (img.isNull())
+                continue;
 
             qreal sx = (cellW * m_settings.dpi / 25.4) / img.width();
             qreal sy = (cellH * m_settings.dpi / 25.4) / img.height();
@@ -130,6 +144,7 @@ QString PdfEngine::process(const QStringList& filePaths, bool* ok)
             qreal x = offsetX * m_settings.dpi / 25.4 + (cellW * m_settings.dpi / 25.4 - w) / 2.0;
             qreal y = offsetY * m_settings.dpi / 25.4 + (cellH * m_settings.dpi / 25.4 - h) / 2.0;
             painter.drawImage(QRectF(x, y, w, h), img);
+            ++drawnCount;
 
             emit progress(qRound((i + 1) * 100.0 / filePaths.size()));
         }
@@ -145,7 +160,19 @@ QString PdfEngine::process(const QStringList& filePaths, bool* ok)
 
     painter.end();
 
-    if (ok) *ok = true;
+    // 确认真的写出了内容：路径不可写、磁盘满、或所有图片都读取失败时，
+    // 之前也会无条件报成功并返回一个指向缺失/空 PDF 的路径。
+    const QFileInfo outInfo(outputPath);
+    if (drawnCount == 0 || !outInfo.exists() || outInfo.size() == 0) {
+        if (ok)
+            *ok = false;
+        ErrorHandler::instance().report(ErrorCode::WRITE_FAILED, outputPath);
+        emit error(tr("Failed to write PDF: %1").arg(outputPath));
+        return QString();
+    }
+
+    if (ok)
+        *ok = true;
     emit finished(outputPath);
     return outputPath;
 }

@@ -1,12 +1,12 @@
 #pragma once
 
 #include "ErrorLevel.h"
+#include <QMetaType>
 #include <QString>
 
 namespace yingtu {
 
-enum class ErrorCode
-{
+enum class ErrorCode {
     UNKNOWN = 0,
 
     // 1xxx 文件模块
@@ -57,6 +57,8 @@ enum class ErrorCode
 class ImageProError
 {
 public:
+    // 默认构造：Q_DECLARE_METATYPE 与跨线程队列连接都要求类型可默认构造。
+    ImageProError() = default;
     explicit ImageProError(ErrorCode code);
 
     ErrorCode code() const;
@@ -66,7 +68,13 @@ public:
     bool recoverable() const;
 
 private:
-    ErrorCode m_code;
+    ErrorCode m_code = ErrorCode::UNKNOWN;
 };
 
 } // namespace yingtu
+
+// 注册为 Qt 元类型。ErrorHandler::errorOccurred 携带 ImageProError，而
+// ErrorHandler::report() 可能从 QtConcurrent 工作线程调用；跨线程队列连接
+// 要求该类型已声明为 metatype，否则 connect 编译通过但运行时投递被拒绝，
+// 错误被静默丢弃。
+Q_DECLARE_METATYPE(yingtu::ImageProError)

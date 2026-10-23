@@ -1,25 +1,45 @@
-# Build directories
+# ── 构建目录 ────────────────────────────────────────────────────
+# 覆盖 build/、build-clean/、build_xxx/、build-xxx/、cmake-build-xxx/、out/
 build/
 build_*/
 build-*/
 cmake-build-*/
 out/
+Testing/
+compile_commands.json
 
-# Deploy/runtime artifacts
+# ── 部署 / 运行时产物 ──────────────────────────────────────────
 deploy/
 deploy_*/
+dist/
+dist-*/
+dist/
 *.exe
 *.dll
 *.a
 *.lib
+*.so
+*.dylib
 *.qm
-*.log
 
-# Test fixtures (keep generated sample images)
+# ── 日志与临时文件 ─────────────────────────────────────────────
+# 历史调试日志曾在仓库根目录堆积到 29 MB（含 30 MB 的 cc1dump.log）。
+# 日志是运行时产物，一律不入库。
+*.log
+logs/
+*.tmp
+*.bak
+*.corrupt.bak
+nohup.out
+
+# ── 测试产物 ───────────────────────────────────────────────────
+# fixtures 本身入库（作为测试基准），但测试输出不入库。
 !tests/fixtures/**/*.png
 !tests/fixtures/**/*.jpg
+!tests/fixtures/**/*.jpeg
+test_*_output/
 
-# Qt / CMake
+# ── Qt / CMake ─────────────────────────────────────────────────
 *.pro.user
 *.pro.user.*
 CMakeLists.txt.user
@@ -35,26 +55,27 @@ qrc_*.cpp
 ui_*.h
 *_autogen/
 *.autosave
+*.qrc.orig
 
-# IDE
+# ── IDE ────────────────────────────────────────────────────────
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
-# OS
+# ── 操作系统 ───────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+desktop.ini
 
-# Backup
+# ── 打包产物 ───────────────────────────────────────────────────
 backups/
 *.zip
 *.7z
 *.tar.gz
+*.msi
+*.exe.manifest
 
-# Third-party vendored dependencies (large, installed separately)
+# ── 第三方依赖（体积大，单独安装）──────────────────────────────
 third_party/
-
-# Test outputs
-test_*_output/

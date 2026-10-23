@@ -1,5 +1,8 @@
 #include "ToolBarWidget.h"
+#include "app/ImageProApp.h"
 #include <QButtonGroup>
+#include <QCoreApplication>
+#include <QEvent>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QPainter>
@@ -22,32 +25,46 @@ static QIcon createTextIcon(const QString& text, const QColor& color = QColor(64
     return QIcon(pixmap);
 }
 
-static QIcon toolIcon(ToolType tool)
+/**
+ * 工具按钮的图标字形。
+ *
+ * 中文界面用汉字（拼/转/压/水/编/尺/批），英文界面用首字母。
+ * 字形本身是「图标」而不是正文，所以单独用一组 "Icon: xxx" 翻译键，
+ * 源语言仍统一为英文。
+ */
+QString ToolBarWidget::toolGlyph(ToolType tool) const
 {
     switch (tool) {
     case ToolType::Stitch:
-        return createTextIcon(QStringLiteral("拼"));
+        return tr("Icon: Stitch");
     case ToolType::Convert:
-        return createTextIcon(QStringLiteral("转"));
+        return tr("Icon: Convert");
     case ToolType::Compress:
-        return createTextIcon(QStringLiteral("压"));
+        return tr("Icon: Compress");
     case ToolType::Watermark:
-        return createTextIcon(QStringLiteral("水"));
+        return tr("Icon: Watermark");
     case ToolType::Edit:
-        return createTextIcon(QStringLiteral("编"));
+        return tr("Icon: Edit");
     case ToolType::Resize:
-        return createTextIcon(QStringLiteral("尺"));
+        return tr("Icon: Resize");
     case ToolType::Batch:
-        return createTextIcon(QStringLiteral("批"));
+        return tr("Icon: Batch");
     case ToolType::Pdf:
-        return createTextIcon(QStringLiteral("P"));
+        return tr("Icon: PDF");
     default:
-        return QIcon();
+        return QString();
     }
 }
 
-ToolBarWidget::ToolBarWidget(QWidget* parent)
-    : QWidget(parent)
+QIcon ToolBarWidget::toolIcon(ToolType tool) const
+{
+    const QString glyph = toolGlyph(tool);
+    if (glyph.isEmpty())
+        return QIcon();
+    return createTextIcon(glyph);
+}
+
+ToolBarWidget::ToolBarWidget(QWidget* parent) : QWidget(parent)
 {
     setFixedHeight(48);
 
@@ -60,6 +77,7 @@ ToolBarWidget::ToolBarWidget(QWidget* parent)
 
     m_addButton = new QToolButton(this);
     m_addButton->setText(tr("Add Images"));
+    m_addButton->setToolTip(tr("Add Images"));
     m_addButton->setIcon(style()->standardIcon(QStyle::SP_DialogOpenButton));
     m_addButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     connect(m_addButton, &QToolButton::clicked, this, &ToolBarWidget::addImagesClicked);
@@ -67,12 +85,14 @@ ToolBarWidget::ToolBarWidget(QWidget* parent)
 
     m_removeButton = new QToolButton(this);
     m_removeButton->setText(tr("Remove"));
+    m_removeButton->setToolTip(tr("Remove"));
     m_removeButton->setIcon(style()->standardIcon(QStyle::SP_TrashIcon));
     connect(m_removeButton, &QToolButton::clicked, this, &ToolBarWidget::removeImageClicked);
     layout->addWidget(m_removeButton);
 
     m_clearButton = new QToolButton(this);
     m_clearButton->setText(tr("Clear"));
+    m_clearButton->setToolTip(tr("Clear"));
     m_clearButton->setIcon(style()->standardIcon(QStyle::SP_DialogResetButton));
     connect(m_clearButton, &QToolButton::clicked, this, &ToolBarWidget::clearImagesClicked);
     layout->addWidget(m_clearButton);
@@ -94,15 +114,77 @@ ToolBarWidget::ToolBarWidget(QWidget* parent)
     setCurrentTool(ToolType::Stitch);
 }
 
-void ToolBarWidget::createButton(ToolType tool, const QString& text, const QString& shortcut)
+void ToolBarWidget::changeEvent(QEvent* event)
+{
+    QWidget::changeEvent(event);
+    if (event->type() == QEvent::LanguageChange && !ImageProApp::isLanguageSwitching())
+        retranslateUi();
+}
+
+void ToolBarWidget::retranslateUi()
+{
+    m_addButton->setText(tr("Add Images"));
+    m_addButton->setToolTip(tr("Add Images"));
+    m_removeButton->setText(tr("Remove"));
+    m_removeButton->setToolTip(tr("Remove"));
+    m_clearButton->setText(tr("Clear"));
+    m_clearButton->setToolTip(tr("Clear"));
+
+    for (auto it = m_toolButtons.constBegin(); it != m_toolButtons.constEnd(); ++it) {
+        const ToolType tool = static_cast<ToolType>(it.key());
+        QToolButton* btn = it.value();
+        btn->setText(translateSource(toolSourceText(tool)) + QStringLiteral(" (") +
+                     btn->property("shortcut").toString() + QStringLiteral(")"));
+        btn->setToolTip(btn->text());
+        btn->setIcon(toolIcon(tool));
+    }
+}
+
+QString ToolBarWidget::translateSource(const QString& source) const
+{
+    const QByteArray utf8 = source.toUtf8();
+    return QCoreApplication::translate(metaObject()->className(), utf8.constData());
+}
+
+QString ToolBarWidget::toolSourceText(ToolType tool)
+{
+    switch (tool) {
+    case ToolType::Stitch:
+        return QStringLiteral("Stitch");
+    case ToolType::Convert:
+        return QStringLiteral("Convert");
+    case ToolType::Compress:
+        return QStringLiteral("Compress");
+    case ToolType::Watermark:
+        return QStringLiteral("Watermark");
+    case ToolType::Edit:
+        return QStringLiteral("Edit");
+    case ToolType::Resize:
+        return QStringLiteral("Resize");
+    case ToolType::Batch:
+        return QStringLiteral("Batch");
+    case ToolType::Pdf:
+        return QStringLiteral("PDF");
+    default:
+        return QString();
+    }
+}
+
+void ToolBarWidget::createButton(ToolType tool, const QString& translatedText,
+                                 const QString& shortcut)
 {
     QToolButton* btn = new QToolButton(this);
-    btn->setText(text + QStringLiteral(" (") + shortcut + QStringLiteral(")"));
+    // 文本由调用方用 tr() 字面量传入（lupdate 才能收录）；
+    // 语言切换时按 toolSourceText(tool) 取英文源串重新翻译。
+    btn->setText(translatedText + QStringLiteral(" (") + shortcut + QStringLiteral(")"));
+    btn->setToolTip(btn->text());
     btn->setIcon(toolIcon(tool));
     btn->setCheckable(true);
     btn->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     btn->setProperty("toolType", QVariant::fromValue(tool));
+    btn->setProperty("shortcut", shortcut);
     m_group->addButton(btn);
+    m_toolButtons.insert(static_cast<int>(tool), btn);
     layout()->addWidget(btn);
 
     connect(btn, &QToolButton::toggled, this, [this, tool](bool checked) {

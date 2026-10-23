@@ -1,35 +1,62 @@
 cmake_minimum_required(VERSION 3.16)
-project(ImagePro VERSION 1.4.1 LANGUAGES CXX)
+
+project(ImagePro
+    VERSION 1.5.0
+    DESCRIPTION "影图 — 基于 Qt 5 + libvips 的跨平台桌面图像处理工具"
+    HOMEPAGE_URL "https://github.com/Hermitweb/ImagePro"
+    LANGUAGES CXX
+)
+
+# ── 工程化模块 ────────────────────────────────────────────────────
+# 警告集、格式化、打包、运行时依赖收集均拆为独立模块，避免主文件膨胀。
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_AUTOMOC OFF)
-set(CMAKE_AUTORCC ON)
+# AUTORCC 关闭：resources.qrc 引用了 qt5_add_translation 生成的 .qm，
+# 而 AUTORCC 不会把这些生成文件登记为 rcc 的依赖，可能把旧的 .qm 静默嵌进程序
+# （改了 .ts 却不生效），干净构建时也可能因文件尚未生成而失败。
+# 改为下面用 qt5_add_resources 显式生成并声明依赖。
+set(CMAKE_AUTORCC OFF)
 set(CMAKE_AUTOUIC ON)
+
+# 供 clang-tidy / IDE 读取精确的编译命令。
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Prefer MSYS2 MinGW toolchain when available
 if(NOT DEFINED CMAKE_PREFIX_PATH)
     list(APPEND CMAKE_PREFIX_PATH "C:/msys64/mingw64")
 endif()
 
-find_package(Qt5 REQUIRED COMPONENTS Widgets Concurrent Svg Test LinguistTools)
+include(cmake/Warnings.cmake)
+include(cmake/Format.cmake)
+include(cmake/StaticAnalysis.cmake)
 
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(VIPS REQUIRED vips-cpp)
+# ── 依赖 ─────────────────────────────────────────────────────────
+find_package(Qt5 REQUIRED COMPONENTS Widgets Concurrent Svg Test Network LinguistTools)
+
+# libvips 查找走 cmake/FindLibvips.cmake：
+#   * MinGW / MSYS2 → pkg-config（vips-cpp）
+#   * MSVC（x86 发布版）→ -DIMAGEPRO_VIPS_ROOT=<预编译包解压根目录>
+# 两条路线输出的变量名一致，上层代码无须区分。
+find_package(Libvips REQUIRED)
 
 # 启用 libvips 优化路径：流式加载、缩略图、格式转换均走 libvips，
 # 避免 QImage 全图加载导致大内存占用。
 add_compile_definitions(USE_LIBVIPS)
 
+# ── 源文件清单 ───────────────────────────────────────────────────
 set(LIB_SOURCES
-    src/app/ApplicationState.cpp
+    src/app/AutoProcessService.cpp
     src/app/ImageProApp.cpp
-    src/app/ListSelectionState.cpp
-    src/app/PreviewInteractionState.cpp
+    src/app/SingleInstanceGuard.cpp
     src/app/StitchPreviewState.cpp
     src/app/ThemeManager.cpp
     src/app/ToastManager.cpp
     src/app/VpkUpdateManager.cpp
+    src/app/WindowsService.cpp
     src/core/CompressEngine.cpp
     src/core/ConvertEngine.cpp
     src/core/EditEngine.cpp
@@ -41,7 +68,6 @@ set(LIB_SOURCES
     src/core/ResizeEngine.cpp
     src/core/StitchEngine.cpp
     src/core/WatermarkEngine.cpp
-    src/ui/dialogs/ProgressDialog.cpp
     src/ui/dialogs/ResultDialog.cpp
     src/ui/ImageEditorWidget.cpp
     src/ui/ImageListWidget.cpp
@@ -67,26 +93,26 @@ set(LIB_SOURCES
 )
 
 set(HEADERS
-    src/app/ApplicationState.h
+    src/app/AutoProcessService.h
     src/app/ImageProApp.h
-    src/app/ListSelectionState.h
-    src/app/PreviewInteractionState.h
+    src/app/SingleInstanceGuard.h
     src/app/StitchPreviewState.h
     src/app/ThemeManager.h
     src/app/ToastManager.h
     src/app/VpkUpdateManager.h
+    src/app/WindowsService.h
     src/core/CompressEngine.h
     src/core/ConvertEngine.h
     src/core/EditEngine.h
     src/core/ExportManager.h
     src/core/ImageItem.h
     src/core/ImageListModel.h
+    src/core/MosaicFilter.h
     src/core/PdfEngine.h
     src/core/ResizeEngine.h
     src/core/StitchEngine.h
     src/core/WatermarkEngine.h
     src/ui/CollapsibleSection.h
-    src/ui/dialogs/ProgressDialog.h
     src/ui/dialogs/ResultDialog.h
     src/ui/ImageEditorWidget.h
     src/ui/ImageListWidget.h
@@ -97,6 +123,7 @@ set(HEADERS
     src/ui/StatusBarWidget.h
     src/ui/ToolBarWidget.h
     src/utils/EditAction.h
+    src/utils/AppPaths.h
     src/utils/ErrorHandler.h
     src/utils/ErrorLevel.h
     src/utils/FileUtils.h
@@ -117,12 +144,14 @@ set(TS_FILES
     translations/ImagePro_en.ts
 )
 
-set(RESOURCE_FILES
-    resources/resources.qrc
-)
-
+# ── 国际化与资源 ─────────────────────────────────────────────────
 set_source_files_properties(${TS_FILES} PROPERTIES OUTPUT_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/translations")
 qt5_add_translation(QM_FILES ${TS_FILES})
+
+# 显式生成资源（替代 AUTORCC），并让 rcc 产物依赖 ${QM_FILES}：
+# 保证 lrelease 先跑完，改 .ts 后重新构建一定能拿到新的 .qm。
+qt5_add_resources(RCC_SOURCES resources/resources.qrc)
+set_property(SOURCE ${RCC_SOURCES} APPEND PROPERTY OBJECT_DEPENDS "${QM_FILES}")
 
 qt5_wrap_cpp(MOC_SOURCES ${HEADERS})
 
@@ -132,6 +161,7 @@ set(IMAGELISTWIDGET_MOC "${CMAKE_CURRENT_BINARY_DIR}/ImageListWidget.moc")
 qt5_generate_moc(src/ui/ImageListWidget.cpp ${IMAGELISTWIDGET_MOC})
 set_source_files_properties(${IMAGELISTWIDGET_MOC} PROPERTIES HEADER_FILE_ONLY TRUE)
 
+# ── 核心库 ───────────────────────────────────────────────────────
 add_library(ImageProLib STATIC ${LIB_SOURCES} ${HEADERS} ${MOC_SOURCES} ${IMAGELISTWIDGET_MOC})
 
 target_include_directories(ImageProLib PUBLIC
@@ -141,17 +171,18 @@ target_include_directories(ImageProLib PUBLIC
     ${VIPS_INCLUDE_DIRS}
 )
 
-target_compile_options(ImageProLib PRIVATE
-    ${VIPS_CFLAGS_OTHER}
-    -Wall
-    -Wextra
-)
+# libvips 的 pkg-config 附带其它依赖的编译宏（如 -DUHDR_USING_SHARED_LIBRARY），
+# 必须原样传递，否则头文件里的导出宏与实际链接方式不符。
+target_compile_options(ImageProLib PRIVATE ${VIPS_CFLAGS_OTHER})
+imagepro_apply_warnings(ImageProLib PRIVATE)
 
 target_link_libraries(ImageProLib PUBLIC
     Qt5::Widgets
     Qt5::Concurrent
     Qt5::Svg
     Qt5::Test
+    # Network：单实例守卫用 QLocalServer/QLocalSocket 做跨进程激活。
+    Qt5::Network
     ${VIPS_LIBRARIES}
 )
 
@@ -215,9 +246,52 @@ if(WITH_VELOPACK)
     target_compile_definitions(ImageProLib PUBLIC WITH_VELOPACK)
 endif()
 
-add_executable(ImagePro WIN32 src/main.cpp ${RESOURCE_FILES} ${QM_FILES} resources/app.rc)
+# ── Windows 资源与兼容性清单 ───────────────────────────────────
+# app.manifest 声明 Win10/11 兼容性、DPI 感知（PerMonitorV2）、长路径与 UTF-8 代码页。
+# 缺少它时 Windows 会把程序当成 Win7 之前的应用：界面被位图拉伸而模糊、
+# 不认超过 260 字符的路径、版本探测 API 返回伪造值。
+set(IMAGEPRO_ICON "${CMAKE_CURRENT_SOURCE_DIR}/resources/icons/app.ico")
+
+# 清单里的版本必须是四段式（x.y.z.w），与 PE 资源版本一致。
+if(PROJECT_VERSION MATCHES "^([0-9]+)\\.([0-9]+)\\.([0-9]+)")
+    set(IMAGEPRO_MANIFEST_VERSION "${CMAKE_MATCH_1}.${CMAKE_MATCH_2}.${CMAKE_MATCH_3}.0")
+else()
+    set(IMAGEPRO_MANIFEST_VERSION "${PROJECT_VERSION}.0")
+endif()
+
+configure_file(resources/app.manifest.in "${CMAKE_CURRENT_BINARY_DIR}/app.manifest" @ONLY)
+set(IMAGEPRO_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/app.manifest")
+
+# 清单的嵌入方式按工具链分开：
+#
+#   MinGW / Clang：清单编成独立的 manifest.rc（RT_MANIFEST 资源）。
+#   MSVC：MSVC 链接器自己会生成并嵌入一份清单（资源 ID 1），
+#          若资源文件里再放一份 → CVT1100「资源重复」，随后 LNK1123。
+#          正确做法是把清单交给链接器合并：/MANIFESTINPUT。
+#
+# 清单与图标拆成两个 .rc 而不是把清单塞进 app.rc：
+# configure_file 只做**一次**替换，被替换进来的值里若再含 @VAR@，
+# 不会被二次展开（图标那份里就会出现字面量 "@IMAGEPRO_MANIFEST@"）。
+configure_file(resources/app.rc.in "${CMAKE_CURRENT_BINARY_DIR}/app.rc" @ONLY)
+set(IMAGEPRO_RC_SOURCES "${CMAKE_CURRENT_BINARY_DIR}/app.rc")
+
+if(NOT MSVC)
+    configure_file(resources/manifest.rc.in "${CMAKE_CURRENT_BINARY_DIR}/manifest.rc" @ONLY)
+    list(APPEND IMAGEPRO_RC_SOURCES "${CMAKE_CURRENT_BINARY_DIR}/manifest.rc")
+endif()
+
+# ── 可执行程序 ───────────────────────────────────────────────────
+add_executable(ImagePro WIN32 src/main.cpp ${RCC_SOURCES} ${QM_FILES} ${IMAGEPRO_RC_SOURCES})
+
+if(MSVC)
+    # 把我们的清单交给链接器合并（MSVC 官方推荐做法）。
+    # 链接器默认已开启 /MANIFEST（VS 工程模板里 GenerateManifest=true），
+    # 无需重复指定；这里只补输入。
+    target_link_options(ImagePro PRIVATE "/MANIFESTINPUT:${IMAGEPRO_MANIFEST}")
+endif()
 
 target_link_libraries(ImagePro PRIVATE ImageProLib)
+imagepro_apply_warnings(ImagePro PRIVATE)
 
 if(WITH_VELOPACK)
     # IMPORTED 目标不会自动追踪生成的导入库，需显式依赖。
@@ -230,34 +304,41 @@ if(WITH_VELOPACK)
     )
 endif()
 
-# Copy generated .qm files next to the binary so resources can reference them
+# Copy generated .qm files next to the binary so they can also be loaded from disk.
+# 注意目标位置：ImageProApp 探测的是 applicationDirPath()/translations，
+# 之前这里拷回源码目录（lrelease 的 OUTPUT_LOCATION），实际不起作用。
 add_custom_command(TARGET ImagePro POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_SOURCE_DIR}/translations"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${QM_FILES} "${CMAKE_CURRENT_SOURCE_DIR}/translations/"
-    COMMENT "Copying translation files..."
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:ImagePro>/translations"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${QM_FILES} "$<TARGET_FILE_DIR:ImagePro>/translations/"
+    COMMENT "Copying translation files next to the binary..."
 )
 
-# Optional test executables
+# 运行时依赖收集（Windows）。必须在 add_executable 之后引入：
+# 该模块向 ImagePro 目标追加 POST_BUILD 命令。
+include(cmake/RuntimeDeps.cmake)
+
+# ── 安装规则 ─────────────────────────────────────────────────────
+# 让 `cmake --install` / CPack 产出可直接运行的目录，而不只是裸 exe。
+install(TARGETS ImagePro RUNTIME DESTINATION .)
+install(FILES ${QM_FILES} DESTINATION translations)
+install(FILES resources/icons/app.ico DESTINATION .)
+install(FILES LICENSE.txt DESTINATION .)
+
+# 运行时依赖（Qt 插件与 DLL、libvips、MinGW 运行库）位于 runtime/。
+# 只安装这个目录，保留 platforms/、styles/、imageformats/ 等插件子目录结构。
+install(DIRECTORY "${CMAKE_BINARY_DIR}/runtime/"
+        DESTINATION .
+        FILES_MATCHING
+        PATTERN "*.dll"
+)
+
+# ── 测试 ─────────────────────────────────────────────────────────
 option(BUILD_TESTS "Build test executables" OFF)
 if(BUILD_TESTS)
     enable_testing()
-
-    # libvips 在 Windows 下根据可执行文件位置推导模块目录时，
-    # 测试程序位于 build 目录而非安装目录，可能定位到不存在的路径并触发崩溃。
-    # 为测试固定一个空的模块目录，禁用可选模块加载，避免 ctest 下出现 SEGFAULT。
-    set(VIPS_EMPTY_MODULE_DIR "${CMAKE_CURRENT_BINARY_DIR}/vips-modules-empty")
-    file(MAKE_DIRECTORY "${VIPS_EMPTY_MODULE_DIR}")
-
-    function(add_imagepro_test NAME SOURCE)
-        add_executable(${NAME} ${SOURCE})
-        set_target_properties(${NAME} PROPERTIES AUTOMOC ON)
-        target_link_libraries(${NAME} PRIVATE ImageProLib)
-        add_test(NAME ${NAME} COMMAND ${NAME})
-        set_tests_properties(${NAME} PROPERTIES
-            ENVIRONMENT "VIPS_MODULE_PATH=${VIPS_EMPTY_MODULE_DIR}")
-    endfunction()
-
-    add_imagepro_test(test_save tests/test_save.cpp)
-    add_imagepro_test(test_engines tests/test_engines.cpp)
-    add_imagepro_test(test_stitch tests/test_stitch.cpp)
+    add_subdirectory(tests)
 endif()
+
+# ── 打包 ─────────────────────────────────────────────────────────
+# 必须在 install() 规则之后引入（CPack 依赖已定义的 install 规则）。
+include(cmake/Packaging.cmake)

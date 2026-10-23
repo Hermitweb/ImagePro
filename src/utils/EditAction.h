@@ -27,12 +27,12 @@ enum class EditFillStyle {
 };
 
 enum class MosaicStyle {
-    Square,        // 经典方块马赛克
-    Hexagon,       // 六边形马赛克
-    Circle,        // 圆形马赛克
-    Blur,          // 动态/模糊（毛玻璃）马赛克
-    Mezzotint,     // 铜版雕刻
-    ColorHalftone  // 彩色半调
+    Square, // 经典方块马赛克
+    Hexagon, // 六边形马赛克
+    Circle, // 圆形马赛克
+    Blur, // 动态/模糊（毛玻璃）马赛克
+    Mezzotint, // 铜版雕刻
+    ColorHalftone // 彩色半调
 };
 
 enum class FilterType {
@@ -63,18 +63,14 @@ struct EditAction {
     QRectF bounds;
     QDateTime timestamp;
 
-    bool isMovable() const {
-        return toolType == EditToolType::Rectangle ||
-               toolType == EditToolType::Ellipse ||
-               toolType == EditToolType::Arrow ||
-               toolType == EditToolType::Text ||
-               toolType == EditToolType::Mosaic ||
-               toolType == EditToolType::Crop;
+    bool isMovable() const
+    {
+        return toolType == EditToolType::Rectangle || toolType == EditToolType::Ellipse ||
+               toolType == EditToolType::Arrow || toolType == EditToolType::Text ||
+               toolType == EditToolType::Mosaic || toolType == EditToolType::Crop;
     }
 
-    bool isFilter() const {
-        return toolType == EditToolType::Filter;
-    }
+    bool isFilter() const { return toolType == EditToolType::Filter; }
 };
 
 struct SelectionState {

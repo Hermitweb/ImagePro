@@ -29,6 +29,7 @@ class QScrollArea;
 class QSlider;
 class QSpinBox;
 class QStackedWidget;
+class QScrollArea;
 class QTimer;
 class QToolButton;
 
@@ -62,7 +63,18 @@ public:
     BatchSettings batchSettings() const;
 
     void updatePreview(const QImage& image);
-
+    /**
+     * 刷新拼接输出文件名的预览标签。
+     * 完整文本放进 tooltip，标签内按可用宽度做中间省略。
+     */
+    void updateStitchFileNamePreview();
+    /**
+     * 语言切换：重建各工具面板（文本全部由 tr() 产生），并把用户已填的
+     * 控件取值原样还原，避免切换语言把参数清空。
+     */
+    void retranslateUi();
+    /** 重新创建八个工具面板。 */
+    void rebuildPanels();
 signals:
     void settingsChanged();
     void previewRequested();
@@ -124,6 +136,9 @@ public slots:
 
 protected:
     void hideEvent(QHideEvent* event) override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
+    // 语言切换：重建各工具面板并还原用户已填的值。
+    void changeEvent(QEvent* event) override;
 
 private:
     void buildStitchPanel();
@@ -157,13 +172,16 @@ private:
     void loadUiState();
     QString uiStateFilePath() const;
 
-    bool validateStitchSettings(QString* errorMessage = nullptr, QString* warningMessage = nullptr) const;
+    bool validateStitchSettings(QString* errorMessage = nullptr,
+                                QString* warningMessage = nullptr) const;
     bool canWriteToPath(const QString& path) const;
     void setInputError(QWidget* widget, bool error);
     void setInputWarning(QWidget* widget, bool warning);
     QString previewFileNameFromTemplate(const QString& templ) const;
 
     QStackedWidget* m_stack = nullptr;
+    // 设置区的滚动容器：窗口变矮时内容可滚动，而不是被裁掉。
+    QScrollArea* m_scrollArea = nullptr;
     QPushButton* m_processBtn = nullptr;
 
     // Stitch
@@ -199,6 +217,8 @@ private:
     QPushButton* m_stitchOutputCreateBtn = nullptr;
     QLineEdit* m_stitchFileNameTemplate = nullptr;
     QLabel* m_stitchFileNamePreview = nullptr;
+    // 拼接文件名的完整文本（标签里显示的是按宽度省略后的版本）。
+    QString m_stitchFileNamePreviewFull;
     QLabel* m_stitchValidationLabel = nullptr;
 
     // Convert

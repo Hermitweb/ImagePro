@@ -1,0 +1,45 @@
+# 行尾与二进制属性。
+#
+# 目标：让不同平台上的检出结果一致，避免「同一份代码在 Windows / Linux 上
+# 产生整文件差异」这类无意义噪音。
+#
+# * text=auto：让 Git 自动判定文本文件并按平台规范处理行尾；
+# * 二进制类型显式声明，避免被误当作文本做行尾转换而损坏。
+#
+# 注意：这里刻意不强制指定 eol=lf —— 仓库现有检出已是 CRLF，
+# 突然改写会致下一次提交出现整仓文件的行尾差异。
+
+* text=auto
+
+# ── 源码与配置 ─────────────────────────────────────────────────
+*.cpp    text
+*.h      text
+*.cmake  text
+*.qrc    text
+*.qss    text
+*.ts     text
+*.yml    text
+*.yaml   text
+*.md     text
+*.json   text
+*.py     text
+*.txt    text
+
+# ── Windows 专用脚本 ───────────────────────────────────────────
+*.ps1    text
+*.rc     text
+
+# ── 二进制资源 ─────────────────────────────────────────────────
+*.ico    binary
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.webp   binary
+*.qm     binary
+*.exe    binary
+*.dll    binary
+*.a      binary
+*.lib    binary
+*.zip    binary
+*.7z     binary
+*.msi    binary

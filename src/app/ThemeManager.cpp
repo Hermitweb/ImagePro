@@ -7,15 +7,15 @@
 namespace yingtu {
 
 namespace {
-    constexpr int kSystemThemePollIntervalMs = 1000;
-}
+constexpr int kSystemThemePollIntervalMs = 1000;
+// 与语言设置（ImageProApp 中的 "language" 键）保持同样的扁平键风格。
+constexpr const char* kThemeSettingKey = "theme";
+} // namespace
 
 class ThemeManager::SystemThemeWatcher : public QObject
 {
 public:
-    explicit SystemThemeWatcher(ThemeManager* manager)
-        : QObject(manager)
-        , m_manager(manager)
+    explicit SystemThemeWatcher(ThemeManager* manager) : QObject(manager), m_manager(manager)
     {
         m_timer = new QTimer(this);
         m_timer->setInterval(kSystemThemePollIntervalMs);
@@ -38,10 +38,7 @@ public:
         m_timer->start();
     }
 
-    void stop()
-    {
-        m_timer->stop();
-    }
+    void stop() { m_timer->stop(); }
 
 private:
     ThemeManager* m_manager = nullptr;
@@ -55,10 +52,24 @@ ThemeManager& ThemeManager::instance()
     return mgr;
 }
 
-ThemeManager::ThemeManager(QObject* parent)
-    : QObject(parent)
+ThemeManager::ThemeManager(QObject* parent) : QObject(parent)
 {
-    m_theme = Theme::System;
+    // 读取持久化的主题选择。此前完全没写盘，用户选的亮色/暗色每次重启都会丢
+    // （语言和窗口几何都持久化了，唯独主题没有）。
+    const int stored =
+        QSettings()
+            .value(QString::fromLatin1(kThemeSettingKey), static_cast<int>(Theme::System))
+            .toInt();
+    switch (stored) {
+    case static_cast<int>(Theme::Light):
+    case static_cast<int>(Theme::Dark):
+    case static_cast<int>(Theme::System):
+        m_theme = static_cast<Theme>(stored);
+        break;
+    default:
+        m_theme = Theme::System; // 配置被改坏时回退到默认值
+        break;
+    }
     updateSystemWatcher();
 }
 
@@ -75,6 +86,7 @@ void ThemeManager::setTheme(Theme theme)
         return;
 
     m_theme = theme;
+    QSettings().setValue(QString::fromLatin1(kThemeSettingKey), static_cast<int>(m_theme));
     updateSystemWatcher();
     applyCurrentTheme();
     emit themeChanged(m_theme);
@@ -144,7 +156,8 @@ bool ThemeManager::systemUsesLightTheme() const
 {
 #ifdef Q_OS_WIN
     const QSettings settings(
-        QStringLiteral("HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize"),
+        QStringLiteral(
+            "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize"),
         QSettings::NativeFormat);
     return settings.value(QStringLiteral("AppsUseLightTheme"), 1).toBool();
 #else

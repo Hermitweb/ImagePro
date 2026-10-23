@@ -24,7 +24,10 @@ QRgb averageColor(const QImage& src, const QRect& rect)
         const QRgb* line = reinterpret_cast<const QRgb*>(src.constScanLine(y));
         for (int x = x0; x <= x1; ++x) {
             QRgb p = line[x];
-            r += qRed(p); g += qGreen(p); b += qBlue(p); a += qAlpha(p);
+            r += qRed(p);
+            g += qGreen(p);
+            b += qBlue(p);
+            a += qAlpha(p);
             ++count;
         }
     }
@@ -46,9 +49,7 @@ QImage applySquareMosaic(const QImage& src, const QRect& rect, int blockSize)
 
     for (int by = y0; by < y1; by += blockSize) {
         for (int bx = x0; bx < x1; bx += blockSize) {
-            QRect block(bx, by,
-                        qMin(blockSize, x1 - bx),
-                        qMin(blockSize, y1 - by));
+            QRect block(bx, by, qMin(blockSize, x1 - bx), qMin(blockSize, y1 - by));
             QRgb fill = averageColor(src, block);
             for (int y = block.top(); y <= block.bottom(); ++y) {
                 QRgb* line = reinterpret_cast<QRgb*>(result.scanLine(y));
@@ -76,18 +77,24 @@ QImage applyHexagonMosaic(const QImage& src, const QRect& rect, int size)
     const int x1 = qMin(src.width() - 1, rect.right() + size);
     const int y1 = qMin(src.height() - 1, rect.bottom() + int(h));
 
-    int row = 0;
-    for (double cy = y0; cy <= y1; cy += h, ++row) {
-        double offset = (row % 2) * (size * 0.75);
-        for (double cx = x0 + offset; cx <= x1; cx += size * 1.5) {
+    // 循环次数按整数计算，坐标由「起点 + 序号 × 步长」推出。
+    // 直接用 double 做循环变量会累积浮点误差，步长与区间边界比对时可能
+    // 多画或少画一格，且不同步长下的结果不可复现。
+    const int rowCount = static_cast<int>((y1 - y0) / h) + 1;
+    const double colStep = size * 1.5;
+    for (int row = 0; row < rowCount; ++row) {
+        const double cy = y0 + row * h;
+        const double offset = (row % 2) * (size * 0.75);
+        const double colStart = x0 + offset;
+        const int colCount = static_cast<int>((x1 - colStart) / colStep) + 1;
+        for (int col = 0; col < colCount; ++col) {
+            const double cx = colStart + col * colStep;
             QPolygonF hex;
             for (int i = 0; i < 6; ++i) {
                 double angle = M_PI / 3.0 * i;
-                hex << QPointF(cx + size * 0.5 * qCos(angle),
-                               cy + size * 0.5 * qSin(angle));
+                hex << QPointF(cx + size * 0.5 * qCos(angle), cy + size * 0.5 * qSin(angle));
             }
-            QRect sampleRect(qMax(0, int(cx - size * 0.5)),
-                             qMax(0, int(cy - h * 0.5)),
+            QRect sampleRect(qMax(0, int(cx - size * 0.5)), qMax(0, int(cy - h * 0.5)),
                              qMin(src.width() - int(cx - size * 0.5), size),
                              qMin(src.height() - int(cy - h * 0.5), int(h)));
             painter.setBrush(QColor(averageColor(src, sampleRect)));
@@ -152,13 +159,18 @@ QImage applyBlurMosaic(const QImage& src, const QRect& rect, int size)
             int count = 0;
             for (int dy = -r; dy <= r; ++dy) {
                 int yy = y + dy;
-                if (yy < 0 || yy >= h) continue;
+                if (yy < 0 || yy >= h)
+                    continue;
                 const QRgb* in = reinterpret_cast<const QRgb*>(region.constScanLine(yy));
                 for (int dx = -r; dx <= r; ++dx) {
                     int xx = x + dx;
-                    if (xx < 0 || xx >= w) continue;
+                    if (xx < 0 || xx >= w)
+                        continue;
                     QRgb p = in[xx];
-                    rr += qRed(p); gg += qGreen(p); bb += qBlue(p); aa += qAlpha(p);
+                    rr += qRed(p);
+                    gg += qGreen(p);
+                    bb += qBlue(p);
+                    aa += qAlpha(p);
                     ++count;
                 }
             }
@@ -182,6 +194,10 @@ QImage applyMezzotint(const QImage& src, const QRect& rect, int size)
     const int y0 = qMax(0, rect.top());
     const int x1 = qMin(src.width(), rect.right() + 1);
     const int y1 = qMin(src.height(), rect.bottom() + 1);
+    // 矩形完全落在图像外时 x1-x0 / y1-y0 非正，QRandomGenerator::bounded()
+    // 要求参数为正，否则违反前置条件（Debug 断言 / Release 未定义行为）。
+    if (x1 <= x0 || y1 <= y0)
+        return src;
 
     QImage result = src.copy();
     QPainter painter(&result);
@@ -207,14 +223,11 @@ QImage applyMezzotint(const QImage& src, const QRect& rect, int size)
         int sy = y0 + rng->bounded(y1 - y0);
         int len = rng->bounded(size * 2) + 2;
         int shade = rng->bounded(80) + 20;
-        QColor c(rng->bounded(2) ? shade : 255 - shade,
-                 rng->bounded(2) ? shade : 255 - shade,
-                 rng->bounded(2) ? shade : 255 - shade,
-                 120);
+        QColor c(rng->bounded(2) ? shade : 255 - shade, rng->bounded(2) ? shade : 255 - shade,
+                 rng->bounded(2) ? shade : 255 - shade, 120);
         painter.setPen(QPen(c, qMax(1, size / 6), Qt::SolidLine, Qt::RoundCap));
         double angle = rng->bounded(360) * M_PI / 180.0;
-        painter.drawLine(QPointF(sx, sy),
-                         QPointF(sx + len * qCos(angle), sy + len * qSin(angle)));
+        painter.drawLine(QPointF(sx, sy), QPointF(sx + len * qCos(angle), sy + len * qSin(angle)));
     }
     painter.end();
     return result;
@@ -237,11 +250,16 @@ QImage applyColorHalftone(const QImage& src, const QRect& rect, int size)
     const int y1 = qMin(src.height() - 1, rect.bottom() + size);
 
     // CMY 三色网点，分别偏移 0/120/240 度
-    struct Channel { int angle; int r; int g; int b; };
+    struct Channel {
+        int angle;
+        int r;
+        int g;
+        int b;
+    };
     const Channel channels[] = {
-        { 15, 0, 255, 255 },   // C
-        { 75, 255, 0, 255 },   // M
-        { 135, 255, 255, 0 }   // Y
+        {15, 0, 255, 255}, // C
+        {75, 255, 0, 255}, // M
+        {135, 255, 255, 0} // Y
     };
 
     for (const auto& ch : channels) {
@@ -249,17 +267,25 @@ QImage applyColorHalftone(const QImage& src, const QRect& rect, int size)
         const double dx = qCos(rad) * size;
         const double dy = qSin(rad) * size;
 
-        for (double cy = y0; cy <= y1; cy += size) {
-            for (double cx = x0; cx <= x1; cx += size) {
+        // 同上：网格位置用整数序号推出，避免浮点累加误差。
+        const int rowCount = static_cast<int>((y1 - y0) / size) + 1;
+        const int colCount = static_cast<int>((x1 - x0) / size) + 1;
+        for (int row = 0; row < rowCount; ++row) {
+            const double cy = y0 + row * size;
+            for (int col = 0; col < colCount; ++col) {
+                const double cx = x0 + col * size;
                 QPointF center(cx + dx * 0.5, cy + dy * 0.5);
                 int sx = qBound(0, qRound(center.x()), src.width() - 1);
                 int sy = qBound(0, qRound(center.y()), src.height() - 1);
                 QRgb p = reinterpret_cast<const QRgb*>(src.constScanLine(sy))[sx];
 
                 int intensity = 0;
-                if (ch.r == 0) intensity = 255 - qRed(p);
-                else if (ch.g == 0) intensity = 255 - qGreen(p);
-                else if (ch.b == 0) intensity = 255 - qBlue(p);
+                if (ch.r == 0)
+                    intensity = 255 - qRed(p);
+                else if (ch.g == 0)
+                    intensity = 255 - qGreen(p);
+                else if (ch.b == 0)
+                    intensity = 255 - qBlue(p);
 
                 double radius = (size * 0.45) * intensity / 255.0;
                 QColor dot(ch.r, ch.g, ch.b, 180);
@@ -279,18 +305,32 @@ QImage applyMosaic(const QImage& source, const EditAction& action)
     if (source.isNull() || action.bounds.isEmpty())
         return source;
 
+    // 防御性统一格式：applySquareMosaic / averageColor 等以 QRgb*（每像素 4 字节）
+    // 直接访问 scanLine，若传入 Format_RGB888（3 通道 JPEG 经 loadImage 的格式）
+    // 会越界读写。这里兜底转换，避免依赖调用方保证格式。
+    const QImage src =
+        (source.format() == QImage::Format_ARGB32 || source.format() == QImage::Format_RGB32)
+            ? source
+            : source.convertToFormat(QImage::Format_ARGB32);
+
     QRect rect = action.bounds.toRect();
     int size = qBound(4, action.mosaicSize, 200);
 
     switch (action.mosaicStyle) {
-    case MosaicStyle::Square:        return applySquareMosaic(source, rect, size);
-    case MosaicStyle::Hexagon:       return applyHexagonMosaic(source, rect, size);
-    case MosaicStyle::Circle:        return applyCircleMosaic(source, rect, size);
-    case MosaicStyle::Blur:          return applyBlurMosaic(source, rect, size);
-    case MosaicStyle::Mezzotint:     return applyMezzotint(source, rect, size);
-    case MosaicStyle::ColorHalftone: return applyColorHalftone(source, rect, size);
+    case MosaicStyle::Square:
+        return applySquareMosaic(src, rect, size);
+    case MosaicStyle::Hexagon:
+        return applyHexagonMosaic(src, rect, size);
+    case MosaicStyle::Circle:
+        return applyCircleMosaic(src, rect, size);
+    case MosaicStyle::Blur:
+        return applyBlurMosaic(src, rect, size);
+    case MosaicStyle::Mezzotint:
+        return applyMezzotint(src, rect, size);
+    case MosaicStyle::ColorHalftone:
+        return applyColorHalftone(src, rect, size);
     }
-    return source;
+    return src;
 }
 
 } // namespace yingtu

@@ -5,25 +5,26 @@
 namespace yingtu {
 
 FlowLayout::FlowLayout(QWidget* parent, int margin, int hSpacing, int vSpacing)
-    : QLayout(parent)
-    , m_hSpace(hSpacing)
-    , m_vSpace(vSpacing)
+    : QLayout(parent), m_hSpace(hSpacing), m_vSpace(vSpacing)
 {
     setContentsMargins(margin, margin, margin, margin);
 }
 
 FlowLayout::FlowLayout(int margin, int hSpacing, int vSpacing)
-    : m_hSpace(hSpacing)
-    , m_vSpace(vSpacing)
+    : m_hSpace(hSpacing), m_vSpace(vSpacing)
 {
     setContentsMargins(margin, margin, margin, margin);
 }
 
 FlowLayout::~FlowLayout()
 {
-    QLayoutItem* item;
-    while ((item = takeAt(0)))
+    // 直接遍历内部列表而不是调用 takeAt()：
+    // 析构期间调用虚函数会绕过虚派发（此时 vtable 已切回基类），
+    // 若存在派生类会取到错误的实现，从而泄漏或重复释放 item。
+    while (!m_itemList.isEmpty()) {
+        QLayoutItem* item = m_itemList.takeLast();
         delete item;
+    }
 }
 
 void FlowLayout::addItem(QLayoutItem* item)
@@ -112,11 +113,19 @@ int FlowLayout::doLayout(const QRect& rect, bool testOnly) const
     for (QLayoutItem* item : m_itemList) {
         QWidget* wid = item->widget();
         int spaceX = horizontalSpacing();
-        if (spaceX == -1)
-            spaceX = wid->style()->layoutSpacing(QSizePolicy::PushButton, QSizePolicy::PushButton, Qt::Horizontal);
+        if (spaceX == -1) {
+            // wid 可能为空（例如误加入 QSpacerItem 等非 widget 项），
+            // 原实现直接解引用会崩溃。
+            spaceX = wid ? wid->style()->layoutSpacing(QSizePolicy::PushButton,
+                                                       QSizePolicy::PushButton, Qt::Horizontal)
+                         : 6;
+        }
         int spaceY = verticalSpacing();
-        if (spaceY == -1)
-            spaceY = wid->style()->layoutSpacing(QSizePolicy::PushButton, QSizePolicy::PushButton, Qt::Vertical);
+        if (spaceY == -1) {
+            spaceY = wid ? wid->style()->layoutSpacing(QSizePolicy::PushButton,
+                                                       QSizePolicy::PushButton, Qt::Vertical)
+                         : 6;
+        }
 
         int nextX = x + item->sizeHint().width() + spaceX;
         if (nextX - spaceX > effectiveRect.right() && lineHeight > 0) {

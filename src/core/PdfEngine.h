@@ -8,8 +8,18 @@
 namespace yingtu {
 
 struct PdfSettings {
-    enum PageSize { A4, A5, Letter, Custom };
-    enum Layout { SinglePerPage, Grid2x2, Grid3x3, FitToPage };
+    enum PageSize {
+        A4,
+        A5,
+        Letter,
+        Custom
+    };
+    enum Layout {
+        SinglePerPage,
+        Grid2x2,
+        Grid3x3,
+        FitToPage
+    };
 
     PageSize pageSize = A4;
     QSizeF customPageSize; // in mm

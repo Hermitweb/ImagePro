@@ -1,4 +1,5 @@
-<?xml version='1.0' encoding='utf-8'?>
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE TS>
 <TS version="2.1" language="zh_CN">
 <context>
     <name>QObject</name>
@@ -16,6 +17,14 @@
     <message>
         <source>Failed to save compressed image</source>
         <translation>保存压缩图片失败</translation>
+    </message>
+    <message>
+        <source>No images to compress</source>
+        <translation>没有可压缩的图片</translation>
+    </message>
+    <message>
+        <source>Failed to create output file</source>
+        <translation>无法创建输出文件</translation>
     </message>
 </context>
 <context>
@@ -43,75 +52,104 @@
 <context>
     <name>yingtu::ImageItemDelegate</name>
     <message>
-        <source>加载失败</source>
+        <source>Load failed</source>
         <translation>加载失败</translation>
     </message>
     <message>
-        <source>重试</source>
+        <source>Retry</source>
         <translation>重试</translation>
     </message>
 </context>
 <context>
     <name>yingtu::ImageListWidget</name>
     <message>
-        <source>拖拽图片到此处或点击添加图片</source>
-        <translation>拖拽图片到此处或点击添加图片</translation>
+        <source>Drag images here or click Add Images</source>
+        <translation>拖拽图片到此处或点击「添加图片」</translation>
     </message>
     <message>
-        <source>显示</source>
+        <source>Show</source>
         <translation>显示</translation>
     </message>
     <message>
-        <source>隐藏</source>
+        <source>Hide</source>
         <translation>隐藏</translation>
     </message>
     <message>
-        <source>复制</source>
+        <source>Duplicate</source>
         <translation>复制</translation>
     </message>
     <message>
-        <source>复制到剪贴板</source>
+        <source>Copy to clipboard</source>
         <translation>复制到剪贴板</translation>
     </message>
     <message>
-        <source>移到最前</source>
+        <source>Move to front</source>
         <translation>移到最前</translation>
     </message>
     <message>
-        <source>移到最后</source>
+        <source>Move to back</source>
         <translation>移到最后</translation>
     </message>
     <message>
-        <source>在资源管理器中显示</source>
+        <source>Rotate Left 90°</source>
+        <translation>向左旋转 90°</translation>
+    </message>
+    <message>
+        <source>Flip Horizontal</source>
+        <translation>水平翻转</translation>
+    </message>
+    <message>
+        <source>Flip Vertical</source>
+        <translation>垂直翻转</translation>
+    </message>
+    <message>
+        <source>Move Up</source>
+        <translation>上移</translation>
+    </message>
+    <message>
+        <source>Move Down</source>
+        <translation>下移</translation>
+    </message>
+    <message>
+        <source>Show in Explorer</source>
         <translation>在资源管理器中显示</translation>
     </message>
     <message>
-        <source>快速查看</source>
+        <source>Quick Look</source>
         <translation>快速查看</translation>
     </message>
     <message>
-        <source>移除</source>
+        <source>Remove</source>
         <translation>移除</translation>
     </message>
     <message>
-        <source>添加图片</source>
+        <source>Add Images</source>
         <translation>添加图片</translation>
     </message>
     <message>
-        <source>全选</source>
+        <source>Select All</source>
         <translation>全选</translation>
     </message>
     <message>
-        <source>清空列表</source>
+        <source>Clear List</source>
         <translation>清空列表</translation>
     </message>
 </context>
 <context>
-    <name>yingtu::MainWindow</name>
+    <name>yingtu::ImageProApp</name>
     <message>
-        <source>影图 ImagePro</source>
-        <translation>影图 ImagePro</translation>
+        <source>Failed to initialize the image processing engine (libvips).
+Image loading, conversion, resizing and stitching will not work.
+
+Please verify the application was deployed correctly.</source>
+        <translation>图片处理引擎（libvips）初始化失败。
+图片加载、转换、缩放与拼接功能将无法使用。
+
+请确认应用程序是否已正确部署。</translation>
     </message>
+</context>
+<context>
+    <name>yingtu::MainWindow</name>
     <message>
         <source>&amp;File</source>
         <translation>文件(&amp;F)</translation>
@@ -177,28 +215,12 @@
         <translation>语言(&amp;L)</translation>
     </message>
     <message>
-        <source>Language Changed</source>
-        <translation>语言已更改</translation>
-    </message>
-    <message>
-        <source>The language setting has been changed. Please restart the application to apply.</source>
-        <translation>语言设置已更改，请重启应用生效。</translation>
-    </message>
-    <message>
         <source>&amp;Help</source>
         <translation>帮助(&amp;H)</translation>
     </message>
     <message>
         <source>&amp;About</source>
         <translation>关于(&amp;A)</translation>
-    </message>
-    <message>
-        <source>About 影图 ImagePro</source>
-        <translation>About 影图 ImagePro</translation>
-    </message>
-    <message>
-        <source>&lt;h2&gt;影图 ImagePro&lt;/h2&gt;&lt;p&gt;Version 1.0.0&lt;/p&gt;&lt;p&gt;A powerful image processing tool.&lt;/p&gt;</source>
-        <translation>&lt;h2&gt;影图 ImagePro&lt;/h2&gt;&lt;p&gt;Version 1.0.0&lt;/p&gt;&lt;p&gt;A powerful image processing tool.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>Zoom Out</source>
@@ -247,10 +269,6 @@
     <message>
         <source>Select Images</source>
         <translation>选择图片</translation>
-    </message>
-    <message>
-        <source>Cancel</source>
-        <translation>取消</translation>
     </message>
     <message>
         <source>Warning</source>
@@ -472,19 +490,19 @@ Size: %2x%3</source>
     </message>
     <message>
         <source>Batch: please add images first</source>
-        <translation>Batch: please add images first</translation>
+        <translation>批处理：请先添加图片</translation>
     </message>
     <message>
         <source>Batch: please select an output directory</source>
-        <translation>Batch: please select an output directory</translation>
+        <translation>批处理：请先选择输出目录</translation>
     </message>
     <message>
         <source>Batch: failed to create output directory %1</source>
-        <translation>Batch: failed to create output directory %1</translation>
+        <translation>批处理：创建输出目录 %1 失败</translation>
     </message>
     <message>
         <source>Batch: unsupported target tool</source>
-        <translation>Batch: unsupported target tool</translation>
+        <translation>批处理：不支持的目标工具</translation>
     </message>
     <message>
         <source>&amp;Check for Updates</source>
@@ -501,10 +519,6 @@ Size: %2x%3</source>
     <message>
         <source>Checking for updates...</source>
         <translation>正在检查更新…</translation>
-    </message>
-    <message>
-        <source>&lt;h2&gt;影图 ImagePro&lt;/h2&gt;&lt;p&gt;Version %1&lt;/p&gt;&lt;p&gt;A powerful image processing tool.&lt;/p&gt;</source>
-        <translation>&lt;h2&gt;影图 ImagePro&lt;/h2&gt;&lt;p&gt;Version %1&lt;/p&gt;&lt;p&gt;A powerful image processing tool.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>New version %1 available. Use Help → Check for Updates to install.</source>
@@ -539,12 +553,12 @@ Size: %2x%3</source>
         <translation>确定</translation>
     </message>
     <message>
-        <source>影图</source>
+        <source>ImagePro</source>
         <translation>影图</translation>
     </message>
     <message>
-        <source>About 影图</source>
-        <translation>关于 影图</translation>
+        <source>About ImagePro</source>
+        <translation>关于影图</translation>
     </message>
 </context>
 <context>
@@ -552,6 +566,10 @@ Size: %2x%3</source>
     <message>
         <source>No images to export.</source>
         <translation>没有可导出的图片。</translation>
+    </message>
+    <message>
+        <source>Failed to write PDF: %1</source>
+        <translation>写入 PDF 失败：%1</translation>
     </message>
 </context>
 <context>
@@ -614,13 +632,6 @@ Size: %2x%3</source>
     </message>
 </context>
 <context>
-    <name>yingtu::ProgressDialog</name>
-    <message>
-        <source>Cancel</source>
-        <translation>取消</translation>
-    </message>
-</context>
-<context>
     <name>yingtu::PropertyPanel</name>
     <message>
         <source>Save</source>
@@ -663,20 +674,8 @@ Size: %2x%3</source>
         <translation>背景：</translation>
     </message>
     <message>
-        <source>BG Color:</source>
-        <translation>BG Color:</translation>
-    </message>
-    <message>
         <source>Uniform Width</source>
         <translation>统一宽度</translation>
-    </message>
-    <message>
-        <source>Remove White Edges</source>
-        <translation>Remove White Edges</translation>
-    </message>
-    <message>
-        <source>Auto Crop Edges</source>
-        <translation>Auto Crop Edges</translation>
     </message>
     <message>
         <source>Preset:</source>
@@ -1160,35 +1159,35 @@ Size: %2x%3</source>
     </message>
     <message>
         <source>Filter</source>
-        <translation>Filter</translation>
+        <translation>滤镜</translation>
     </message>
     <message>
         <source>Grayscale</source>
-        <translation>Grayscale</translation>
+        <translation>灰度</translation>
     </message>
     <message>
         <source>Sepia</source>
-        <translation>Sepia</translation>
+        <translation>复古</translation>
     </message>
     <message>
         <source>Warm</source>
-        <translation>Warm</translation>
+        <translation>暖色</translation>
     </message>
     <message>
         <source>Cool</source>
-        <translation>Cool</translation>
+        <translation>冷色</translation>
     </message>
     <message>
         <source>High Contrast</source>
-        <translation>High Contrast</translation>
+        <translation>高对比度</translation>
     </message>
     <message>
         <source>Sharpen</source>
-        <translation>Sharpen</translation>
+        <translation>锐化</translation>
     </message>
     <message>
         <source>Filter:</source>
-        <translation>Filter:</translation>
+        <translation>滤镜：</translation>
     </message>
     <message>
         <source>&lt;b&gt;PDF Export&lt;/b&gt;</source>
@@ -1264,7 +1263,7 @@ Size: %2x%3</source>
     </message>
     <message>
         <source>Preview: %1</source>
-        <translation>Preview: %1</translation>
+        <translation>预览：%1</translation>
     </message>
     <message>
         <source>At least 2 images are required</source>
@@ -1276,23 +1275,23 @@ Size: %2x%3</source>
     </message>
     <message>
         <source>Output directory is empty</source>
-        <translation>Output directory is empty</translation>
+        <translation>输出目录为空</translation>
     </message>
     <message>
         <source>Output directory does not exist</source>
-        <translation>Output directory does not exist</translation>
+        <translation>输出目录不存在</translation>
     </message>
     <message>
         <source>Output directory is not writable</source>
-        <translation>Output directory is not writable</translation>
+        <translation>输出目录不可写</translation>
     </message>
     <message>
         <source>Output path is too long</source>
-        <translation>Output path is too long</translation>
+        <translation>输出路径过长</translation>
     </message>
     <message>
         <source>File name template is empty</source>
-        <translation>File name template is empty</translation>
+        <translation>文件名模板为空</translation>
     </message>
     <message>
         <source>Image widths are inconsistent</source>
@@ -1440,7 +1439,7 @@ Size: %2x%3</source>
     <name>yingtu::StitchCanvas</name>
     <message>
         <source>No image</source>
-        <translation>No image</translation>
+        <translation>无图片</translation>
     </message>
     <message>
         <source>x=%1, y=%2%3</source>
@@ -1451,43 +1450,43 @@ Size: %2x%3</source>
         <translation>%1 @%2x</translation>
     </message>
     <message>
-        <source>输入图 %1：%2×%3</source>
+        <source>Input %1: %2×%3</source>
         <translation>输入图 %1：%2×%3</translation>
     </message>
     <message>
-        <source>释放以加入拼接</source>
+        <source>Release to add to the canvas</source>
         <translation>释放以加入拼接</translation>
     </message>
     <message>
-        <source>点击或拖入图片到合成图</source>
+        <source>Click or drag images here</source>
         <translation>点击或拖入图片到合成图</translation>
     </message>
     <message>
-        <source>左旋</source>
+        <source>Rotate Left</source>
         <translation>左旋</translation>
     </message>
     <message>
-        <source>右旋</source>
+        <source>Rotate Right</source>
         <translation>右旋</translation>
     </message>
     <message>
-        <source>水平翻转</source>
+        <source>Flip Horizontal</source>
         <translation>水平翻转</translation>
     </message>
     <message>
-        <source>垂直翻转</source>
+        <source>Flip Vertical</source>
         <translation>垂直翻转</translation>
     </message>
     <message>
-        <source>移除</source>
+        <source>Remove</source>
         <translation>移除</translation>
     </message>
     <message>
-        <source>信息</source>
+        <source>Info</source>
         <translation>信息</translation>
     </message>
     <message>
-        <source>输入图 %1</source>
+        <source>Input %1</source>
         <translation>输入图 %1</translation>
     </message>
 </context>
@@ -1509,6 +1508,10 @@ Size: %2x%3</source>
         <source>Stitched image too large: estimated %1 pixels (limit %2). Please reduce image count, resolution, or enable downscaling.</source>
         <translation>拼接图过大：估算 %1 像素（限制 %2）。请减少图片数量、降低分辨率或启用缩放。</translation>
     </message>
+    <message>
+        <source>Failed to create output file</source>
+        <translation>无法创建输出文件</translation>
+    </message>
 </context>
 <context>
     <name>yingtu::ToolBarWidget</name>
@@ -1523,6 +1526,38 @@ Size: %2x%3</source>
     <message>
         <source>Clear</source>
         <translation>清空</translation>
+    </message>
+    <message>
+        <source>Icon: Stitch</source>
+        <translation>拼</translation>
+    </message>
+    <message>
+        <source>Icon: Convert</source>
+        <translation>转</translation>
+    </message>
+    <message>
+        <source>Icon: Compress</source>
+        <translation>压</translation>
+    </message>
+    <message>
+        <source>Icon: Watermark</source>
+        <translation>水</translation>
+    </message>
+    <message>
+        <source>Icon: Edit</source>
+        <translation>编</translation>
+    </message>
+    <message>
+        <source>Icon: Resize</source>
+        <translation>尺</translation>
+    </message>
+    <message>
+        <source>Icon: Batch</source>
+        <translation>批</translation>
+    </message>
+    <message>
+        <source>Icon: PDF</source>
+        <translation>P</translation>
     </message>
     <message>
         <source>Stitch</source>

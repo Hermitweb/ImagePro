@@ -1,8 +1,11 @@
 #include "PropertyPanel.h"
+#include "app/ImageProApp.h"
 #include "core/ImageListModel.h"
+#include "utils/AppPaths.h"
 #include "utils/FileUtils.h"
 #include "utils/ResizePresetManager.h"
 #include "utils/StitchPresetManager.h"
+#include "utils/WidgetState.h"
 #include <QAbstractButton>
 #include <QCheckBox>
 #include <QColorDialog>
@@ -30,11 +33,11 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QScopedValueRollback>
 #include <QSlider>
 #include <QSpinBox>
 #include <QStackedWidget>
-#include <QStandardPaths>
 #include <QTimer>
 #include <QToolButton>
 #include <QUuid>
@@ -42,8 +45,7 @@
 
 namespace yingtu {
 
-PropertyPanel::PropertyPanel(QWidget* parent)
-    : QWidget(parent)
+PropertyPanel::PropertyPanel(QWidget* parent) : QWidget(parent)
 {
     setMinimumWidth(200);
     setMaximumWidth(260);
@@ -62,7 +64,19 @@ PropertyPanel::PropertyPanel(QWidget* parent)
     buildBatchPanel();
     buildPdfPanel();
 
-    mainLayout->addWidget(m_stack, 1);
+    // 面板内容放进滚动区：八个工具面板的控件数量差异很大，
+    // 窗口高度不够时（最小 600px）内容会被裁掉且无法访问 ——
+    // 拼接与水印面板尤其容易超出。
+    // 滚动区只包住设置区，底部「保存」按钮固定可见。
+    m_scrollArea = new QScrollArea(this);
+    m_scrollArea->setWidgetResizable(true);
+    m_scrollArea->setFrameShape(QFrame::NoFrame);
+    m_scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    m_scrollArea->setWidget(m_stack);
+    // 监听视口尺寸变化：内容宽度必须跟随视口，否则宽内容会被裁掉。
+    m_scrollArea->viewport()->installEventFilter(this);
+
+    mainLayout->addWidget(m_scrollArea, 1);
 
     QHBoxLayout* btnLayout = new QHBoxLayout();
     btnLayout->setSpacing(6);
@@ -78,10 +92,12 @@ PropertyPanel::PropertyPanel(QWidget* parent)
     for (QComboBox* cb : findChildren<QComboBox*>()) {
         if (cb == m_stitchPresetCategory || cb == m_stitchPreset)
             continue;
-        connect(cb, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &PropertyPanel::onSettingsChanged);
+        connect(cb, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+                &PropertyPanel::onSettingsChanged);
     }
     for (QSpinBox* sb : findChildren<QSpinBox*>())
-        connect(sb, QOverload<int>::of(&QSpinBox::valueChanged), this, &PropertyPanel::onSettingsChanged);
+        connect(sb, QOverload<int>::of(&QSpinBox::valueChanged), this,
+                &PropertyPanel::onSettingsChanged);
     for (QSlider* sl : findChildren<QSlider*>())
         connect(sl, &QSlider::valueChanged, this, &PropertyPanel::onSettingsChanged);
     for (QCheckBox* ch : findChildren<QCheckBox*>())
@@ -91,8 +107,8 @@ PropertyPanel::PropertyPanel(QWidget* parent)
 
     // 输出路径的可编辑文本也需要实时响应
     if (m_stitchOutputDir && m_stitchOutputDir->lineEdit())
-        connect(m_stitchOutputDir->lineEdit(), &QLineEdit::textChanged,
-                this, &PropertyPanel::onStitchOutputDirChanged);
+        connect(m_stitchOutputDir->lineEdit(), &QLineEdit::textChanged, this,
+                &PropertyPanel::onStitchOutputDirChanged);
 
     loadUiState();
     loadStitchPresets();
@@ -105,6 +121,70 @@ PropertyPanel::PropertyPanel(QWidget* parent)
 PropertyPanel::~PropertyPanel()
 {
     saveUiState();
+}
+
+void PropertyPanel::changeEvent(QEvent* event)
+{
+    QWidget::changeEvent(event);
+    if (event->type() == QEvent::LanguageChange && !ImageProApp::isLanguageSwitching())
+        retranslateUi();
+}
+
+void PropertyPanel::retranslateUi()
+{
+    // 八个工具面板的文本全部由 build*Panel() 里的 tr() 产生，
+    // 整体重建即可换成新语言 —— 逐条维护「控件 ↔ 源串」在两千行里极易漏。
+    //
+    // 重建前先快照控件取值，重建后原样还原：否则一次语言切换
+    // 就会把用户刚调好的方向/间距/质量等参数全部清空。
+    const QList<WidgetValue> values = captureWidgetValues(m_stack);
+    const int currentIndex = m_stack->currentIndex();
+
+    // 折叠分组的展开状态也要保留。
+    const bool settingsExpanded =
+        m_stitchSectionSettings ? m_stitchSectionSettings->expanded() : true;
+    const bool presetsExpanded = m_stitchSectionPresets ? m_stitchSectionPresets->expanded() : true;
+    const bool outputExpanded = m_stitchSectionOutput ? m_stitchSectionOutput->expanded() : true;
+
+    rebuildPanels();
+
+    // 还原取值期间抑制 settingsChanged：逐项写回会触发一连串预览请求。
+    {
+        QScopedValueRollback<bool> guard(m_validating, true);
+        applyWidgetValues(m_stack, values);
+    }
+
+    if (m_stack->count() > 0)
+        m_stack->setCurrentIndex(currentIndex);
+
+    if (m_stitchSectionSettings)
+        m_stitchSectionSettings->setExpanded(settingsExpanded);
+    if (m_stitchSectionPresets)
+        m_stitchSectionPresets->setExpanded(presetsExpanded);
+    if (m_stitchSectionOutput)
+        m_stitchSectionOutput->setExpanded(outputExpanded);
+
+    validateAndUpdateUI();
+}
+
+void PropertyPanel::rebuildPanels()
+{
+    // 摘掉旧页面：先 removeWidget 再 deleteLater，避免重建过程中
+    // QStackedWidget 仍指向已被销毁的页面。
+    while (m_stack->count() > 0) {
+        QWidget* page = m_stack->widget(0);
+        m_stack->removeWidget(page);
+        page->deleteLater();
+    }
+
+    buildStitchPanel();
+    buildConvertPanel();
+    buildCompressPanel();
+    buildWatermarkPanel();
+    buildEditPanel();
+    buildResizePanel();
+    buildBatchPanel();
+    buildPdfPanel();
 }
 
 void PropertyPanel::setToolType(ToolType tool)
@@ -121,10 +201,10 @@ void PropertyPanel::setImageModel(ImageListModel* model)
         disconnect(m_imageModel, nullptr, this, nullptr);
     m_imageModel = model;
     if (m_imageModel) {
-        connect(m_imageModel, &ImageListModel::countChanged,
-                this, &PropertyPanel::onImageCountChanged);
-        connect(m_imageModel, &ImageListModel::thumbnailLoadFinished,
-                this, &PropertyPanel::validateAndUpdateUI);
+        connect(m_imageModel, &ImageListModel::countChanged, this,
+                &PropertyPanel::onImageCountChanged);
+        connect(m_imageModel, &ImageListModel::thumbnailLoadFinished, this,
+                &PropertyPanel::validateAndUpdateUI);
     }
     refreshStitchPresetAvailability();
     validateAndUpdateUI();
@@ -166,8 +246,10 @@ void PropertyPanel::buildStitchPanel()
     m_stitchBatchBtn->setToolTip(tr("Batch select images for stitching"));
     QMenu* batchMenu = new QMenu(m_stitchBatchBtn);
     batchMenu->addAction(tr("Select All"), this, &PropertyPanel::stitchSelectAllRequested);
-    batchMenu->addAction(tr("Clear Selection"), this, &PropertyPanel::stitchClearSelectionRequested);
-    batchMenu->addAction(tr("Invert Selection"), this, &PropertyPanel::stitchInvertSelectionRequested);
+    batchMenu->addAction(tr("Clear Selection"), this,
+                         &PropertyPanel::stitchClearSelectionRequested);
+    batchMenu->addAction(tr("Invert Selection"), this,
+                         &PropertyPanel::stitchInvertSelectionRequested);
     m_stitchBatchBtn->setMenu(batchMenu);
     m_stitchBatchBtn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     settingsLayout->addWidget(m_stitchBatchBtn);
@@ -197,8 +279,10 @@ void PropertyPanel::buildStitchPanel()
     bgColorLayout->addWidget(new QLabel(tr("Color:"), m_stitchBgColorRowWidget));
     m_stitchBgColorBtn = new QPushButton(m_stitchBgColorRowWidget);
     m_stitchBgColorBtn->setFixedSize(QSize(28, 22));
-    m_stitchBgColorBtn->setStyleSheet(QStringLiteral("background-color: white; border: 1px solid gray;"));
-    connect(m_stitchBgColorBtn, &QPushButton::clicked, this, &PropertyPanel::onStitchBgColorClicked);
+    m_stitchBgColorBtn->setStyleSheet(
+        QStringLiteral("background-color: white; border: 1px solid gray;"));
+    connect(m_stitchBgColorBtn, &QPushButton::clicked, this,
+            &PropertyPanel::onStitchBgColorClicked);
     bgColorLayout->addWidget(m_stitchBgColorBtn);
     m_stitchBgColorLabel = new QLabel(QStringLiteral("#FFFFFF"), m_stitchBgColorRowWidget);
     bgColorLayout->addWidget(m_stitchBgColorLabel, 1);
@@ -229,8 +313,9 @@ void PropertyPanel::buildStitchPanel()
     settingsLayout->addWidget(m_stitchGridRowWidget);
 
     m_stitchOutputFormat = new QComboBox(settingsContent);
-    m_stitchOutputFormat->addItems(QStringList() << QStringLiteral("PNG") << QStringLiteral("JPG")
-                                                  << QStringLiteral("WebP") << QStringLiteral("BMP"));
+    m_stitchOutputFormat->addItems(QStringList()
+                                   << QStringLiteral("PNG") << QStringLiteral("JPG")
+                                   << QStringLiteral("WebP") << QStringLiteral("BMP"));
     settingsLayout->addWidget(createFormRow(tr("Format:"), m_stitchOutputFormat));
 
     m_stitchQuality = new QSlider(Qt::Horizontal, settingsContent);
@@ -266,15 +351,15 @@ void PropertyPanel::buildStitchPanel()
     m_stitchSectionPresets->setContent(presetsContent);
     panelLayout->addWidget(m_stitchSectionPresets);
 
-    connect(m_stitchPresetCategory, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, &PropertyPanel::onStitchCategoryChanged);
-    connect(m_stitchPreset, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, &PropertyPanel::onStitchPresetChanged);
+    connect(m_stitchPresetCategory, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            &PropertyPanel::onStitchCategoryChanged);
+    connect(m_stitchPreset, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            &PropertyPanel::onStitchPresetChanged);
 
-    connect(m_stitchDirection, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, &PropertyPanel::onStitchDirectionChanged);
-    connect(m_stitchBackground, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, &PropertyPanel::onStitchBackgroundChanged);
+    connect(m_stitchDirection, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            &PropertyPanel::onStitchDirectionChanged);
+    connect(m_stitchBackground, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            &PropertyPanel::onStitchBackgroundChanged);
 
     // 输出设置
     m_stitchSectionOutput = new CollapsibleSection(tr("Output Settings"), panel);
@@ -311,7 +396,8 @@ void PropertyPanel::buildStitchPanel()
     });
     dirLayout->addWidget(m_stitchOutputBrowseBtn);
     m_stitchOutputCreateBtn = new QPushButton(tr("Create"), dirRow);
-    connect(m_stitchOutputCreateBtn, &QPushButton::clicked, this, &PropertyPanel::onStitchCreateOutputDir);
+    connect(m_stitchOutputCreateBtn, &QPushButton::clicked, this,
+            &PropertyPanel::onStitchCreateOutputDir);
     m_stitchOutputCreateBtn->setVisible(false);
     dirLayout->addWidget(m_stitchOutputCreateBtn);
     outputLayout->addWidget(dirRow);
@@ -319,17 +405,26 @@ void PropertyPanel::buildStitchPanel()
     m_stitchFileNameTemplate = new QLineEdit(outputContent);
     m_stitchFileNameTemplate->setText(QStringLiteral("{name}_stitched_{time}"));
     m_stitchFileNameTemplate->setPlaceholderText(tr("e.g. {name}_{index}"));
-    connect(m_stitchFileNameTemplate, &QLineEdit::textChanged,
-            this, &PropertyPanel::onStitchFileNameTemplateChanged);
+    connect(m_stitchFileNameTemplate, &QLineEdit::textChanged, this,
+            &PropertyPanel::onStitchFileNameTemplateChanged);
     outputLayout->addWidget(createFormRow(tr("File Name:"), m_stitchFileNameTemplate));
 
     m_stitchFileNamePreview = new QLabel(outputContent);
     m_stitchFileNamePreview->setStyleSheet(QStringLiteral("color: gray; font-size: 12px;"));
     m_stitchFileNamePreview->setWordWrap(true);
+    // 预览的文件名通常是一整段没有空格的路径（如
+    // wechat_screenshot_001_stitched_20261023.png）。QLabel 即使开了 wordWrap，
+    // 其 minimumSizeHint 仍按「最长的一个词」计算 —— 也就是整个文件名，
+    // 于是这个标签会把面板撑得远宽于 200~260px，内容被裁掉且无法看到。
+    // 用 Ignored 策略允许它被压缩到视口宽度，配合 wordWrap 正常折行。
+    m_stitchFileNamePreview->setMinimumWidth(0);
+    m_stitchFileNamePreview->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     outputLayout->addWidget(m_stitchFileNamePreview);
 
     m_stitchValidationLabel = new QLabel(outputContent);
     m_stitchValidationLabel->setWordWrap(true);
+    m_stitchValidationLabel->setMinimumWidth(0);
+    m_stitchValidationLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     m_stitchValidationLabel->setMinimumHeight(32);
     outputLayout->addWidget(m_stitchValidationLabel);
 
@@ -339,8 +434,8 @@ void PropertyPanel::buildStitchPanel()
     panelLayout->addStretch();
     m_stack->addWidget(panel);
 
-    connect(m_stitchOutputFormat, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, &PropertyPanel::onStitchOutputFormatChanged);
+    connect(m_stitchOutputFormat, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            &PropertyPanel::onStitchOutputFormatChanged);
     onStitchFileNameTemplateChanged();
     updateStitchControlVisibility();
 }
@@ -374,15 +469,20 @@ void PropertyPanel::buildConvertPanel()
 
     m_convertEstimateLabel = new QLabel(panel);
     m_convertEstimateLabel->setStyleSheet(QStringLiteral("color: gray; font-size: 12px;"));
+    // 估算文本可能较长（如 Estimated size: 1.2 MB），允许被压缩到面板宽度内，
+    // 避免把整个面板撑宽导致内容被裁切。
+    m_convertEstimateLabel->setMinimumWidth(0);
+    m_convertEstimateLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     layout->addWidget(m_convertEstimateLabel);
 
     m_convertEstimateTimer = new QTimer(this);
     m_convertEstimateTimer->setSingleShot(true);
     m_convertEstimateTimer->setInterval(200);
-    connect(m_convertEstimateTimer, &QTimer::timeout, this, &PropertyPanel::onConvertEstimateTimeout);
+    connect(m_convertEstimateTimer, &QTimer::timeout, this,
+            &PropertyPanel::onConvertEstimateTimeout);
 
-    connect(m_convertFormat, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, &PropertyPanel::onConvertFormatChanged);
+    connect(m_convertFormat, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            &PropertyPanel::onConvertFormatChanged);
     connect(m_convertQuality, &QSlider::valueChanged, this, &PropertyPanel::onConvertFormatChanged);
 
     layout->addStretch();
@@ -442,11 +542,16 @@ void PropertyPanel::buildCompressPanel()
 
     m_compressEstimateLabel = new QLabel(panel);
     m_compressEstimateLabel->setStyleSheet(QStringLiteral("color: gray; font-size: 12px;"));
+    // 估算文本可能较长（如 Estimated size: 1.2 MB），允许被压缩到面板宽度内，
+    // 避免把整个面板撑宽导致内容被裁切。
+    m_compressEstimateLabel->setMinimumWidth(0);
+    m_compressEstimateLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     layout->addWidget(m_compressEstimateLabel);
 
-    connect(m_compressMode, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, &PropertyPanel::onCompressModeChanged);
-    connect(m_compressShowOriginal, &QCheckBox::stateChanged, this, &PropertyPanel::onSettingsChanged);
+    connect(m_compressMode, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            &PropertyPanel::onCompressModeChanged);
+    connect(m_compressShowOriginal, &QCheckBox::stateChanged, this,
+            &PropertyPanel::onSettingsChanged);
     onCompressModeChanged(0);
 
     layout->addStretch();
@@ -466,8 +571,8 @@ void PropertyPanel::buildWatermarkPanel()
     m_watermarkType->addItem(tr("Text"), static_cast<int>(WatermarkType::Text));
     m_watermarkType->addItem(tr("Image"), static_cast<int>(WatermarkType::Image));
     layout->addWidget(createFormRow(tr("Type:"), m_watermarkType));
-    connect(m_watermarkType, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, &PropertyPanel::onWatermarkTypeChanged);
+    connect(m_watermarkType, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            &PropertyPanel::onWatermarkTypeChanged);
 
     m_watermarkText = new QLineEdit(panel);
     m_watermarkText->setText(QStringLiteral("影图"));
@@ -514,8 +619,10 @@ void PropertyPanel::buildWatermarkPanel()
     colorLayout->addWidget(new QLabel(tr("Color:"), colorRow));
     m_watermarkColorBtn = new QPushButton(colorRow);
     m_watermarkColorBtn->setFixedSize(QSize(28, 22));
-    m_watermarkColorBtn->setStyleSheet(QStringLiteral("background-color: white; border: 1px solid gray;"));
-    connect(m_watermarkColorBtn, &QPushButton::clicked, this, &PropertyPanel::onWatermarkColorClicked);
+    m_watermarkColorBtn->setStyleSheet(
+        QStringLiteral("background-color: white; border: 1px solid gray;"));
+    connect(m_watermarkColorBtn, &QPushButton::clicked, this,
+            &PropertyPanel::onWatermarkColorClicked);
     colorLayout->addWidget(m_watermarkColorBtn);
     colorLayout->addStretch();
     layout->addWidget(colorRow);
@@ -691,8 +798,11 @@ void PropertyPanel::buildEditPanel()
     textColorLayout->addWidget(new QLabel(tr("Text Color:"), textColorRow));
     m_editTextColorBtn = new QPushButton(textColorRow);
     m_editTextColorBtn->setFixedSize(QSize(28, 22));
-    m_editTextColorBtn->setStyleSheet(QStringLiteral("background-color: %1; border: 1px solid gray;").arg(m_editTextColor.name()));
-    connect(m_editTextColorBtn, &QPushButton::clicked, this, &PropertyPanel::onEditFontColorClicked);
+    m_editTextColorBtn->setStyleSheet(
+        QStringLiteral("background-color: %1; border: 1px solid gray;")
+            .arg(m_editTextColor.name()));
+    connect(m_editTextColorBtn, &QPushButton::clicked, this,
+            &PropertyPanel::onEditFontColorClicked);
     textColorLayout->addWidget(m_editTextColorBtn);
     textColorLayout->addStretch();
     layout->addWidget(textColorRow);
@@ -714,9 +824,10 @@ void PropertyPanel::buildEditPanel()
     connect(m_editUndoBtn, &QPushButton::clicked, this, &PropertyPanel::onEditUndo);
     connect(m_editRedoBtn, &QPushButton::clicked, this, &PropertyPanel::onEditRedo);
     connect(m_editClearBtn, &QPushButton::clicked, this, &PropertyPanel::onEditClear);
-    connect(m_editHistoryList, &QListWidget::itemClicked, this, &PropertyPanel::onEditHistoryItemClicked);
-    connect(m_editTool, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, &PropertyPanel::onEditToolChanged);
+    connect(m_editHistoryList, &QListWidget::itemClicked, this,
+            &PropertyPanel::onEditHistoryItemClicked);
+    connect(m_editTool, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            &PropertyPanel::onEditToolChanged);
 
     onEditToolChanged(0);
 
@@ -769,6 +880,10 @@ void PropertyPanel::buildResizePanel()
 
     m_resizeAspectLabel = new QLabel(panel);
     m_resizeAspectLabel->setStyleSheet(QStringLiteral("color: gray; font-size: 12px;"));
+    // 估算文本可能较长（如 Estimated size: 1.2 MB），允许被压缩到面板宽度内，
+    // 避免把整个面板撑宽导致内容被裁切。
+    m_resizeAspectLabel->setMinimumWidth(0);
+    m_resizeAspectLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     layout->addWidget(m_resizeAspectLabel);
 
     m_resizeInterpolation = new QComboBox(panel);
@@ -834,20 +949,20 @@ void PropertyPanel::buildResizePanel()
     m_resizeDelayTimer->setInterval(200);
     connect(m_resizeDelayTimer, &QTimer::timeout, this, &PropertyPanel::previewRequested);
 
-    connect(m_resizeMode, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, &PropertyPanel::onResizeModeChanged);
-    connect(m_resizeCategory, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, &PropertyPanel::onResizeCategoryChanged);
-    connect(m_resizePreset, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, &PropertyPanel::onResizePresetChanged);
-    connect(m_resizeWidth, QOverload<int>::of(&QSpinBox::valueChanged),
-            this, &PropertyPanel::onResizeWidthChanged);
-    connect(m_resizeHeight, QOverload<int>::of(&QSpinBox::valueChanged),
-            this, &PropertyPanel::onResizeHeightChanged);
-    connect(m_resizeLockAspect, &QToolButton::toggled,
-            this, &PropertyPanel::onSettingsChanged);
+    connect(m_resizeMode, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            &PropertyPanel::onResizeModeChanged);
+    connect(m_resizeCategory, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            &PropertyPanel::onResizeCategoryChanged);
+    connect(m_resizePreset, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            &PropertyPanel::onResizePresetChanged);
+    connect(m_resizeWidth, QOverload<int>::of(&QSpinBox::valueChanged), this,
+            &PropertyPanel::onResizeWidthChanged);
+    connect(m_resizeHeight, QOverload<int>::of(&QSpinBox::valueChanged), this,
+            &PropertyPanel::onResizeHeightChanged);
+    connect(m_resizeLockAspect, &QToolButton::toggled, this, &PropertyPanel::onSettingsChanged);
     connect(m_resizeAddPresetBtn, &QPushButton::clicked, this, &PropertyPanel::onResizeAddPreset);
-    connect(m_resizeDeletePresetBtn, &QPushButton::clicked, this, &PropertyPanel::onResizeDeletePreset);
+    connect(m_resizeDeletePresetBtn, &QPushButton::clicked, this,
+            &PropertyPanel::onResizeDeletePreset);
 
     loadResizePresetCategories();
     onResizeCategoryChanged(0);
@@ -929,7 +1044,7 @@ void PropertyPanel::buildPdfPanel()
     m_pdfMarginTop = new QDoubleSpinBox(marginRow);
     m_pdfMarginRight = new QDoubleSpinBox(marginRow);
     m_pdfMarginBottom = new QDoubleSpinBox(marginRow);
-    for (auto* sb : { m_pdfMarginLeft, m_pdfMarginTop, m_pdfMarginRight, m_pdfMarginBottom }) {
+    for (auto* sb : {m_pdfMarginLeft, m_pdfMarginTop, m_pdfMarginRight, m_pdfMarginBottom}) {
         sb->setRange(0, 100);
         sb->setValue(20.0);
         sb->setDecimals(1);
@@ -947,8 +1062,7 @@ void PropertyPanel::buildPdfPanel()
     outLayout->addWidget(m_pdfOutputPath, 1);
     QPushButton* browseBtn = new QPushButton(tr("Browse..."), outRow);
     connect(browseBtn, &QPushButton::clicked, this, [this]() {
-        QString path = QFileDialog::getSaveFileName(this, tr("Save PDF"),
-                                                    m_pdfOutputPath->text(),
+        QString path = QFileDialog::getSaveFileName(this, tr("Save PDF"), m_pdfOutputPath->text(),
                                                     tr("PDF Files (*.pdf)"));
         if (!path.isEmpty())
             m_pdfOutputPath->setText(path);
@@ -969,8 +1083,10 @@ StitchSettings PropertyPanel::stitchSettings() const
     s.bgColor = QColor(m_stitchBgColorLabel->text());
     // 统一尺寸复选框按方向映射：Vertical→uniformWidth，Horizontal→uniformHeight，
     // Grid→两者皆不需要（Grid 自身按最大单元格尺寸缩放）。
-    s.uniformWidth = (s.direction == StitchSettings::Vertical) && m_stitchUniformWidth && m_stitchUniformWidth->isChecked();
-    s.uniformHeight = (s.direction == StitchSettings::Horizontal) && m_stitchUniformWidth && m_stitchUniformWidth->isChecked();
+    s.uniformWidth = (s.direction == StitchSettings::Vertical) && m_stitchUniformWidth &&
+                     m_stitchUniformWidth->isChecked();
+    s.uniformHeight = (s.direction == StitchSettings::Horizontal) && m_stitchUniformWidth &&
+                      m_stitchUniformWidth->isChecked();
     s.removeWhiteEdges = m_stitchRemoveWhiteEdges->isChecked();
     s.autoCropEdges = m_stitchAutoCropEdges->isChecked();
     s.gridRows = m_stitchGridRows->value();
@@ -1107,6 +1223,14 @@ PropertyPanel::BatchSettings PropertyPanel::batchSettings() const
 void PropertyPanel::updatePreview(const QImage& image)
 {
     m_lastImage = image;
+
+    // 刷新压缩体积预估。此前 onCompressEstimateRequested 已实现，却没有任何
+    // 地方连接它，导致 m_compressEstimateLabel 始终为空。
+    // 挂在这里而不是 onSettingsChanged：estimateSize 最多做 8 次编码，
+    // 跟着每次 spinbox 变动跑会明显卡顿；而 updatePreview 已被 MainWindow
+    // 的预览防抖（200ms 定时器）节流，频率天然合适。
+    if (m_stack && m_stack->currentIndex() == static_cast<int>(ToolType::Compress))
+        onCompressEstimateRequested();
 }
 
 void PropertyPanel::onSettingsChanged()
@@ -1121,6 +1245,28 @@ void PropertyPanel::onSettingsChanged()
 
     emit settingsChanged();
     validateAndUpdateUI();
+}
+
+bool PropertyPanel::eventFilter(QObject* watched, QEvent* event)
+{
+    // 滚动区里的内容宽度必须跟随视口。
+    //
+    // QScrollArea 的 widgetResizable 只有在「widget 尺寸已等于视口」时才会去设置
+    // widget 的最大宽度；一旦两者恰好相等，这条路径就不会执行，widget 会停留在
+    // 自己的 sizeHint 上。而 QStackedWidget 的 sizeHint 由最长的一行内容决定
+    // （例如带时间戳的拼接文件名可达 300+ px），于是内容比面板宽，
+    // 右侧被裁掉且无法看到。
+    //
+    // 这里挂在视口的 resize 上而不是面板的 resize 上：面板尺寸变化时，
+    // 视口宽度是在布局激活之后才更新的，监听面板会拿到旧值。
+    if (m_scrollArea && watched == m_scrollArea->viewport() && m_stack) {
+        const int viewportWidth = m_scrollArea->viewport()->width();
+        if (viewportWidth > 0 && m_stack->width() != viewportWidth)
+            m_stack->setFixedWidth(viewportWidth);
+        // 宽度变化后重新计算省略文本的截断位置。
+        updateStitchFileNamePreview();
+    }
+    return QWidget::eventFilter(watched, event);
 }
 
 void PropertyPanel::hideEvent(QHideEvent* event)
@@ -1324,10 +1470,12 @@ void PropertyPanel::onStitchAddPreset()
 
 void PropertyPanel::onStitchBgColorClicked()
 {
-    QColor c = QColorDialog::getColor(QColor(m_stitchBgColorLabel->text()), this, tr("Select Background Color"));
+    QColor c = QColorDialog::getColor(QColor(m_stitchBgColorLabel->text()), this,
+                                      tr("Select Background Color"));
     if (!c.isValid())
         return;
-    m_stitchBgColorBtn->setStyleSheet(QStringLiteral("background-color: %1; border: 1px solid gray;").arg(c.name()));
+    m_stitchBgColorBtn->setStyleSheet(
+        QStringLiteral("background-color: %1; border: 1px solid gray;").arg(c.name()));
     m_stitchBgColorLabel->setText(c.name().toUpper());
     emit settingsChanged();
 }
@@ -1357,9 +1505,27 @@ void PropertyPanel::onStitchCreateOutputDir()
 
 void PropertyPanel::onStitchFileNameTemplateChanged()
 {
-    if (m_stitchFileNamePreview)
-        m_stitchFileNamePreview->setText(previewFileNameFromTemplate(m_stitchFileNameTemplate->text()));
+    updateStitchFileNamePreview();
     validateAndUpdateUI();
+}
+
+void PropertyPanel::updateStitchFileNamePreview()
+{
+    if (!m_stitchFileNamePreview)
+        return;
+
+    const QString full = previewFileNameFromTemplate(m_stitchFileNameTemplate->text());
+    m_stitchFileNamePreviewFull = full;
+    // 完整文本放进 tooltip，标签本身按可用宽度省略。
+    m_stitchFileNamePreview->setToolTip(full);
+
+    // 文件名通常是一整段没有空格的字符串，QLabel 的 wordWrap 无法在词内断行，
+    // 结果就是整行超出面板宽度被裁掉。这里显式做中间省略，保证任何宽度下都完整可见，
+    // 且不会把面板撑宽。
+    const int available =
+        m_stitchFileNamePreview->width() > 0 ? m_stitchFileNamePreview->width() : 200;
+    m_stitchFileNamePreview->setText(
+        m_stitchFileNamePreview->fontMetrics().elidedText(full, Qt::ElideMiddle, available));
 }
 
 void PropertyPanel::onStitchOutputFormatChanged(int index)
@@ -1400,7 +1566,8 @@ void PropertyPanel::updateStitchControlVisibility()
     if (!m_stitchDirection)
         return;
 
-    const auto dir = static_cast<StitchSettings::Direction>(m_stitchDirection->currentData().toInt());
+    const auto dir =
+        static_cast<StitchSettings::Direction>(m_stitchDirection->currentData().toInt());
     const bool isGrid = (dir == StitchSettings::Grid);
 
     // Grid 行/列仅在 Grid 方向显示
@@ -1419,7 +1586,8 @@ void PropertyPanel::updateStitchControlVisibility()
 
     // 背景色行仅在非透明背景时显示
     if (m_stitchBgColorRowWidget && m_stitchBackground) {
-        const bool transparent = (m_stitchBackground->currentData().toString() == QStringLiteral("transparent"));
+        const bool transparent =
+            (m_stitchBackground->currentData().toString() == QStringLiteral("transparent"));
         m_stitchBgColorRowWidget->setVisible(!transparent);
     }
 }
@@ -1469,7 +1637,7 @@ void PropertyPanel::addOutputHistory(const QString& path)
 
 QString PropertyPanel::uiStateFilePath() const
 {
-    QString dir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+    QString dir = appConfigDir();
     QDir().mkpath(dir);
     return dir + QStringLiteral("/ui-state.json");
 }
@@ -1520,7 +1688,7 @@ void PropertyPanel::loadUiState()
     applySection(m_stitchSectionOutput, QStringLiteral("stitchOutput"));
 
     QJsonArray history = root.value(QStringLiteral("outputHistory")).toArray();
-    for (const QJsonValue& v : history)
+    for (const auto& v : history)
         m_outputHistory.append(v.toString());
     while (m_outputHistory.size() > 5)
         m_outputHistory.removeLast();
@@ -1590,20 +1758,23 @@ bool PropertyPanel::validateStitchSettings(QString* errorMessage, QString* warni
 
     // Grid 图片数与单元格数不匹配时给出警告
     if (m_stitchDirection && m_imageModel && imageCount >= 2) {
-        const auto dir = static_cast<StitchSettings::Direction>(m_stitchDirection->currentData().toInt());
+        const auto dir =
+            static_cast<StitchSettings::Direction>(m_stitchDirection->currentData().toInt());
         if (dir == StitchSettings::Grid && m_stitchGridRows && m_stitchGridColumns) {
             const int cells = m_stitchGridRows->value() * m_stitchGridColumns->value();
             if (imageCount < cells)
-                warnings.append(tr("%1 of %2 grid cells will be empty").arg(cells - imageCount).arg(cells));
+                warnings.append(
+                    tr("%1 of %2 grid cells will be empty").arg(cells - imageCount).arg(cells));
             else if (imageCount > cells)
                 warnings.append(tr("%1 extra image(s) will be ignored").arg(imageCount - cells));
         }
     }
 
     // 统一尺寸警告（方向感知）
-    if (m_imageModel && imageCount >= 2 && m_stitchUniformWidth && m_stitchUniformWidth->isChecked()
-        && m_stitchUniformWidth->isVisible()) {
-        const auto dir = static_cast<StitchSettings::Direction>(m_stitchDirection->currentData().toInt());
+    if (m_imageModel && imageCount >= 2 && m_stitchUniformWidth &&
+        m_stitchUniformWidth->isChecked() && m_stitchUniformWidth->isVisible()) {
+        const auto dir =
+            static_cast<StitchSettings::Direction>(m_stitchDirection->currentData().toInt());
         const bool checkWidth = (dir == StitchSettings::Vertical);
         int firstVal = -1;
         bool inconsistent = false;
@@ -1621,7 +1792,8 @@ bool PropertyPanel::validateStitchSettings(QString* errorMessage, QString* warni
             }
         }
         if (inconsistent)
-            warnings.append(checkWidth ? tr("Image widths are inconsistent") : tr("Image heights are inconsistent"));
+            warnings.append(checkWidth ? tr("Image widths are inconsistent")
+                                       : tr("Image heights are inconsistent"));
     }
 
     if (errorMessage)
@@ -1690,13 +1862,16 @@ void PropertyPanel::validateAndUpdateUI()
     if (m_stitchValidationLabel) {
         if (!error.isEmpty()) {
             m_stitchValidationLabel->setText(QStringLiteral("🔴 ") + error);
-            m_stitchValidationLabel->setStyleSheet(QStringLiteral("color: #E81123; font-size: 12px;"));
+            m_stitchValidationLabel->setStyleSheet(
+                QStringLiteral("color: #E81123; font-size: 12px;"));
         } else if (!warning.isEmpty()) {
             m_stitchValidationLabel->setText(QStringLiteral("⚠️ ") + warning);
-            m_stitchValidationLabel->setStyleSheet(QStringLiteral("color: #FFC107; font-size: 12px;"));
+            m_stitchValidationLabel->setStyleSheet(
+                QStringLiteral("color: #FFC107; font-size: 12px;"));
         } else {
             m_stitchValidationLabel->setText(QStringLiteral("✅ ") + tr("Ready"));
-            m_stitchValidationLabel->setStyleSheet(QStringLiteral("color: #107C10; font-size: 12px;"));
+            m_stitchValidationLabel->setStyleSheet(
+                QStringLiteral("color: #107C10; font-size: 12px;"));
         }
     }
 
@@ -1731,7 +1906,8 @@ void PropertyPanel::loadResizePresetsByCategory()
     for (const auto& p : m_resizePresets) {
         if (p.category == category) {
             QString ratio = aspectRatioString(p.width, p.height);
-            QString text = ratio.isEmpty() ? p.name : QStringLiteral("%1 (%2)").arg(p.name).arg(ratio);
+            QString text =
+                ratio.isEmpty() ? p.name : QStringLiteral("%1 (%2)").arg(p.name).arg(ratio);
             m_resizePreset->addItem(text, p.id);
         }
     }
@@ -1767,7 +1943,8 @@ void PropertyPanel::onResizeModeChanged(int index)
 {
     Q_UNUSED(index)
     bool isPreset = (m_resizeMode->currentData().toInt() == static_cast<int>(ResizeMode::Preset));
-    bool isPercentage = (m_resizeMode->currentData().toInt() == static_cast<int>(ResizeMode::Percentage));
+    bool isPercentage =
+        (m_resizeMode->currentData().toInt() == static_cast<int>(ResizeMode::Percentage));
     m_resizeCategory->setEnabled(isPreset);
     m_resizePreset->setEnabled(isPreset);
     m_resizeAddPresetBtn->setEnabled(isPreset);
@@ -1815,7 +1992,8 @@ void PropertyPanel::onResizeWidthChanged(int value)
         m_resizeHeight->setValue(h);
         m_resizeUpdating = false;
     }
-    m_resizeAspectLabel->setText(aspectRatioString(m_resizeWidth->value(), m_resizeHeight->value()));
+    m_resizeAspectLabel->setText(
+        aspectRatioString(m_resizeWidth->value(), m_resizeHeight->value()));
     requestDelayedPreview();
 }
 
@@ -1829,7 +2007,8 @@ void PropertyPanel::onResizeHeightChanged(int value)
         m_resizeWidth->setValue(w);
         m_resizeUpdating = false;
     }
-    m_resizeAspectLabel->setText(aspectRatioString(m_resizeWidth->value(), m_resizeHeight->value()));
+    m_resizeAspectLabel->setText(
+        aspectRatioString(m_resizeWidth->value(), m_resizeHeight->value()));
     requestDelayedPreview();
 }
 
@@ -1842,9 +2021,9 @@ void PropertyPanel::onResizeAddPreset()
         return;
 
     bool catOk = false;
-    QString category = QInputDialog::getItem(this, tr("Add Custom Preset"), tr("Category:"),
-                                             ResizePresetManager::instance().categories(),
-                                             0, true, &catOk);
+    QString category =
+        QInputDialog::getItem(this, tr("Add Custom Preset"), tr("Category:"),
+                              ResizePresetManager::instance().categories(), 0, true, &catOk);
     if (!catOk || category.isEmpty())
         category = QStringLiteral("Custom");
 
@@ -1923,7 +2102,8 @@ void PropertyPanel::onWatermarkColorClicked()
     if (!c.isValid())
         return;
     m_watermarkColor = c;
-    m_watermarkColorBtn->setStyleSheet(QStringLiteral("background-color: %1; border: 1px solid gray;").arg(c.name()));
+    m_watermarkColorBtn->setStyleSheet(
+        QStringLiteral("background-color: %1; border: 1px solid gray;").arg(c.name()));
     emit settingsChanged();
 }
 
@@ -1954,7 +2134,8 @@ void PropertyPanel::onCompressEstimateRequested()
         return;
     }
     qint64 bytes = CompressEngine::estimateSize(m_lastImage, compressSettings());
-    m_compressEstimateLabel->setText(tr("Estimated size: %1").arg(FileUtils::formatFileSize(bytes)));
+    m_compressEstimateLabel->setText(
+        tr("Estimated size: %1").arg(FileUtils::formatFileSize(bytes)));
 }
 
 void PropertyPanel::onEditFontColorClicked()
@@ -1963,7 +2144,8 @@ void PropertyPanel::onEditFontColorClicked()
     if (!c.isValid())
         return;
     m_editTextColor = c;
-    m_editTextColorBtn->setStyleSheet(QStringLiteral("background-color: %1; border: 1px solid gray;").arg(c.name()));
+    m_editTextColorBtn->setStyleSheet(
+        QStringLiteral("background-color: %1; border: 1px solid gray;").arg(c.name()));
     emit settingsChanged();
 }
 
@@ -2046,14 +2228,30 @@ void PropertyPanel::refreshEditHistory(const QList<EditAction>& history, int cur
         const EditAction& a = history.at(i);
         QString toolName;
         switch (a.toolType) {
-        case EditToolType::Rectangle: toolName = tr("Rectangle"); break;
-        case EditToolType::Ellipse: toolName = tr("Ellipse"); break;
-        case EditToolType::Arrow: toolName = tr("Arrow"); break;
-        case EditToolType::Pen: toolName = tr("Pen"); break;
-        case EditToolType::Mosaic: toolName = tr("Mosaic"); break;
-        case EditToolType::Text: toolName = tr("Text"); break;
-        case EditToolType::Crop: toolName = tr("Crop"); break;
-        case EditToolType::Filter: toolName = tr("Filter"); break;
+        case EditToolType::Rectangle:
+            toolName = tr("Rectangle");
+            break;
+        case EditToolType::Ellipse:
+            toolName = tr("Ellipse");
+            break;
+        case EditToolType::Arrow:
+            toolName = tr("Arrow");
+            break;
+        case EditToolType::Pen:
+            toolName = tr("Pen");
+            break;
+        case EditToolType::Mosaic:
+            toolName = tr("Mosaic");
+            break;
+        case EditToolType::Text:
+            toolName = tr("Text");
+            break;
+        case EditToolType::Crop:
+            toolName = tr("Crop");
+            break;
+        case EditToolType::Filter:
+            toolName = tr("Filter");
+            break;
         }
         QString text = QStringLiteral("%1 %2").arg(i + 1).arg(toolName);
         if (a.toolType == EditToolType::Text && !a.text.isEmpty())
@@ -2061,25 +2259,50 @@ void PropertyPanel::refreshEditHistory(const QList<EditAction>& history, int cur
         else if (a.toolType == EditToolType::Filter) {
             QString filterName;
             switch (a.filterType) {
-            case FilterType::Grayscale: filterName = tr("Grayscale"); break;
-            case FilterType::Sepia: filterName = tr("Sepia"); break;
-            case FilterType::Warm: filterName = tr("Warm"); break;
-            case FilterType::Cool: filterName = tr("Cool"); break;
-            case FilterType::HighContrast: filterName = tr("High Contrast"); break;
-            case FilterType::Blur: filterName = tr("Blur"); break;
-            case FilterType::Sharpen: filterName = tr("Sharpen"); break;
+            case FilterType::Grayscale:
+                filterName = tr("Grayscale");
+                break;
+            case FilterType::Sepia:
+                filterName = tr("Sepia");
+                break;
+            case FilterType::Warm:
+                filterName = tr("Warm");
+                break;
+            case FilterType::Cool:
+                filterName = tr("Cool");
+                break;
+            case FilterType::HighContrast:
+                filterName = tr("High Contrast");
+                break;
+            case FilterType::Blur:
+                filterName = tr("Blur");
+                break;
+            case FilterType::Sharpen:
+                filterName = tr("Sharpen");
+                break;
             }
             text += QStringLiteral(" - ") + filterName;
-        }
-        else if (a.toolType == EditToolType::Mosaic) {
+        } else if (a.toolType == EditToolType::Mosaic) {
             QString styleName;
             switch (a.mosaicStyle) {
-            case MosaicStyle::Square: styleName = tr("Square"); break;
-            case MosaicStyle::Hexagon: styleName = tr("Hexagon"); break;
-            case MosaicStyle::Circle: styleName = tr("Circle"); break;
-            case MosaicStyle::Blur: styleName = tr("Blur"); break;
-            case MosaicStyle::Mezzotint: styleName = tr("Mezzotint"); break;
-            case MosaicStyle::ColorHalftone: styleName = tr("Color Halftone"); break;
+            case MosaicStyle::Square:
+                styleName = tr("Square");
+                break;
+            case MosaicStyle::Hexagon:
+                styleName = tr("Hexagon");
+                break;
+            case MosaicStyle::Circle:
+                styleName = tr("Circle");
+                break;
+            case MosaicStyle::Blur:
+                styleName = tr("Blur");
+                break;
+            case MosaicStyle::Mezzotint:
+                styleName = tr("Mezzotint");
+                break;
+            case MosaicStyle::ColorHalftone:
+                styleName = tr("Color Halftone");
+                break;
             }
             text += QStringLiteral(" - ") + styleName;
         }

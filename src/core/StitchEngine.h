@@ -2,6 +2,7 @@
 
 #include "utils/PresetData.h"
 #include <QImage>
+#include <QList>
 #include <QObject>
 #include <QRect>
 #include <QStringList>
@@ -10,7 +11,11 @@
 namespace yingtu {
 
 struct StitchSettings {
-    enum Direction { Vertical, Horizontal, Grid };
+    enum Direction {
+        Vertical,
+        Horizontal,
+        Grid
+    };
 
     Direction direction = Vertical;
     int spacing = 0;
@@ -49,6 +54,14 @@ public:
 
     // 仅读取图片头信息估算最终输出尺寸，不加载像素数据，用于状态栏快速显示。
     static QSize estimateOutputSize(const QStringList& filePaths, const StitchSettings& settings);
+
+    /**
+     * 用**已知的图片尺寸**估算输出尺寸，不做任何磁盘 I/O。
+     *
+     * UI 侧（状态栏）应当使用这个重载：前一个重载要逐个打开文件读图片头，
+     * 在主线程上对上百张图调用会造成明显卡顿。
+     */
+    static QSize estimateOutputSize(const QList<QSize>& sizes, const StitchSettings& settings);
 
 signals:
     void progress(int percent);

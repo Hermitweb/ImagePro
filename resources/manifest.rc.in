@@ -1,0 +1,16 @@
+/*
+ * Windows 10/11 compatibility manifest.
+ *
+ * Without it Windows treats the app as pre-Win7: no DPI awareness (the UI is
+ * bitmap-stretched and blurry), no long-path support, and the version APIs
+ * report faked values.
+ *
+ * Paths and version are injected by CMake so they cannot drift from the build.
+ *
+ * This file is compiled into the executable only for MinGW/Clang toolchains.
+ * MSVC's linker generates and embeds its own manifest (resource id 1), so
+ * embedding a second copy here would fail with CVT1100 "duplicate resource"
+ * followed by LNK1123. For MSVC the manifest is handed to the linker instead
+ * (see /MANIFESTINPUT in CMakeLists.txt).
+ */
+1 24 "@IMAGEPRO_MANIFEST@"

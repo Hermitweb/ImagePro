@@ -1,4 +1,5 @@
 #include "CompressEngine.h"
+#include "utils/ErrorHandler.h"
 #include "utils/FileUtils.h"
 #include "utils/ImageLoader.h"
 #include "utils/Logger.h"
@@ -7,17 +8,27 @@
 
 namespace yingtu {
 
-CompressEngine::CompressEngine(QObject* parent)
-    : QObject(parent)
-{
-}
+CompressEngine::CompressEngine(QObject* parent) : QObject(parent) {}
 
 QList<CompressResult> CompressEngine::process(const QStringList& filePaths)
 {
     QList<CompressResult> results;
     int total = filePaths.size();
+    if (total == 0) {
+        ErrorHandler::instance().report(ErrorCode::EMPTY_FOLDER, tr("No images to compress"));
+        emit finished(results);
+        return results;
+    }
     for (int i = 0; i < total; ++i) {
-        results.append(compressSingle(filePaths.at(i)));
+        CompressResult result = compressSingle(filePaths.at(i));
+        if (!result.success) {
+            // 压缩引擎没有 error 信号，结果里的 errorString 是唯一的失败出口。
+            // 这里补上统一错误上报，使失败在日志与错误码表中都可追溯。
+            ErrorHandler::instance().report(ErrorCode::WRITE_FAILED, filePaths.at(i) +
+                                                                         QStringLiteral(": ") +
+                                                                         result.errorString);
+        }
+        results.append(result);
         emit progress(qRound((i + 1) * 100.0 / total));
     }
     emit finished(results);
@@ -30,27 +41,36 @@ CompressResult CompressEngine::compressSingle(const QString& filePath)
     result.originalSize = QFileInfo(filePath).size();
 
     QFileInfo fi(filePath);
-    QString fmt = m_settings.outputFormat == QStringLiteral("original") ? fi.suffix() : m_settings.outputFormat;
+    QString fmt = m_settings.outputFormat == QStringLiteral("original") ? fi.suffix()
+                                                                        : m_settings.outputFormat;
     if (fmt.compare(QStringLiteral("jpg"), Qt::CaseInsensitive) == 0)
         fmt = QStringLiteral("jpeg");
 
     QString outputPath;
+    // reserved 表示该路径由本函数原子占位（而非用户显式指定），
+    // 写入失败时才可以安全地清理占位文件。
+    bool reserved = false;
     if (!m_settings.explicitOutputPath.isEmpty()) {
         outputPath = m_settings.explicitOutputPath;
     } else {
         QString dir = m_settings.explicitOutputDir;
         if (dir.isEmpty())
             dir = m_settings.outputDir.isEmpty() ? fi.absolutePath() : m_settings.outputDir;
-        outputPath = FileUtils::generateUniqueOutputPath(dir, fi.completeBaseName() + QStringLiteral("_compressed"),
-                                                         QStringLiteral(".") + fmt.toLower());
+        outputPath = FileUtils::reserveUniqueOutputPath(
+            dir, fi.completeBaseName() + QStringLiteral("_compressed"),
+            QStringLiteral(".") + fmt.toLower());
+        reserved = !outputPath.isEmpty();
+    }
+    if (outputPath.isEmpty()) {
+        result.errorString = tr("Failed to create output file");
+        return result;
     }
 
     bool needIterativeSize = (m_settings.mode == CompressMode::Size && m_settings.targetSize > 0);
 
     // Size 模式目标大小压缩优先走 libvips 流式管道，避免大图全载入内存
-    if (needIterativeSize &&
-        (fmt.compare(QStringLiteral("jpeg"), Qt::CaseInsensitive) == 0 ||
-         fmt.compare(QStringLiteral("webp"), Qt::CaseInsensitive) == 0)) {
+    if (needIterativeSize && (fmt.compare(QStringLiteral("jpeg"), Qt::CaseInsensitive) == 0 ||
+                              fmt.compare(QStringLiteral("webp"), Qt::CaseInsensitive) == 0)) {
         QSize target;
         if (m_settings.scalePercent < 100 && m_settings.scalePercent > 0) {
             ImageInfo info = ImageLoader::loadInfo(filePath);
@@ -58,8 +78,8 @@ CompressResult CompressEngine::compressSingle(const QString& filePath)
                 target = QSize(info.width * m_settings.scalePercent / 100,
                                info.height * m_settings.scalePercent / 100);
         }
-        if (ImageLoader::compressToTargetSize(filePath, outputPath, target,
-                                              m_settings.targetSize, fmt, m_settings.quality)) {
+        if (ImageLoader::compressToTargetSize(filePath, outputPath, target, m_settings.targetSize,
+                                              fmt, m_settings.quality)) {
             result.outputPath = outputPath;
             result.compressedSize = QFileInfo(outputPath).size();
             result.success = true;
@@ -98,6 +118,8 @@ CompressResult CompressEngine::compressSingle(const QString& filePath)
     if (img.isNull())
         img = ImageLoader::loadImage(filePath);
     if (img.isNull()) {
+        if (reserved)
+            FileUtils::discardReservedPath(outputPath);
         result.errorString = tr("Failed to load image");
         return result;
     }
@@ -112,7 +134,8 @@ CompressResult CompressEngine::compressSingle(const QString& filePath)
             buffer.open(QIODevice::WriteOnly);
             out.save(&buffer, fmt.toUpper().toUtf8(), q);
             buffer.close();
-            if (qAbs(data.size() - m_settings.targetSize) < m_settings.targetSize * 0.1 || q <= 10 || q >= 95)
+            if (qAbs(data.size() - m_settings.targetSize) < m_settings.targetSize * 0.1 ||
+                q <= 10 || q >= 95)
                 break;
             if (data.size() > m_settings.targetSize)
                 q = qMax(10, q - 10);
@@ -123,10 +146,19 @@ CompressResult CompressEngine::compressSingle(const QString& filePath)
 
     bool ok = ImageLoader::saveImage(out, outputPath, fmt, q);
     if (!ok) {
-        IMGPRO_LOG_ERROR(QStringLiteral("Save failed: size=%1x%2 format=%3 path=%4 fmt=%5 quality=%6")
-                             .arg(out.width()).arg(out.height()).arg(out.format()).arg(outputPath).arg(fmt).arg(q),
-                         QStringLiteral("CompressEngine"));
+        IMGPRO_LOG_ERROR(
+            QStringLiteral("Save failed: size=%1x%2 format=%3 path=%4 fmt=%5 quality=%6")
+                .arg(out.width())
+                .arg(out.height())
+                .arg(out.format())
+                .arg(outputPath)
+                .arg(fmt)
+                .arg(q),
+            QStringLiteral("CompressEngine"));
         result.errorString = tr("Failed to save compressed image");
+        // 写入失败：清理占位文件，避免留下 0 字节的「假成功」产物。
+        if (reserved)
+            FileUtils::discardReservedPath(outputPath);
         return result;
     }
 
@@ -142,8 +174,8 @@ QImage CompressEngine::preview(const QImage& source, const CompressSettings& set
     if (settings.mode == CompressMode::Size || settings.mode == CompressMode::Smart) {
         if (settings.scalePercent < 100 && settings.scalePercent > 0) {
             img = img.scaled(source.width() * settings.scalePercent / 100,
-                             source.height() * settings.scalePercent / 100,
-                             Qt::KeepAspectRatio, Qt::SmoothTransformation);
+                             source.height() * settings.scalePercent / 100, Qt::KeepAspectRatio,
+                             Qt::SmoothTransformation);
         }
     }
     return img;
@@ -159,7 +191,8 @@ qint64 CompressEngine::estimateSize(const QImage& image, const CompressSettings&
     QBuffer buffer(&data);
     buffer.open(QIODevice::WriteOnly);
 
-    QString fmt = settings.outputFormat == QStringLiteral("original") ? QStringLiteral("jpeg") : settings.outputFormat;
+    QString fmt = settings.outputFormat == QStringLiteral("original") ? QStringLiteral("jpeg")
+                                                                      : settings.outputFormat;
     if (fmt.compare(QStringLiteral("jpg"), Qt::CaseInsensitive) == 0)
         fmt = QStringLiteral("jpeg");
 
@@ -171,7 +204,8 @@ qint64 CompressEngine::estimateSize(const QImage& image, const CompressSettings&
             inner.open(QIODevice::WriteOnly);
             out.save(&inner, fmt.toUpper().toUtf8(), q);
             inner.close();
-            if (qAbs(data.size() - settings.targetSize) < settings.targetSize * 0.1 || q <= 10 || q >= 95)
+            if (qAbs(data.size() - settings.targetSize) < settings.targetSize * 0.1 || q <= 10 ||
+                q >= 95)
                 break;
             if (data.size() > settings.targetSize)
                 q = qMax(10, q - 10);

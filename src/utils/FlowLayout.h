@@ -9,7 +9,8 @@ namespace yingtu {
 class FlowLayout : public QLayout
 {
 public:
-    explicit FlowLayout(QWidget* parent = nullptr, int margin = -1, int hSpacing = -1, int vSpacing = -1);
+    explicit FlowLayout(QWidget* parent = nullptr, int margin = -1, int hSpacing = -1,
+                        int vSpacing = -1);
     explicit FlowLayout(int margin = -1, int hSpacing = -1, int vSpacing = -1);
     ~FlowLayout() override;
 

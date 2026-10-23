@@ -1,4 +1,5 @@
 #include "StitchEngine.h"
+#include "utils/ErrorHandler.h"
 #include "utils/FileUtils.h"
 #include "utils/ImageLoader.h"
 #include <QDir>
@@ -21,10 +22,10 @@ static QImage cropWhiteEdges(const QImage& source, int threshold = 250)
         return source;
 
     // 统一到 32 位格式以便用 scanLine 做快速指针访问
-    QImage img = (source.format() == QImage::Format_ARGB32 ||
-                  source.format() == QImage::Format_RGB32)
-                     ? source
-                     : source.convertToFormat(QImage::Format_ARGB32);
+    QImage img =
+        (source.format() == QImage::Format_ARGB32 || source.format() == QImage::Format_RGB32)
+            ? source
+            : source.convertToFormat(QImage::Format_ARGB32);
     if (img.isNull())
         return source;
 
@@ -95,8 +96,7 @@ static VipsImage* loadVipsImage(const QString& path)
 {
     // 拼接需要对多张图进行 resize/insert 组合，后续 vips_insert 评估管线时
     // 会多次读取输入；SEQUENTIAL 在此场景下会导致崩溃或读取失败，改用 RANDOM。
-    return vips_image_new_from_file(path.toUtf8().constData(),
-                                    "access", VIPS_ACCESS_RANDOM,
+    return vips_image_new_from_file(path.toUtf8().constData(), "access", VIPS_ACCESS_RANDOM,
                                     nullptr);
 }
 
@@ -126,11 +126,8 @@ static VipsImage* resizeVipsImage(VipsImage* in, int targetW, int targetH, bool 
 static VipsImage* createSolidCanvas(int width, int height, const QColor& color)
 {
     unsigned char pixel[4] = {
-        static_cast<unsigned char>(color.red()),
-        static_cast<unsigned char>(color.green()),
-        static_cast<unsigned char>(color.blue()),
-        static_cast<unsigned char>(color.alpha())
-    };
+        static_cast<unsigned char>(color.red()), static_cast<unsigned char>(color.green()),
+        static_cast<unsigned char>(color.blue()), static_cast<unsigned char>(color.alpha())};
 
     VipsImage* tile = vips_image_new_from_memory_copy(pixel, 4, 1, 1, 4, VIPS_FORMAT_UCHAR);
     if (!tile)
@@ -152,7 +149,8 @@ static VipsImage* createSolidCanvas(int width, int height, const QColor& color)
     return canvas;
 }
 
-static bool saveVipsImage(VipsImage* image, const QString& outputPath, const QString& format, int quality)
+static bool saveVipsImage(VipsImage* image, const QString& outputPath, const QString& format,
+                          int quality)
 {
     QString fmt = format.toLower();
     if (fmt.isEmpty())
@@ -199,8 +197,7 @@ static QSize limitLongEdge(const QSize& orig, int maxLongEdge)
 }
 
 static QList<VipsImageInfo> loadAndPrepareImages(const QStringList& filePaths,
-                                                  const StitchSettings& settings,
-                                                  int maxLongEdge)
+                                                 const StitchSettings& settings, int maxLongEdge)
 {
     QList<VipsImageInfo> infos;
 
@@ -257,30 +254,43 @@ static QList<VipsImageInfo> loadAndPrepareImages(const QStringList& filePaths,
         int displayH = limited.height();
 
         VipsImage* scaled = img;
-        if (settings.direction == StitchSettings::Vertical && settings.uniformWidth && targetCellW > 0) {
-            VipsImage* tmp = resizeVipsImage(img, targetCellW,
+        if (settings.direction == StitchSettings::Vertical && settings.uniformWidth &&
+            targetCellW > 0) {
+            VipsImage* tmp = resizeVipsImage(
+                img, targetCellW,
                 qRound(orig.height() * (static_cast<double>(targetCellW) / orig.width())), true);
             if (tmp) {
-                g_object_unref(scaled);
+                // 只转移指针，不要在这里 unref：tmp 的管线已持有对 img 的依赖引用，
+                // 对 img 的释放统一交给循环末尾的 `if (scaled != img)` 处理，
+                // 否则会对 img 重复 unref，导致其被提前销毁（use-after-free）。
                 scaled = tmp;
             }
-        } else if (settings.direction == StitchSettings::Horizontal && settings.uniformHeight && targetCellH > 0) {
-            VipsImage* tmp = resizeVipsImage(img,
-                qRound(orig.width() * (static_cast<double>(targetCellH) / orig.height())), targetCellH, true);
+        } else if (settings.direction == StitchSettings::Horizontal && settings.uniformHeight &&
+                   targetCellH > 0) {
+            VipsImage* tmp = resizeVipsImage(
+                img, qRound(orig.width() * (static_cast<double>(targetCellH) / orig.height())),
+                targetCellH, true);
             if (tmp) {
-                g_object_unref(scaled);
+                // 只转移指针，不要在这里 unref：tmp 的管线已持有对 img 的依赖引用，
+                // 对 img 的释放统一交给循环末尾的 `if (scaled != img)` 处理，
+                // 否则会对 img 重复 unref，导致其被提前销毁（use-after-free）。
                 scaled = tmp;
             }
-        } else if (settings.direction == StitchSettings::Grid && targetCellW > 0 && targetCellH > 0) {
+        } else if (settings.direction == StitchSettings::Grid && targetCellW > 0 &&
+                   targetCellH > 0) {
             VipsImage* tmp = resizeVipsImage(img, targetCellW, targetCellH, true);
             if (tmp) {
-                g_object_unref(scaled);
+                // 只转移指针，不要在这里 unref：tmp 的管线已持有对 img 的依赖引用，
+                // 对 img 的释放统一交给循环末尾的 `if (scaled != img)` 处理，
+                // 否则会对 img 重复 unref，导致其被提前销毁（use-after-free）。
                 scaled = tmp;
             }
         } else if (maxLongEdge > 0 && (orig.width() != displayW || orig.height() != displayH)) {
             VipsImage* tmp = resizeVipsImage(img, displayW, displayH, true);
             if (tmp) {
-                g_object_unref(scaled);
+                // 只转移指针，不要在这里 unref：tmp 的管线已持有对 img 的依赖引用，
+                // 对 img 的释放统一交给循环末尾的 `if (scaled != img)` 处理，
+                // 否则会对 img 重复 unref，导致其被提前销毁（use-after-free）。
                 scaled = tmp;
             }
         }
@@ -300,8 +310,9 @@ static QList<VipsImageInfo> loadAndPrepareImages(const QStringList& filePaths,
     return infos;
 }
 
-static VipsImage* stitchVipsImages(const QList<VipsImageInfo>& infos, const StitchSettings& settings,
-                                    QVector<QRect>* outRects = nullptr)
+static VipsImage* stitchVipsImages(const QList<VipsImageInfo>& infos,
+                                   const StitchSettings& settings,
+                                   QVector<QRect>* outRects = nullptr)
 {
     if (infos.isEmpty())
         return nullptr;
@@ -338,7 +349,8 @@ static VipsImage* stitchVipsImages(const QList<VipsImageInfo>& infos, const Stit
     if (totalWidth <= 0 || totalHeight <= 0)
         return nullptr;
 
-    QColor bgColor = settings.background == QStringLiteral("transparent") ? Qt::transparent : settings.bgColor;
+    QColor bgColor =
+        settings.background == QStringLiteral("transparent") ? Qt::transparent : settings.bgColor;
     VipsImage* canvas = createSolidCanvas(totalWidth, totalHeight, bgColor);
     if (!canvas)
         return nullptr;
@@ -402,18 +414,15 @@ static void freeVipsImageInfos(QList<VipsImageInfo>& infos)
     infos.clear();
 }
 
-// 估算 Stitch 最终输出像素数，用于在分配巨大画布前拒绝危险操作。
-// 仅读取图片头信息估算最终输出尺寸，不加载像素数据。
-static QSize estimateOutputSize(const QStringList& filePaths, const StitchSettings& settings)
+/**
+ * 纯内存的输出尺寸估算：只依赖已知的图片尺寸，不做任何 I/O。
+ *
+ * 与 estimateOutputSize(paths) 的区别在于输入来源：
+ * 后者要逐个打开文件读图片头，在主线程上对上百张图调用会造成明显卡顿；
+ * UI 侧（状态栏）应当传入已缓存的尺寸，走这个纯计算版本。
+ */
+static QSize estimateOutputSizeFromSizes(const QList<QSize>& sizes, const StitchSettings& settings)
 {
-    QList<QSize> sizes;
-    sizes.reserve(filePaths.size());
-    for (const QString& path : filePaths) {
-        ImageInfo info = ImageLoader::loadInfo(path);
-        if (info.valid)
-            sizes.append(QSize(info.width, info.height));
-    }
-
     const int n = sizes.size();
     if (n == 0)
         return QSize();
@@ -456,11 +465,25 @@ static QSize estimateOutputSize(const QStringList& filePaths, const StitchSettin
         maxW = qMax(maxW, s.width());
         maxH = qMax(maxH, s.height());
     }
-    qint64 totalW = qint64(settings.gridColumns) * maxW
-                    + qint64(settings.gridColumns - 1) * settings.spacing;
-    qint64 totalH = qint64(settings.gridRows) * maxH
-                    + qint64(settings.gridRows - 1) * settings.spacing;
+    qint64 totalW =
+        qint64(settings.gridColumns) * maxW + qint64(settings.gridColumns - 1) * settings.spacing;
+    qint64 totalH =
+        qint64(settings.gridRows) * maxH + qint64(settings.gridRows - 1) * settings.spacing;
     return QSize(int(totalW), int(totalH));
+}
+
+// 估算 Stitch 最终输出像素数，用于在分配巨大画布前拒绝危险操作。
+// 仅读取图片头信息估算最终输出尺寸，不加载像素数据。
+static QSize estimateOutputSize(const QStringList& filePaths, const StitchSettings& settings)
+{
+    QList<QSize> sizes;
+    sizes.reserve(filePaths.size());
+    for (const QString& path : filePaths) {
+        ImageInfo info = ImageLoader::loadInfo(path);
+        if (info.valid)
+            sizes.append(QSize(info.width, info.height));
+    }
+    return estimateOutputSizeFromSizes(sizes, settings);
 }
 
 // 估算 Stitch 最终输出像素数，用于在分配巨大画布前拒绝危险操作。
@@ -471,7 +494,7 @@ static qint64 estimateOutputPixels(const QStringList& filePaths, const StitchSet
 }
 
 static QImage vipsStitchPreview(const QStringList& filePaths, const StitchSettings& settings,
-                                 int maxLongEdge, QVector<QRect>* outRects = nullptr)
+                                int maxLongEdge, QVector<QRect>* outRects = nullptr)
 {
     QList<VipsImageInfo> infos = loadAndPrepareImages(filePaths, settings, maxLongEdge);
     VipsImage* stitched = stitchVipsImages(infos, settings, outRects);
@@ -488,7 +511,8 @@ static QImage vipsStitchPreview(const QStringList& filePaths, const StitchSettin
     return result;
 }
 
-static bool vipsStitchProcess(const QStringList& filePaths, const StitchSettings& settings, const QString& outputPath)
+static bool vipsStitchProcess(const QStringList& filePaths, const StitchSettings& settings,
+                              const QString& outputPath)
 {
     QList<VipsImageInfo> infos = loadAndPrepareImages(filePaths, settings, 0);
     VipsImage* stitched = stitchVipsImages(infos, settings);
@@ -504,36 +528,49 @@ static bool vipsStitchProcess(const QStringList& filePaths, const StitchSettings
 
 #endif // USE_LIBVIPS
 
-StitchEngine::StitchEngine(QObject* parent)
-    : QObject(parent)
-{
-}
+StitchEngine::StitchEngine(QObject* parent) : QObject(parent) {}
 
 QString StitchEngine::process(const QStringList& filePaths, bool* ok)
 {
-    if (ok) *ok = false;
+    if (ok)
+        *ok = false;
     if (filePaths.isEmpty()) {
+        ErrorHandler::instance().report(ErrorCode::EMPTY_FOLDER, tr("No images to stitch"));
         emit error(tr("No images to stitch"));
         return QString();
     }
 
     QString outputPath = m_settings.explicitOutputPath;
+    // reserved 表示该路径由本函数原子占位（而非用户显式指定），
+    // 写入失败时才可以安全地清理占位文件。
+    bool reserved = false;
     if (outputPath.isEmpty()) {
         QString dir = m_settings.outputDir;
         if (dir.isEmpty())
             dir = QFileInfo(filePaths.first()).absolutePath();
 
         QString suffix = QStringLiteral(".") + m_settings.outputFormat.toLower();
-        outputPath = FileUtils::generateUniqueOutputPath(dir, m_settings.baseName, suffix);
+        outputPath = FileUtils::reserveUniqueOutputPath(dir, m_settings.baseName, suffix);
+        reserved = !outputPath.isEmpty();
+    }
+    if (outputPath.isEmpty()) {
+        ErrorHandler::instance().report(ErrorCode::PERMISSION_DENIED, m_settings.baseName);
+        emit error(tr("Failed to create output file"));
+        return QString();
     }
 
     // 输出尺寸安全阈值：在分配画布前拒绝会导致虚拟内存暴涨的危险操作。
     constexpr qint64 kMaxOutputPixels = 1'000'000'000LL; // 约 4GB ARGB
     const qint64 estimatedPixels = estimateOutputPixels(filePaths, m_settings);
     if (estimatedPixels > kMaxOutputPixels) {
+        ErrorHandler::instance().report(ErrorCode::OUTPUT_TOO_LARGE,
+                                        QString::number(estimatedPixels));
         emit error(tr("Stitched image too large: estimated %1 pixels (limit %2). "
                       "Please reduce image count, resolution, or enable downscaling.")
-                       .arg(estimatedPixels).arg(kMaxOutputPixels));
+                       .arg(estimatedPixels)
+                       .arg(kMaxOutputPixels));
+        if (reserved)
+            FileUtils::discardReservedPath(outputPath);
         return QString();
     }
 
@@ -544,7 +581,8 @@ QString StitchEngine::process(const QStringList& filePaths, bool* ok)
     if (!m_settings.removeWhiteEdges) {
         if (!m_settings.autoCropEdges) {
             if (vipsStitchProcess(filePaths, m_settings, outputPath)) {
-                if (ok) *ok = true;
+                if (ok)
+                    *ok = true;
                 emit finished(outputPath);
                 return outputPath;
             }
@@ -552,8 +590,10 @@ QString StitchEngine::process(const QStringList& filePaths, bool* ok)
             QImage result = vipsStitchPreview(filePaths, m_settings, 0);
             if (!result.isNull()) {
                 result = cropWhiteEdges(result);
-                if (ImageLoader::saveImage(result, outputPath, m_settings.outputFormat, m_settings.quality)) {
-                    if (ok) *ok = true;
+                if (ImageLoader::saveImage(result, outputPath, m_settings.outputFormat,
+                                           m_settings.quality)) {
+                    if (ok)
+                        *ok = true;
                     emit finished(outputPath);
                     return outputPath;
                 }
@@ -565,24 +605,30 @@ QString StitchEngine::process(const QStringList& filePaths, bool* ok)
 
     QImage result = preview(filePaths, m_settings);
     if (result.isNull()) {
+        if (reserved)
+            FileUtils::discardReservedPath(outputPath);
         emit error(tr("Failed to generate stitched image"));
         return QString();
     }
 
-    bool saved = ImageLoader::saveImage(result, outputPath, m_settings.outputFormat, m_settings.quality);
+    bool saved =
+        ImageLoader::saveImage(result, outputPath, m_settings.outputFormat, m_settings.quality);
 
     if (!saved) {
+        if (reserved)
+            FileUtils::discardReservedPath(outputPath);
         emit error(tr("Failed to save stitched image"));
         return QString();
     }
 
-    if (ok) *ok = true;
+    if (ok)
+        *ok = true;
     emit finished(outputPath);
     return outputPath;
 }
 
 QImage StitchEngine::preview(const QStringList& filePaths, const StitchSettings& settings,
-                              int maxLongEdge, QVector<QRect>* inputRects)
+                             int maxLongEdge, QVector<QRect>* inputRects)
 {
     if (inputRects)
         inputRects->clear();
@@ -686,7 +732,8 @@ QImage StitchEngine::preview(const QStringList& filePaths, const StitchSettings&
     }
 
     QImage result(totalWidth, totalHeight, QImage::Format_ARGB32);
-    QColor bg = settings.background == QStringLiteral("transparent") ? Qt::transparent : settings.bgColor;
+    QColor bg =
+        settings.background == QStringLiteral("transparent") ? Qt::transparent : settings.bgColor;
     result.fill(bg);
 
     QPainter painter(&result);
@@ -741,6 +788,11 @@ QImage StitchEngine::preview(const QStringList& filePaths, const StitchSettings&
 QSize StitchEngine::estimateOutputSize(const QStringList& filePaths, const StitchSettings& settings)
 {
     return ::yingtu::estimateOutputSize(filePaths, settings);
+}
+
+QSize StitchEngine::estimateOutputSize(const QList<QSize>& sizes, const StitchSettings& settings)
+{
+    return estimateOutputSizeFromSizes(sizes, settings);
 }
 
 } // namespace yingtu

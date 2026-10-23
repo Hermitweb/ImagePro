@@ -18,8 +18,8 @@ public:
     explicit PreviewWidget(QWidget* parent = nullptr);
 
     void setImage(const QImage& image);
-    void setSourcePath(const QString& path, int rotation = 0,
-                       bool flippedHorizontal = false, bool flippedVertical = false);
+    void setSourcePath(const QString& path, int rotation = 0, bool flippedHorizontal = false,
+                       bool flippedVertical = false);
     void clear();
 
     void setZoom(double factor);
@@ -70,6 +70,8 @@ protected:
     void wheelEvent(QWheelEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     void contextMenuEvent(QContextMenuEvent* event) override;
+    // 语言切换：重新套用常驻文本。
+    void changeEvent(QEvent* event) override;
 
 private:
     void updatePixmap();

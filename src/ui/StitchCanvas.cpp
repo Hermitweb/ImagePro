@@ -44,9 +44,11 @@ QRect rotateRect(const QRect& rect, const QSize& origSize, int rotation)
 {
     switch (rotation) {
     case 90:
-        return QRect(origSize.height() - 1 - rect.bottom(), rect.left(), rect.height(), rect.width());
+        return QRect(origSize.height() - 1 - rect.bottom(), rect.left(), rect.height(),
+                     rect.width());
     case 180:
-        return QRect(origSize.width() - 1 - rect.right(), origSize.height() - 1 - rect.bottom(), rect.width(), rect.height());
+        return QRect(origSize.width() - 1 - rect.right(), origSize.height() - 1 - rect.bottom(),
+                     rect.width(), rect.height());
     case 270:
         return QRect(rect.top(), origSize.width() - 1 - rect.right(), rect.height(), rect.width());
     default:
@@ -59,8 +61,7 @@ QRect rotateRect(const QRect& rect, const QSize& origSize, int rotation)
 class StitchCanvas::SpotlightWindow : public QWidget
 {
 public:
-    explicit SpotlightWindow(QWidget* parent = nullptr)
-        : QWidget(parent, Qt::Tool)
+    explicit SpotlightWindow(QWidget* parent = nullptr) : QWidget(parent, Qt::Tool)
     {
         setMinimumSize(200, 200);
         setMaximumSize(800, 800);
@@ -107,8 +108,10 @@ protected:
         if (!m_image.isNull()) {
             double srcW = viewRect.width() / m_zoom;
             double srcH = viewRect.height() / m_zoom;
-            double srcX = qBound(0.0, m_center.x() - srcW / 2.0, qMax(0.0, double(m_image.width()) - srcW));
-            double srcY = qBound(0.0, m_center.y() - srcH / 2.0, qMax(0.0, double(m_image.height()) - srcH));
+            double srcX =
+                qBound(0.0, m_center.x() - srcW / 2.0, qMax(0.0, double(m_image.width()) - srcW));
+            double srcY =
+                qBound(0.0, m_center.y() - srcH / 2.0, qMax(0.0, double(m_image.height()) - srcH));
             painter.drawImage(viewRect, m_image, QRectF(srcX, srcY, srcW, srcH));
         } else {
             painter.fillRect(viewRect, palette().color(QPalette::Base));
@@ -128,7 +131,8 @@ protected:
             y = qBound(0, qRound(m_center.y()), m_image.height() - 1);
             if (m_colorPicker) {
                 QColor c(m_image.pixel(x, y));
-                rgbText = QStringLiteral("  RGB(%1,%2,%3)").arg(c.red()).arg(c.green()).arg(c.blue());
+                rgbText =
+                    QStringLiteral("  RGB(%1,%2,%3)").arg(c.red()).arg(c.green()).arg(c.blue());
             }
         }
 
@@ -166,10 +170,7 @@ protected:
     }
 
 private:
-    void updateTitle()
-    {
-        setWindowTitle(StitchCanvas::tr("%1 @%2x").arg(m_name).arg(m_zoom));
-    }
+    void updateTitle() { setWindowTitle(StitchCanvas::tr("%1 @%2x").arg(m_name).arg(m_zoom)); }
 
     static constexpr int kInfoHeight = 24;
 
@@ -180,8 +181,7 @@ private:
     bool m_colorPicker = false;
 };
 
-StitchCanvas::StitchCanvas(QWidget* parent)
-    : QWidget(parent)
+StitchCanvas::StitchCanvas(QWidget* parent) : QWidget(parent)
 {
     setAttribute(Qt::WA_Hover, true);
     setAcceptDrops(true);
@@ -191,9 +191,10 @@ StitchCanvas::StitchCanvas(QWidget* parent)
     m_tooltipTimer->setSingleShot(true);
     m_tooltipTimer->setInterval(200);
     connect(m_tooltipTimer, &QTimer::timeout, this, [this]() {
-        if (m_hoveredIndex >= 0 && m_hoveredIndex < m_inputRects.size() && m_hoveredIndex != m_highlightedIndex) {
+        if (m_hoveredIndex >= 0 && m_hoveredIndex < m_inputRects.size() &&
+            m_hoveredIndex != m_highlightedIndex) {
             QToolTip::showText(QCursor::pos(),
-                               tr("输入图 %1：%2×%3")
+                               tr("Input %1: %2×%3")
                                    .arg(m_hoveredIndex + 1)
                                    .arg(m_inputRects[m_hoveredIndex].width())
                                    .arg(m_inputRects[m_hoveredIndex].height()),
@@ -329,11 +330,13 @@ void StitchCanvas::updateDisplayData()
     transform.rotate(m_viewRotation);
     m_image = m_originalImage.transformed(transform, Qt::SmoothTransformation);
     m_synthesizedSize = rotatedSize(m_originalSynthesizedSize, m_viewRotation);
-    m_imageScale = m_synthesizedSize.isEmpty() ? 1.0 : m_image.width() / double(m_synthesizedSize.width());
+    m_imageScale =
+        m_synthesizedSize.isEmpty() ? 1.0 : m_image.width() / double(m_synthesizedSize.width());
 
     m_inputRects.resize(m_originalInputRects.size());
     for (int i = 0; i < m_originalInputRects.size(); ++i)
-        m_inputRects[i] = rotateRect(m_originalInputRects[i], m_originalSynthesizedSize, m_viewRotation);
+        m_inputRects[i] =
+            rotateRect(m_originalInputRects[i], m_originalSynthesizedSize, m_viewRotation);
 }
 
 void StitchCanvas::paintEvent(QPaintEvent*)
@@ -345,7 +348,8 @@ void StitchCanvas::paintEvent(QPaintEvent*)
 
     if (m_image.isNull()) {
         painter.setPen(palette().color(QPalette::Text));
-        QString text = m_draggingOver ? tr("释放以加入拼接") : tr("点击或拖入图片到合成图");
+        QString text =
+            m_draggingOver ? tr("Release to add to the canvas") : tr("Click or drag images here");
         painter.drawText(rect(), Qt::AlignCenter, text);
 
         if (m_draggingOver) {
@@ -735,8 +739,8 @@ QPointF StitchCanvas::widgetToImage(const QPointF& pos) const
 
 QPointF StitchCanvas::imageToWidget(const QPointF& pos) const
 {
-    return m_imageRect.topLeft() + QPointF(pos.x() * m_imageScale * m_zoomFactor,
-                                           pos.y() * m_imageScale * m_zoomFactor);
+    return m_imageRect.topLeft() +
+           QPointF(pos.x() * m_imageScale * m_zoomFactor, pos.y() * m_imageScale * m_zoomFactor);
 }
 
 QRectF StitchCanvas::mapRectToWidget(const QRect& rect) const
@@ -945,17 +949,17 @@ QString StitchCanvas::buttonTooltip(int action) const
 {
     switch (action) {
     case 0:
-        return tr("左旋");
+        return tr("Rotate Left");
     case 1:
-        return tr("右旋");
+        return tr("Rotate Right");
     case 2:
-        return tr("水平翻转");
+        return tr("Flip Horizontal");
     case 3:
-        return tr("垂直翻转");
+        return tr("Flip Vertical");
     case 4:
-        return tr("移除");
+        return tr("Remove");
     case 5:
-        return tr("信息");
+        return tr("Info");
     default:
         return QString();
     }
@@ -999,7 +1003,7 @@ void StitchCanvas::openSpotlight(int index, const QPointF& imagePos)
     }
 
     QImage image = loadOriginalImage(index);
-    QString name = tr("输入图 %1").arg(index + 1);
+    QString name = tr("Input %1").arg(index + 1);
     if (m_model && index >= 0 && index < m_model->rowCount()) {
         const ImageItem* item = m_model->itemAt(index);
         if (item && !item->displayName().isEmpty())

@@ -3,6 +3,7 @@
 #include "StitchPreset.h"
 #include <QList>
 #include <QString>
+#include <QStringList>
 
 namespace yingtu {
 

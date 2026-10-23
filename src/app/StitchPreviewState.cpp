@@ -4,10 +4,7 @@
 
 namespace yingtu {
 
-StitchPreviewState::StitchPreviewState(QObject* parent)
-    : QObject(parent)
-{
-}
+StitchPreviewState::StitchPreviewState(QObject* parent) : QObject(parent) {}
 
 StitchPreviewState& StitchPreviewState::instance()
 {
@@ -28,9 +25,8 @@ int StitchPreviewState::highlightedIndex() const
 void StitchPreviewState::setHighlightedIndex(int index)
 {
     if (QThread::currentThread() != thread()) {
-        QMetaObject::invokeMethod(this, [this, index]() {
-            setHighlightedIndex(index);
-        }, Qt::QueuedConnection);
+        QMetaObject::invokeMethod(
+            this, [this, index]() { setHighlightedIndex(index); }, Qt::QueuedConnection);
         return;
     }
 
@@ -69,9 +65,9 @@ bool StitchPreviewState::isSpotlight() const
 void StitchPreviewState::transitionTo(State state, int highlightedIndex)
 {
     if (QThread::currentThread() != thread()) {
-        QMetaObject::invokeMethod(this, [this, state, highlightedIndex]() {
-            transitionTo(state, highlightedIndex);
-        }, Qt::QueuedConnection);
+        QMetaObject::invokeMethod(
+            this, [this, state, highlightedIndex]() { transitionTo(state, highlightedIndex); },
+            Qt::QueuedConnection);
         return;
     }
 

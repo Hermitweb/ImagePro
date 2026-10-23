@@ -2,10 +2,7 @@
 
 namespace yingtu {
 
-ImageProError::ImageProError(ErrorCode code)
-    : m_code(code)
-{
-}
+ImageProError::ImageProError(ErrorCode code) : m_code(code) {}
 
 ErrorCode ImageProError::code() const
 {

@@ -1,4 +1,5 @@
 #include "ConvertEngine.h"
+#include "utils/ErrorHandler.h"
 #include "utils/FileUtils.h"
 #include "utils/ImageLoader.h"
 #include <QColorSpace>
@@ -23,7 +24,11 @@ static QByteArray readJpegExif(const QByteArray& data)
         if (marker == 0xD9 || marker == 0xDA) // EOI or SOS
             break;
         if (marker == 0xE1) {
-            int len = (static_cast<quint8>(data.at(i + 2)) << 8) | static_cast<quint8>(data.at(i + 3));
+            // 用无符号量做移位与按位或：quint8 提升为 int 后参与位运算，
+            // 会对有符号整数做按位操作（实现定义行为，且 clang-tidy 会告警）。
+            const int len = static_cast<int>(
+                (static_cast<unsigned>(static_cast<quint8>(data.at(i + 2))) << 8u) |
+                static_cast<unsigned>(static_cast<quint8>(data.at(i + 3))));
             if (i + 2 + len <= data.size())
                 return data.mid(i, len + 2);
             break;
@@ -32,7 +37,9 @@ static QByteArray readJpegExif(const QByteArray& data)
             ++i;
             continue;
         }
-        int len = (static_cast<quint8>(data.at(i + 2)) << 8) | static_cast<quint8>(data.at(i + 3));
+        const int len =
+            static_cast<int>((static_cast<unsigned>(static_cast<quint8>(data.at(i + 2))) << 8u) |
+                             static_cast<unsigned>(static_cast<quint8>(data.at(i + 3))));
         i += 2 + len;
     }
     return QByteArray();
@@ -48,7 +55,8 @@ static bool insertJpegExif(const QString& path, const QByteArray& exif)
     QByteArray data = file.readAll();
     file.close();
 
-    if (data.size() < 2 || static_cast<quint8>(data.at(0)) != 0xFF || static_cast<quint8>(data.at(1)) != 0xD8)
+    if (data.size() < 2 || static_cast<quint8>(data.at(0)) != 0xFF ||
+        static_cast<quint8>(data.at(1)) != 0xD8)
         return false;
 
     QByteArray out;
@@ -63,15 +71,14 @@ static bool insertJpegExif(const QString& path, const QByteArray& exif)
     return true;
 }
 
-ConvertEngine::ConvertEngine(QObject* parent)
-    : QObject(parent)
-{
-}
+ConvertEngine::ConvertEngine(QObject* parent) : QObject(parent) {}
 
 QStringList ConvertEngine::process(const QStringList& filePaths, bool* ok)
 {
-    if (ok) *ok = false;
+    if (ok)
+        *ok = false;
     if (filePaths.isEmpty()) {
+        ErrorHandler::instance().report(ErrorCode::EMPTY_FOLDER, tr("No images to convert"));
         emit error(tr("No images to convert"));
         return QStringList();
     }
@@ -82,7 +89,16 @@ QStringList ConvertEngine::process(const QStringList& filePaths, bool* ok)
         const QString& path = filePaths.at(i);
         QFileInfo fi(path);
 
+        if (!fi.exists()) {
+            ErrorHandler::instance().report(ErrorCode::FILE_NOT_FOUND, path);
+            emit progress(qRound((i + 1) * 100.0 / total));
+            continue;
+        }
+
         QString outputPath;
+        // reserved 表示该路径由本函数原子占位（而非用户显式指定），
+        // 写入失败时才可以安全地清理占位文件。
+        bool reserved = false;
         if (!m_settings.explicitOutputPath.isEmpty() && filePaths.size() == 1) {
             outputPath = m_settings.explicitOutputPath;
         } else {
@@ -91,16 +107,26 @@ QStringList ConvertEngine::process(const QStringList& filePaths, bool* ok)
                 dir = m_settings.outputDir.isEmpty() ? fi.absolutePath() : m_settings.outputDir;
             QString baseName = fi.completeBaseName();
             QString suffix = QStringLiteral(".") + m_settings.targetFormat.toLower();
-            outputPath = FileUtils::generateUniqueOutputPath(dir, baseName, suffix);
+            outputPath = FileUtils::reserveUniqueOutputPath(dir, baseName, suffix);
+            reserved = !outputPath.isEmpty();
         }
 
-        if (convertSingle(path, outputPath))
+        if (outputPath.isEmpty()) {
+            ErrorHandler::instance().report(ErrorCode::PERMISSION_DENIED, fi.absolutePath());
+        } else if (convertSingle(path, outputPath)) {
             outputPaths.append(outputPath);
+        } else {
+            // 写入失败：清理占位文件，避免留下 0 字节的「假成功」产物。
+            if (reserved)
+                FileUtils::discardReservedPath(outputPath);
+            ErrorHandler::instance().report(ErrorCode::WRITE_FAILED, path);
+        }
 
         emit progress(qRound((i + 1) * 100.0 / total));
     }
 
-    if (ok) *ok = !outputPaths.isEmpty();
+    if (ok)
+        *ok = !outputPaths.isEmpty();
     emit finished(outputPaths);
     return outputPaths;
 }

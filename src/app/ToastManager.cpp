@@ -12,10 +12,8 @@
 namespace yingtu {
 
 ToastWidget::ToastWidget(ErrorLevel level, const QString& message, int timeoutMs, QWidget* parent)
-    : QWidget(parent, Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Tool)
-    , m_level(level)
-    , m_message(message)
-    , m_timeoutMs(timeoutMs)
+    : QWidget(parent, Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Tool),
+      m_level(level), m_message(message), m_timeoutMs(timeoutMs)
 {
     setupUI();
 
@@ -38,11 +36,10 @@ void ToastWidget::setupUI()
     const QString bgColor = isDark ? QStringLiteral("#2D2D2D") : QStringLiteral("#FFFFFF");
     const QString textColor = isDark ? QStringLiteral("#FFFFFF") : QStringLiteral("#333333");
 
-    container->setStyleSheet(QStringLiteral(
-        "background-color: %1;"
-        "color: %2;"
-        "border-left: 4px solid %3;"
-        "border-radius: 6px;")
+    container->setStyleSheet(QStringLiteral("background-color: %1;"
+                                            "color: %2;"
+                                            "border-left: 4px solid %3;"
+                                            "border-radius: 6px;")
                                  .arg(bgColor, textColor, borderColor.name()));
 
     QHBoxLayout* layout = new QHBoxLayout(container);
@@ -64,7 +61,8 @@ void ToastWidget::setupUI()
         break;
     }
     iconLabel->setText(iconText);
-    iconLabel->setStyleSheet(QStringLiteral("color: %1; border: none; font-size: 16px;").arg(borderColor.name()));
+    iconLabel->setStyleSheet(
+        QStringLiteral("color: %1; border: none; font-size: 16px;").arg(borderColor.name()));
     layout->addWidget(iconLabel);
 
     QLabel* messageLabel = new QLabel(m_message, container);
@@ -86,10 +84,7 @@ ToastManager& ToastManager::instance()
     return manager;
 }
 
-ToastManager::ToastManager(QObject* parent)
-    : QObject(parent)
-{
-}
+ToastManager::ToastManager(QObject* parent) : QObject(parent) {}
 
 void ToastManager::show(ErrorLevel level, const QString& message, QWidget* parent)
 {
@@ -112,7 +107,8 @@ void ToastManager::show(ErrorLevel level, const QString& message, QWidget* paren
     repositionToasts();
     toast->show();
 
-    QPropertyAnimation* fadeIn = new QPropertyAnimation(toast, QByteArrayLiteral("windowOpacity"), toast);
+    QPropertyAnimation* fadeIn =
+        new QPropertyAnimation(toast, QByteArrayLiteral("windowOpacity"), toast);
     fadeIn->setDuration(200);
     fadeIn->setStartValue(0.0);
     fadeIn->setEndValue(1.0);

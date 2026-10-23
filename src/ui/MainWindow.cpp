@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "app/ImageProApp.h"
 #include "ImageEditorWidget.h"
 #include "ImageListWidget.h"
 #include "PreviewWidget.h"
@@ -6,7 +7,6 @@
 #include "StatusBarWidget.h"
 #include "ToolBarWidget.h"
 #include "dialogs/ResultDialog.h"
-#include "app/ImageProApp.h"
 #include "app/ThemeManager.h"
 #include "app/ToastManager.h"
 #include "app/VpkUpdateManager.h"
@@ -17,9 +17,11 @@
 #include "core/ResizeEngine.h"
 #include "core/StitchEngine.h"
 #include "core/WatermarkEngine.h"
+#include "utils/ErrorHandler.h"
 #include "utils/FileUtils.h"
 #include "utils/FlowLayout.h"
 #include "utils/ImageLoader.h"
+#include "utils/ImageProError.h"
 #include <QApplication>
 #include <QCoreApplication>
 #include <QCloseEvent>
@@ -47,6 +49,10 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <QtConcurrent>
+
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
 
 #ifndef IMAGEPRO_VERSION
 #define IMAGEPRO_VERSION "0.0.0-unknown"
@@ -100,10 +106,11 @@ static QString buildImageSaveFilter(const QString& preferredFmt)
         QString text;
     };
     const QList<FilterEntry> entries = {
-        { QStringLiteral("jpeg"), QCoreApplication::translate(context, "JPEG Images (*.jpg *.jpeg)") },
-        { QStringLiteral("png"), QCoreApplication::translate(context, "PNG Images (*.png)") },
-        { QStringLiteral("bmp"), QCoreApplication::translate(context, "BMP Images (*.bmp)") },
-        { QStringLiteral("webp"), QCoreApplication::translate(context, "WebP Images (*.webp)") },
+        {QStringLiteral("jpeg"),
+         QCoreApplication::translate(context, "JPEG Images (*.jpg *.jpeg)")},
+        {QStringLiteral("png"), QCoreApplication::translate(context, "PNG Images (*.png)")},
+        {QStringLiteral("bmp"), QCoreApplication::translate(context, "BMP Images (*.bmp)")},
+        {QStringLiteral("webp"), QCoreApplication::translate(context, "WebP Images (*.webp)")},
     };
 
     QStringList filters;
@@ -160,7 +167,7 @@ static PreviewTaskResult generatePreview(const PreviewTaskInput& input)
         const int stitchMaxLongEdge = qMax(input.previewSize.width(), input.previewSize.height());
         // 引擎直接返回每张输入图在拼接图中的真实矩形，无需在 UI 层等分猜测。
         result.image = StitchEngine::preview(input.allFilePaths, input.stitchSettings,
-                                              stitchMaxLongEdge, &result.stitchInputRects);
+                                             stitchMaxLongEdge, &result.stitchInputRects);
         break;
     }
     case ToolType::Compress: {
@@ -190,6 +197,9 @@ static PreviewTaskResult generatePreview(const PreviewTaskInput& input)
         ImageItem item(input.currentFilePath, false);
         item.reloadInfo();
         result.image = item.loadImage();
+        // 供 onPreviewFinished 判断编辑器当前绑定的文档是否变化，
+        // 从而决定是否清空标注与历史（同一文档的预览刷新不能清）。
+        result.sourcePath = input.currentFilePath;
         break;
     }
     default:
@@ -199,13 +209,21 @@ static PreviewTaskResult generatePreview(const PreviewTaskInput& input)
     return result;
 }
 
-MainWindow::MainWindow(QWidget* parent)
-    : QMainWindow(parent)
+MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
 {
-    setWindowTitle(tr("影图"));
+    setWindowTitle(tr("ImagePro"));
     setWindowIcon(QIcon(QStringLiteral(":/icons/app.png")));
     resize(1280, 800);
     setMinimumSize(800, 600);
+
+    // 恢复上次关闭时的窗口几何。closeEvent 一直在保存 geometry，
+    // 但此前全项目没有任何地方读取它，属于无效持久化。
+    {
+        QSettings settings;
+        const QByteArray savedGeometry = settings.value(QStringLiteral("geometry")).toByteArray();
+        if (!savedGeometry.isEmpty())
+            restoreGeometry(savedGeometry);
+    }
 
     m_model = new ImageListModel(this);
 
@@ -220,10 +238,19 @@ MainWindow::MainWindow(QWidget* parent)
     m_previewDelayTimer->setInterval(200);
 
     m_previewWatcher = new QFutureWatcher<PreviewTaskResult>(this);
-    connect(m_previewWatcher, &QFutureWatcher<PreviewTaskResult>::finished,
-            this, &MainWindow::onPreviewFinished);
+    connect(m_previewWatcher, &QFutureWatcher<PreviewTaskResult>::finished, this,
+            &MainWindow::onPreviewFinished);
 
-    m_stitchSizeWatcher = new QFutureWatcher<QSize>(this);
+    // 统一错误上报 → 用户可见提示。
+    // 各引擎只负责 ErrorHandler::instance().report(ErrorCode)，如何呈现由 UI 层决定：
+    // 这样新增错误码无需改动引擎，且所有失败路径都有同一出口，不再静默失败。
+    // 引擎在工作线程上报时，这里通过队列连接回到主线程弹提示。
+    connect(&ErrorHandler::instance(), &ErrorHandler::errorOccurred, this,
+            [this](const ImageProError& error, const QString& /*detail*/) {
+                if (error.level() == ErrorLevel::Info)
+                    return; // 信息级只记日志，不打扰用户
+                ToastManager::instance().show(error.level(), error.message(), this);
+            });
 
     connectSignals();
 
@@ -246,6 +273,36 @@ MainWindow::MainWindow(QWidget* parent)
     }
 }
 
+void MainWindow::changeEvent(QEvent* event)
+{
+    QMainWindow::changeEvent(event);
+    if (event->type() == QEvent::LanguageChange && !ImageProApp::isLanguageSwitching())
+        retranslateUi();
+}
+
+void MainWindow::retranslateUi()
+{
+    setWindowTitle(tr("ImagePro"));
+
+    // 菜单栏整体重建：菜单项与动作加起来二十多条，逐条维护「控件 ↔ 源串」的
+    // 对应关系容易漏；重建则由 setupMenuBar 里的 tr() 自动产出新语言文本。
+    // QMenu::addAction(text, receiver, ...) 创建的动作以**菜单**为父对象，
+    // 随菜单销毁而回收，重建不会泄漏。
+    rebuildMenuBar();
+    rebuildPreviewToolBar();
+}
+
+void MainWindow::rebuildMenuBar()
+{
+    QMenuBar* bar = menuBar();
+    setMenuBar(nullptr);
+    if (bar) {
+        bar->clear();
+        bar->deleteLater();
+    }
+    setupMenuBar();
+}
+
 void MainWindow::setupMenuBar()
 {
     QMenuBar* bar = menuBar();
@@ -256,44 +313,66 @@ void MainWindow::setupMenuBar()
     fileMenu->addAction(tr("E&xit"), this, &QWidget::close, QKeySequence::Quit);
 
     QMenu* editMenu = bar->addMenu(tr("&Edit"));
-    editMenu->addAction(tr("&Undo"), this, [this]() {
-        if (m_editorWidget) m_editorWidget->undo();
-    }, QKeySequence::Undo);
-    editMenu->addAction(tr("&Redo"), this, [this]() {
-        if (m_editorWidget) m_editorWidget->redo();
-    }, QKeySequence::Redo);
+    editMenu->addAction(
+        tr("&Undo"), this,
+        [this]() {
+            if (m_editorWidget)
+                m_editorWidget->undo();
+        },
+        QKeySequence::Undo);
+    editMenu->addAction(
+        tr("&Redo"), this,
+        [this]() {
+            if (m_editorWidget)
+                m_editorWidget->redo();
+        },
+        QKeySequence::Redo);
 
     QMenu* toolMenu = bar->addMenu(tr("&Tools"));
-    toolMenu->addAction(tr("&Stitch"), this, [this]() { m_toolBar->setCurrentTool(ToolType::Stitch); }, Qt::Key_F1);
-    toolMenu->addAction(tr("&Convert"), this, [this]() { m_toolBar->setCurrentTool(ToolType::Convert); }, Qt::Key_F2);
-    toolMenu->addAction(tr("&Compress"), this, [this]() { m_toolBar->setCurrentTool(ToolType::Compress); }, Qt::Key_F3);
-    toolMenu->addAction(tr("&Watermark"), this, [this]() { m_toolBar->setCurrentTool(ToolType::Watermark); }, Qt::Key_F4);
-    toolMenu->addAction(tr("&Edit"), this, [this]() { m_toolBar->setCurrentTool(ToolType::Edit); }, Qt::Key_F5);
-    toolMenu->addAction(tr("&Resize"), this, [this]() { m_toolBar->setCurrentTool(ToolType::Resize); }, Qt::Key_F6);
-    toolMenu->addAction(tr("&Batch"), this, [this]() { m_toolBar->setCurrentTool(ToolType::Batch); }, Qt::Key_F7);
-    toolMenu->addAction(tr("&PDF"), this, [this]() { m_toolBar->setCurrentTool(ToolType::Pdf); }, Qt::Key_F8);
+    toolMenu->addAction(
+        tr("&Stitch"), this, [this]() { m_toolBar->setCurrentTool(ToolType::Stitch); }, Qt::Key_F1);
+    toolMenu->addAction(
+        tr("&Convert"), this, [this]() { m_toolBar->setCurrentTool(ToolType::Convert); },
+        Qt::Key_F2);
+    toolMenu->addAction(
+        tr("&Compress"), this, [this]() { m_toolBar->setCurrentTool(ToolType::Compress); },
+        Qt::Key_F3);
+    toolMenu->addAction(
+        tr("&Watermark"), this, [this]() { m_toolBar->setCurrentTool(ToolType::Watermark); },
+        Qt::Key_F4);
+    toolMenu->addAction(
+        tr("&Edit"), this, [this]() { m_toolBar->setCurrentTool(ToolType::Edit); }, Qt::Key_F5);
+    toolMenu->addAction(
+        tr("&Resize"), this, [this]() { m_toolBar->setCurrentTool(ToolType::Resize); }, Qt::Key_F6);
+    toolMenu->addAction(
+        tr("&Batch"), this, [this]() { m_toolBar->setCurrentTool(ToolType::Batch); }, Qt::Key_F7);
+    toolMenu->addAction(
+        tr("&PDF"), this, [this]() { m_toolBar->setCurrentTool(ToolType::Pdf); }, Qt::Key_F8);
 
     QMenu* viewMenu = bar->addMenu(tr("&View"));
-    viewMenu->addAction(tr("Toggle &Theme"), this, []() {
-        ThemeManager::instance().toggleTheme();
-    }, Qt::ALT + Qt::SHIFT + Qt::Key_D);
+    viewMenu->addAction(
+        tr("Toggle &Theme"), this, []() { ThemeManager::instance().toggleTheme(); },
+        Qt::ALT + Qt::SHIFT + Qt::Key_D);
 
     QMenu* langMenu = viewMenu->addMenu(tr("&Language"));
     QActionGroup* langGroup = new QActionGroup(langMenu);
     langGroup->setExclusive(true);
+    // 取一次并判空：下面循环里此前直接解引用 qobject_cast 的结果，
+    // 一旦 qApp 不是 ImageProApp 就是空指针解引用（同文件另一处已做判空）。
+    auto* imageProApp = qobject_cast<ImageProApp*>(qApp);
+    const QString currentLanguage = imageProApp ? imageProApp->currentLanguage() : QString();
     for (const QString& code : ImageProApp::supportedLanguages()) {
-        QAction* action = langMenu->addAction(ImageProApp::languageName(code), this, [this, code]() {
+        QAction* action = langMenu->addAction(ImageProApp::languageName(code), this, [code]() {
             auto* app = qobject_cast<ImageProApp*>(qApp);
             if (app && app->currentLanguage() != code) {
-                QSettings settings;
-                settings.setValue(QStringLiteral("language"), code);
-                QMessageBox::information(this, tr("Language Changed"),
-                    tr("The language setting has been changed. Please restart the application to apply."));
+                // 直接切换：setLanguage 会装/卸翻译器，Qt 随即向所有控件
+                // 投递 LanguageChange，各控件据此重译，无需重启应用。
+                app->setLanguage(code);
             }
         });
         action->setCheckable(true);
         action->setActionGroup(langGroup);
-        action->setChecked(qobject_cast<ImageProApp*>(qApp)->currentLanguage() == code);
+        action->setChecked(currentLanguage == code);
     }
 
     QMenu* helpMenu = bar->addMenu(tr("&Help"));
@@ -302,7 +381,8 @@ void MainWindow::setupMenuBar()
         if (!upd.isVelopackEnabled()) {
             QMessageBox::information(this, tr("Check for Updates"),
                                      tr("Auto-update is not available in this build.<br>"
-                                        "Current version: %1").arg(upd.currentVersion()));
+                                        "Current version: %1")
+                                         .arg(upd.currentVersion()));
             return;
         }
         ToastManager::instance().showInfo(tr("Checking for updates..."), this);
@@ -312,7 +392,7 @@ void MainWindow::setupMenuBar()
     });
     helpMenu->addAction(tr("&About"), this, [this]() {
         QDialog dlg(this);
-        dlg.setWindowTitle(tr("About 影图"));
+        dlg.setWindowTitle(tr("About ImagePro"));
         dlg.setFixedSize(360, 280);
 
         QVBoxLayout* layout = new QVBoxLayout(&dlg);
@@ -323,7 +403,8 @@ void MainWindow::setupMenuBar()
         QLabel* iconLabel = new QLabel(&dlg);
         QPixmap iconPix(QStringLiteral(":/icons/app.png"));
         if (!iconPix.isNull())
-            iconLabel->setPixmap(iconPix.scaled(64, 64, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+            iconLabel->setPixmap(
+                iconPix.scaled(64, 64, Qt::KeepAspectRatio, Qt::SmoothTransformation));
         iconLabel->setAlignment(Qt::AlignCenter);
         layout->addWidget(iconLabel);
 
@@ -334,7 +415,8 @@ void MainWindow::setupMenuBar()
         layout->addWidget(title);
 
         // 版本
-        QLabel* version = new QLabel(tr("Version %1").arg(QString::fromLatin1(IMAGEPRO_VERSION)), &dlg);
+        QLabel* version =
+            new QLabel(tr("Version %1").arg(QString::fromLatin1(IMAGEPRO_VERSION)), &dlg);
         version->setAlignment(Qt::AlignCenter);
         version->setStyleSheet(QStringLiteral("color: gray;"));
         layout->addWidget(version);
@@ -346,7 +428,9 @@ void MainWindow::setupMenuBar()
 
         // GitHub 链接
         QLabel* link = new QLabel(
-            QStringLiteral("<a href=\"https://github.com/Hermitweb/ImagePro\" style='text-decoration:none;'>🔗 GitHub: Hermitweb/ImagePro</a>"), &dlg);
+            QStringLiteral("<a href=\"https://github.com/Hermitweb/ImagePro\" "
+                           "style='text-decoration:none;'>🔗 GitHub: Hermitweb/ImagePro</a>"),
+            &dlg);
         link->setTextFormat(Qt::RichText);
         link->setOpenExternalLinks(true);
         link->setAlignment(Qt::AlignCenter);
@@ -427,10 +511,18 @@ void MainWindow::setupStatusBar()
 void MainWindow::setupPreviewToolBar()
 {
     m_previewToolBar = new QWidget(this);
-    FlowLayout* flowLayout = new FlowLayout(m_previewToolBar, 4, 6, 4);
-    flowLayout->setContentsMargins(6, 4, 6, 4);
+    m_previewToolBarLayout = new FlowLayout(m_previewToolBar, 4, 6, 4);
+    m_previewToolBarLayout->setContentsMargins(6, 4, 6, 4);
+    populatePreviewToolBar();
+    m_previewToolBar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+}
 
-    auto addButton = [this, flowLayout](const QString& text, const QString& tooltip, void (MainWindow::*slot)()) {
+void MainWindow::populatePreviewToolBar()
+{
+    FlowLayout* flowLayout = m_previewToolBarLayout;
+
+    auto addButton = [this, flowLayout](const QString& text, const QString& tooltip,
+                                        void (MainWindow::*slot)()) {
         QToolButton* btn = new QToolButton(m_previewToolBar);
         btn->setText(text);
         btn->setToolTip(tooltip);
@@ -467,8 +559,21 @@ void MainWindow::setupPreviewToolBar()
     flowLayout->addWidget(separator2);
 
     addButton(tr("Delete"), tr("Delete Current Image"), &MainWindow::onPreviewDelete);
+}
 
-    m_previewToolBar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+void MainWindow::rebuildPreviewToolBar()
+{
+    if (!m_previewToolBarLayout)
+        return;
+
+    // 清空旧按钮后重建：按钮文本与提示都由 tr() 产出，
+    // 重建即可整体换成新语言，不必逐个维护对应关系。
+    while (QLayoutItem* item = m_previewToolBarLayout->takeAt(0)) {
+        if (QWidget* widget = item->widget())
+            widget->deleteLater();
+        delete item;
+    }
+    populatePreviewToolBar();
 }
 
 void MainWindow::connectSignals()
@@ -478,7 +583,8 @@ void MainWindow::connectSignals()
     connect(m_toolBar, &ToolBarWidget::clearImagesClicked, this, &MainWindow::onClearImages);
     connect(m_toolBar, &ToolBarWidget::toolChanged, this, &MainWindow::onToolChanged);
 
-    connect(m_listWidget, &ImageListWidget::imageDoubleClicked, this, &MainWindow::onImageDoubleClicked);
+    connect(m_listWidget, &ImageListWidget::imageDoubleClicked, this,
+            &MainWindow::onImageDoubleClicked);
     connect(m_listWidget, &ImageListWidget::imageSelected, this, &MainWindow::onImageSelected);
     connect(m_listWidget, &ImageListWidget::imageSelectionChanged, this, [this]() {
         updateStatusBar();
@@ -486,32 +592,42 @@ void MainWindow::connectSignals()
         if (m_currentTool == ToolType::Stitch)
             m_previewDelayTimer->start();
     });
-    connect(m_listWidget, &ImageListWidget::deleteRequested, this, [this](int row) {
-        m_model->removeImage(row);
-        if (m_currentImageRow >= m_model->rowCount())
-            m_currentImageRow = m_model->rowCount() - 1;
-        updatePreview();
-    });
-    connect(m_listWidget, &ImageListWidget::rotateRequested, this, [this](int row) { m_model->rotateItem(row); });
-    connect(m_listWidget, &ImageListWidget::flipHorizontalRequested,
-            this, [this](int row) { m_model->flipHorizontalItem(row); });
-    connect(m_listWidget, &ImageListWidget::flipVerticalRequested,
-            this, [this](int row) { m_model->flipVerticalItem(row); });
-    connect(m_listWidget, &ImageListWidget::moveUpRequested,
-            this, [this](int row) { m_model->moveUp(row); });
-    connect(m_listWidget, &ImageListWidget::moveDownRequested,
-            this, [this](int row) { m_model->moveDown(row); });
+    connect(m_listWidget, &ImageListWidget::removeRequested, this, &MainWindow::removeImages);
+    connect(m_listWidget, &ImageListWidget::rotateRequested, this,
+            [this](int row) { m_model->rotateItem(row); });
+    connect(m_listWidget, &ImageListWidget::flipHorizontalRequested, this,
+            [this](int row) { m_model->flipHorizontalItem(row); });
+    connect(m_listWidget, &ImageListWidget::flipVerticalRequested, this,
+            [this](int row) { m_model->flipVerticalItem(row); });
+    connect(m_listWidget, &ImageListWidget::moveUpRequested, this,
+            [this](int row) { m_model->moveUp(row); });
+    connect(m_listWidget, &ImageListWidget::moveDownRequested, this,
+            [this](int row) { m_model->moveDown(row); });
     connect(m_listWidget, &ImageListWidget::addImagesRequested, this, &MainWindow::onAddImages);
     connect(m_listWidget, &ImageListWidget::clearRequested, this, &MainWindow::onClearImages);
 
     connect(m_model, &ImageListModel::countChanged, this, &MainWindow::updateStatusBar);
     connect(m_model, &ImageListModel::selectionChanged, this, &MainWindow::updateStatusBar);
-    connect(m_model, &ImageListModel::thumbnailLoadStarted, this, &MainWindow::onThumbnailLoadStarted);
-    connect(m_model, &ImageListModel::thumbnailLoadProgress, this, &MainWindow::onThumbnailLoadProgress);
-    connect(m_model, &ImageListModel::thumbnailLoadFinished, this, &MainWindow::onThumbnailLoadFinished);
+    // 图片尺寸是**异步**加载出来的：addImages 触发 countChanged 时还不知道尺寸，
+    // 状态栏的输出尺寸会一直是空的，直到用户碰巧做了别的操作才被刷新。
+    // 这里按尺寸相关角色过滤后刷新，保证尺寸一到就更新。
+    connect(m_model, &ImageListModel::dataChanged, this,
+            [this](const QModelIndex&, const QModelIndex&, const QVector<int>& roles) {
+                if (roles.contains(ImageListModel::WidthRole) ||
+                    roles.contains(ImageListModel::HeightRole))
+                    updateStatusBar();
+            });
+    connect(m_model, &ImageListModel::thumbnailLoadStarted, this,
+            &MainWindow::onThumbnailLoadStarted);
+    connect(m_model, &ImageListModel::thumbnailLoadProgress, this,
+            &MainWindow::onThumbnailLoadProgress);
+    connect(m_model, &ImageListModel::thumbnailLoadFinished, this,
+            &MainWindow::onThumbnailLoadFinished);
 
-    connect(m_propertyPanel, &PropertyPanel::previewRequested, this, &MainWindow::onPreviewRequested);
-    connect(m_propertyPanel, &PropertyPanel::processRequested, this, &MainWindow::onProcessRequested);
+    connect(m_propertyPanel, &PropertyPanel::previewRequested, this,
+            &MainWindow::onPreviewRequested);
+    connect(m_propertyPanel, &PropertyPanel::processRequested, this,
+            &MainWindow::onProcessRequested);
     connect(m_propertyPanel, &PropertyPanel::stitchSelectAllRequested, this, [this]() {
         m_listWidget->selectAllForStitch();
         if (m_currentTool == ToolType::Stitch)
@@ -535,9 +651,8 @@ void MainWindow::connectSignals()
     });
     connect(m_previewDelayTimer, &QTimer::timeout, this, &MainWindow::updateToolPreview);
 
-    connect(&ThemeManager::instance(), &ThemeManager::themeChanged, this, [this]() {
-        updatePreview();
-    });
+    connect(&ThemeManager::instance(), &ThemeManager::themeChanged, this,
+            [this]() { updatePreview(); });
 
     connect(m_previewWidget, &PreviewWidget::zoomChanged, this, [this](double factor) {
         if (m_zoomLabel && m_currentTool != ToolType::Edit)
@@ -571,73 +686,80 @@ void MainWindow::connectSignals()
         if (index >= 0 && index < m_model->rowCount())
             onImageSelected(index);
     });
-    connect(m_previewWidget, &PreviewWidget::stitchInputImageDoubleClicked, this, [this](int index) {
-        if (index >= 0 && index < m_model->rowCount())
-            onImageSelected(index);
-    });
-    connect(m_previewWidget, &PreviewWidget::stitchRotateInputImageRequested,
-            this, [this](int index, bool left) {
-        if (index < 0 || index >= m_model->rowCount())
-            return;
-        if (left) {
-            m_model->rotateItem(index);
-        } else {
-            m_model->rotateItem(index);
-            m_model->rotateItem(index);
-            m_model->rotateItem(index);
-        }
-        updateToolPreview();
-    });
-    connect(m_previewWidget, &PreviewWidget::stitchFlipInputImageHorizontalRequested,
-            this, [this](int index) {
-        if (index >= 0 && index < m_model->rowCount()) {
-            m_model->flipHorizontalItem(index);
-            updateToolPreview();
-        }
-    });
-    connect(m_previewWidget, &PreviewWidget::stitchFlipInputImageVerticalRequested,
-            this, [this](int index) {
-        if (index >= 0 && index < m_model->rowCount()) {
-            m_model->flipVerticalItem(index);
-            updateToolPreview();
-        }
-    });
-    connect(m_previewWidget, &PreviewWidget::stitchRemoveInputImageRequested,
-            this, [this](int index) {
-        if (index >= 0 && index < m_model->rowCount()) {
-            m_model->removeImage(index);
-            if (m_currentImageRow >= m_model->rowCount())
-                m_currentImageRow = m_model->rowCount() - 1;
-            updateToolPreview();
-        }
-    });
-    connect(m_previewWidget, &PreviewWidget::stitchInputImageInfoRequested,
-            this, [this](int index) {
-        if (index < 0 || index >= m_model->rowCount())
-            return;
-        const ImageItem* item = m_model->itemAt(index);
-        if (!item)
-            return;
-        QSize size(item->width(), item->height());
-        QMessageBox::information(this, tr("Image Info"),
-            tr("File: %1\nSize: %2x%3").arg(item->displayName()).arg(size.width()).arg(size.height()));
-    });
-    connect(m_previewWidget, &PreviewWidget::stitchImageDropped,
-            this, [this](const QStringList& paths) {
-        if (!paths.isEmpty()) {
-            m_model->addImages(paths);
-            if (m_currentTool == ToolType::Stitch)
+    connect(m_previewWidget, &PreviewWidget::stitchInputImageDoubleClicked, this,
+            [this](int index) {
+                if (index >= 0 && index < m_model->rowCount())
+                    onImageSelected(index);
+            });
+    connect(m_previewWidget, &PreviewWidget::stitchRotateInputImageRequested, this,
+            [this](int index, bool left) {
+                if (index < 0 || index >= m_model->rowCount())
+                    return;
+                if (left) {
+                    m_model->rotateItem(index);
+                } else {
+                    m_model->rotateItem(index);
+                    m_model->rotateItem(index);
+                    m_model->rotateItem(index);
+                }
                 updateToolPreview();
-        }
-    });
+            });
+    connect(m_previewWidget, &PreviewWidget::stitchFlipInputImageHorizontalRequested, this,
+            [this](int index) {
+                if (index >= 0 && index < m_model->rowCount()) {
+                    m_model->flipHorizontalItem(index);
+                    updateToolPreview();
+                }
+            });
+    connect(m_previewWidget, &PreviewWidget::stitchFlipInputImageVerticalRequested, this,
+            [this](int index) {
+                if (index >= 0 && index < m_model->rowCount()) {
+                    m_model->flipVerticalItem(index);
+                    updateToolPreview();
+                }
+            });
+    connect(m_previewWidget, &PreviewWidget::stitchRemoveInputImageRequested, this,
+            [this](int index) {
+                if (index >= 0 && index < m_model->rowCount()) {
+                    m_model->removeImage(index);
+                    if (m_currentImageRow >= m_model->rowCount())
+                        m_currentImageRow = m_model->rowCount() - 1;
+                    updateToolPreview();
+                }
+            });
+    connect(m_previewWidget, &PreviewWidget::stitchInputImageInfoRequested, this,
+            [this](int index) {
+                if (index < 0 || index >= m_model->rowCount())
+                    return;
+                const ImageItem* item = m_model->itemAt(index);
+                if (!item)
+                    return;
+                QSize size(item->width(), item->height());
+                QMessageBox::information(this, tr("Image Info"),
+                                         tr("File: %1\nSize: %2x%3")
+                                             .arg(item->displayName())
+                                             .arg(size.width())
+                                             .arg(size.height()));
+            });
+    connect(m_previewWidget, &PreviewWidget::stitchImageDropped, this,
+            [this](const QStringList& paths) {
+                if (!paths.isEmpty()) {
+                    m_model->addImages(paths);
+                    if (m_currentTool == ToolType::Stitch)
+                        updateToolPreview();
+                }
+            });
 
-    connect(m_editorWidget, &ImageEditorWidget::historyChanged,
-            m_propertyPanel, &PropertyPanel::refreshEditHistory);
-    connect(m_propertyPanel, &PropertyPanel::editUndoRequested, m_editorWidget, &ImageEditorWidget::undo);
-    connect(m_propertyPanel, &PropertyPanel::editRedoRequested, m_editorWidget, &ImageEditorWidget::redo);
-    connect(m_propertyPanel, &PropertyPanel::editClearRequested, m_editorWidget, &ImageEditorWidget::clearActions);
-    connect(m_propertyPanel, &PropertyPanel::editHistoryJumpRequested,
-            m_editorWidget, &ImageEditorWidget::jumpToHistoryIndex);
+    connect(m_editorWidget, &ImageEditorWidget::historyChanged, m_propertyPanel,
+            &PropertyPanel::refreshEditHistory);
+    connect(m_propertyPanel, &PropertyPanel::editUndoRequested, m_editorWidget,
+            &ImageEditorWidget::undo);
+    connect(m_propertyPanel, &PropertyPanel::editRedoRequested, m_editorWidget,
+            &ImageEditorWidget::redo);
+    connect(m_propertyPanel, &PropertyPanel::editClearRequested, m_editorWidget,
+            &ImageEditorWidget::clearActions);
+    connect(m_propertyPanel, &PropertyPanel::editHistoryJumpRequested, m_editorWidget,
+            &ImageEditorWidget::jumpToHistoryIndex);
 
     // ── Velopack 自动更新信号 ─────────────────────────────
     auto& upd = VpkUpdateManager::instance();
@@ -645,7 +767,9 @@ void MainWindow::connectSignals()
         if (m_silentUpdateCheck) {
             // 后台检查：仅 toast 提示，不打断用户。
             ToastManager::instance().showInfo(
-                tr("New version %1 available. Use Help → Check for Updates to install.").arg(version), this);
+                tr("New version %1 available. Use Help → Check for Updates to install.")
+                    .arg(version),
+                this);
             return;
         }
         const auto ret = QMessageBox::question(
@@ -680,8 +804,7 @@ void MainWindow::connectSignals()
 
 void MainWindow::onAddImages()
 {
-    QStringList files = QFileDialog::getOpenFileNames(this, tr("Select Images"),
-                                                      QDir::homePath(),
+    QStringList files = QFileDialog::getOpenFileNames(this, tr("Select Images"), QDir::homePath(),
                                                       FileUtils::imageFileFilter());
     if (!files.isEmpty()) {
         m_model->addImages(files);
@@ -690,7 +813,31 @@ void MainWindow::onAddImages()
 
 void MainWindow::onRemoveImage()
 {
-    m_model->removeImages(m_listWidget->selectedIndexes());
+    removeImages(m_listWidget->selectedIndexes());
+}
+
+void MainWindow::removeImages(const QModelIndexList& indexes)
+{
+    if (indexes.isEmpty())
+        return;
+
+    m_model->removeImages(indexes);
+
+    // 删除后必须修正当前行：m_currentImageRow 只在点击/双击时被赋值，删除图片
+    // 不会触发它，否则预览区与状态栏可能显示的不是用户最后选中的那张图。
+    const int rowCount = m_model->rowCount();
+    if (rowCount <= 0) {
+        m_currentImageRow = -1;
+        m_previewWidget->clear();
+        return;
+    }
+    m_currentImageRow = qBound(0, m_currentImageRow, rowCount - 1);
+
+    if (m_currentTool == ToolType::Stitch) {
+        m_previewWidget->setStitchHighlightedInput(m_currentImageRow);
+        return;
+    }
+    updatePreview(false);
 }
 
 void MainWindow::onClearImages()
@@ -716,23 +863,23 @@ void MainWindow::onToolChanged(ToolType tool)
         m_centerStack->setCurrentWidget(m_editorWidget);
         m_editorWidget->setCurrentTool(m_propertyPanel->currentEditAction());
         if (m_zoomLabel)
-            m_zoomLabel->setText(QStringLiteral("%1%").arg(qRound(m_editorWidget->zoomFactor() * 100)));
+            m_zoomLabel->setText(
+                QStringLiteral("%1%").arg(qRound(m_editorWidget->zoomFactor() * 100)));
         if (m_currentImageRow >= 0) {
             const ImageItem* item = m_model->itemAt(m_currentImageRow);
             if (item) {
                 QString path = item->filePath();
                 QApplication::setOverrideCursor(Qt::WaitCursor);
                 auto* watcher = new QFutureWatcher<QImage>(this);
-                connect(watcher, &QFutureWatcher<QImage>::finished, this, [this, watcher]() {
+                connect(watcher, &QFutureWatcher<QImage>::finished, this, [this, watcher, path]() {
                     QImage img = watcher->result();
                     if (!img.isNull())
-                        m_editorWidget->setBaseImage(img);
+                        m_editorWidget->setDocumentImage(img, path);
                     QApplication::restoreOverrideCursor();
                     watcher->deleteLater();
                 });
-                watcher->setFuture(QtConcurrent::run([path]() -> QImage {
-                    return ImageLoader::loadImage(path);
-                }));
+                watcher->setFuture(
+                    QtConcurrent::run([path]() -> QImage { return ImageLoader::loadImage(path); }));
             }
         }
     } else if (tool == ToolType::Batch) {
@@ -752,21 +899,27 @@ void MainWindow::onPreviewRequested()
     updateToolPreview();
 }
 
-template<typename EngineType, typename SettingsType>
-void MainWindow::runEngineAsync(const SettingsType& settings, const QStringList& paths,
-                                const QString& progressTitle,
-                                std::function<void(const decltype(std::declval<EngineType>().process(std::declval<QStringList>()))&)> onFinished,
-                                bool showProgressDialog)
+template <typename EngineType, typename SettingsType>
+void MainWindow::runEngineAsync(
+    const SettingsType& settings, const QStringList& paths, const QString& progressTitle,
+    const std::function<void(const EngineResultOf<EngineType>&)>& onFinished,
+    bool showProgressDialog)
 {
     using ResultType = decltype(std::declval<EngineType>().process(std::declval<QStringList>()));
 
-    QProgressDialog* currentProgressDlg = nullptr;
+    // 用 QPointer 而非裸指针：下一次 runEngineAsync 会对上一个对话框执行
+    // close()+deleteLater()，裸指针会在完成回调里变成释放后使用。
+    QPointer<QProgressDialog> currentProgressDlg;
     if (showProgressDialog) {
         if (m_progressDialog) {
             m_progressDialog->close();
             m_progressDialog->deleteLater();
         }
-        m_progressDialog = new QProgressDialog(progressTitle, tr("Cancel"), 0, 100, this);
+        // 不显示取消按钮：各引擎通过 QtConcurrent::run 执行，本身不可取消，
+        // 而 canceled() 之前也从未被连接——点了取消只会隐藏对话框，任务照旧
+        // 写文件、状态栏停在「处理中」，之后还会弹出结果对话框。与其给一个
+        // 无效按钮，不如不显示。若将来引擎支持轮询中止标志，再恢复取消按钮。
+        m_progressDialog = new QProgressDialog(progressTitle, QString(), 0, 100, this);
         m_progressDialog->setWindowModality(Qt::WindowModal);
         m_progressDialog->setMinimumDuration(0);
         currentProgressDlg = m_progressDialog;
@@ -775,23 +928,26 @@ void MainWindow::runEngineAsync(const SettingsType& settings, const QStringList&
     m_statusBar->setState(StatusBarWidget::State::Processing);
 
     auto* watcher = new QFutureWatcher<ResultType>(this);
-    connect(watcher, &QFutureWatcher<ResultType>::finished, this, [this, watcher, onFinished, currentProgressDlg]() {
-        onFinished(watcher->result());
-        watcher->deleteLater();
-        if (currentProgressDlg) {
-            currentProgressDlg->close();
-            currentProgressDlg->deleteLater();
-            if (m_progressDialog == currentProgressDlg)
-                m_progressDialog = nullptr;
-        }
-        m_statusBar->setState(StatusBarWidget::State::Ready);
-    });
+    connect(watcher, &QFutureWatcher<ResultType>::finished, this,
+            [this, watcher, onFinished, currentProgressDlg]() {
+                onFinished(watcher->result());
+                watcher->deleteLater();
+                if (currentProgressDlg) {
+                    currentProgressDlg->close();
+                    currentProgressDlg->deleteLater();
+                    if (m_progressDialog == currentProgressDlg)
+                        m_progressDialog = nullptr;
+                }
+                m_statusBar->setState(StatusBarWidget::State::Ready);
+            });
 
     auto future = QtConcurrent::run([settings, paths, currentProgressDlg]() -> ResultType {
         EngineType engine;
         engine.setSettings(settings);
+        // 对话框若已销毁，QPointer 为空，connect 会安全返回 false 而不是崩溃。
         if (currentProgressDlg)
-            QObject::connect(&engine, &EngineType::progress, currentProgressDlg, &QProgressDialog::setValue);
+            QObject::connect(&engine, &EngineType::progress, currentProgressDlg.data(),
+                             &QProgressDialog::setValue);
         return engine.process(paths);
     });
     watcher->setFuture(future);
@@ -825,15 +981,15 @@ void MainWindow::onProcessRequested()
 
         QString defaultPath;
         if (!settings.outputDir.isEmpty()) {
-            defaultPath = settings.outputDir + QStringLiteral("/") + settings.baseName
-                          + QStringLiteral(".") + fmt;
+            defaultPath = settings.outputDir + QStringLiteral("/") + settings.baseName +
+                          QStringLiteral(".") + fmt;
         } else {
             QString sourceDir = commonParentDirectory(stitchPaths);
             if (sourceDir.isEmpty())
                 sourceDir = QFileInfo(stitchPaths.first()).absolutePath();
             QFileInfo fi(stitchPaths.first());
-            defaultPath = sourceDir + QStringLiteral("/") + fi.completeBaseName()
-                          + QStringLiteral(".") + fmt;
+            defaultPath =
+                sourceDir + QStringLiteral("/") + fi.completeBaseName() + QStringLiteral(".") + fmt;
         }
 
         QString filter;
@@ -846,20 +1002,21 @@ void MainWindow::onProcessRequested()
         else
             filter = tr("PNG Images (*.png)");
 
-        QString selectedPath = QFileDialog::getSaveFileName(this, tr("Save Stitched Image"),
-                                                            defaultPath, filter);
+        QString selectedPath =
+            QFileDialog::getSaveFileName(this, tr("Save Stitched Image"), defaultPath, filter);
         if (selectedPath.isEmpty())
             break;
 
         QString expectedSuffix = QStringLiteral(".") + fmt;
         if (!selectedPath.endsWith(expectedSuffix, Qt::CaseInsensitive)) {
             QFileInfo fi(selectedPath);
-            selectedPath = fi.absolutePath() + QStringLiteral("/") + fi.completeBaseName() + expectedSuffix;
+            selectedPath =
+                fi.absolutePath() + QStringLiteral("/") + fi.completeBaseName() + expectedSuffix;
         }
 
         settings.explicitOutputPath = selectedPath;
-        runEngineAsync<StitchEngine>(settings, stitchPaths,
-            tr("Stitching..."), [this, stitchPaths](const QString& out) {
+        runEngineAsync<StitchEngine>(
+            settings, stitchPaths, tr("Stitching..."), [this, stitchPaths](const QString& out) {
                 if (out.isEmpty())
                     return;
                 m_statusBar->setMessage(tr("Saved: %1").arg(out));
@@ -882,52 +1039,57 @@ void MainWindow::onProcessRequested()
         if (selectedPaths.size() == 1) {
             QFileInfo fi(selectedPaths.first());
             QString fmt = convertSettings.targetFormat.toLower();
-            QString defaultPath = fi.absolutePath() + QStringLiteral("/") + fi.completeBaseName()
-                                  + QStringLiteral(".") + fmt;
+            QString defaultPath = fi.absolutePath() + QStringLiteral("/") + fi.completeBaseName() +
+                                  QStringLiteral(".") + fmt;
             QString filter = buildImageSaveFilter(fmt);
-            QString selectedPath = QFileDialog::getSaveFileName(this, tr("Save Converted Image"),
-                                                                defaultPath, filter);
+            QString selectedPath =
+                QFileDialog::getSaveFileName(this, tr("Save Converted Image"), defaultPath, filter);
             if (selectedPath.isEmpty())
                 break;
 
             QString expectedSuffix = QStringLiteral(".") + convertSettings.targetFormat.toLower();
             if (!selectedPath.endsWith(expectedSuffix, Qt::CaseInsensitive)) {
                 QFileInfo outFi(selectedPath);
-                selectedPath = outFi.absolutePath() + QStringLiteral("/") + outFi.completeBaseName() + expectedSuffix;
+                selectedPath = outFi.absolutePath() + QStringLiteral("/") +
+                               outFi.completeBaseName() + expectedSuffix;
             }
             convertSettings.explicitOutputPath = selectedPath;
         } else {
             QString defaultDir = convertSettings.outputDir;
             if (defaultDir.isEmpty()) {
                 if (m_currentImageRow >= 0 && m_currentImageRow < m_model->rowCount()) {
-                    defaultDir = QFileInfo(m_model->itemAt(m_currentImageRow)->filePath()).absolutePath();
+                    defaultDir =
+                        QFileInfo(m_model->itemAt(m_currentImageRow)->filePath()).absolutePath();
                 } else if (!selectedPaths.isEmpty()) {
                     defaultDir = QFileInfo(selectedPaths.first()).absolutePath();
                 }
             }
-            QString selectedDir = QFileDialog::getExistingDirectory(this, tr("Select Output Directory"),
-                                                                    defaultDir);
+            QString selectedDir =
+                QFileDialog::getExistingDirectory(this, tr("Select Output Directory"), defaultDir);
             if (selectedDir.isEmpty())
                 break;
             convertSettings.explicitOutputDir = selectedDir;
         }
 
-        runEngineAsync<ConvertEngine>(convertSettings, selectedPaths,
-            tr("Converting..."), [this, selectedPaths](const QStringList& outs) {
-                if (outs.isEmpty())
-                    return;
-                m_statusBar->setMessage(tr("Converted %1 images").arg(outs.size()));
-                ResultInfo info;
-                info.title = tr("Convert Complete");
-                info.message = tr("Successfully converted %1 / %2 images").arg(outs.size()).arg(selectedPaths.size());
-                info.files = outs;
-                qint64 totalSize = 0;
-                for (const QString& p : outs)
-                    totalSize += QFileInfo(p).size();
-                info.totalFileSize = totalSize;
-                ResultDialog dialog(info, this);
-                dialog.exec();
-            });
+        runEngineAsync<ConvertEngine>(convertSettings, selectedPaths, tr("Converting..."),
+                                      [this, selectedPaths](const QStringList& outs) {
+                                          if (outs.isEmpty())
+                                              return;
+                                          m_statusBar->setMessage(
+                                              tr("Converted %1 images").arg(outs.size()));
+                                          ResultInfo info;
+                                          info.title = tr("Convert Complete");
+                                          info.message = tr("Successfully converted %1 / %2 images")
+                                                             .arg(outs.size())
+                                                             .arg(selectedPaths.size());
+                                          info.files = outs;
+                                          qint64 totalSize = 0;
+                                          for (const QString& p : outs)
+                                              totalSize += QFileInfo(p).size();
+                                          info.totalFileSize = totalSize;
+                                          ResultDialog dialog(info, this);
+                                          dialog.exec();
+                                      });
         break;
     }
     case ToolType::Compress: {
@@ -936,11 +1098,12 @@ void MainWindow::onProcessRequested()
         if (paths.size() == 1) {
             QFileInfo fi(paths.first());
             QString fmt = compressSettings.outputFormat == QStringLiteral("original")
-                              ? fi.suffix() : compressSettings.outputFormat;
+                              ? fi.suffix()
+                              : compressSettings.outputFormat;
             if (fmt.compare(QStringLiteral("jpg"), Qt::CaseInsensitive) == 0)
                 fmt = QStringLiteral("jpeg");
-            QString defaultPath = fi.absolutePath() + QStringLiteral("/") + fi.completeBaseName()
-                                  + QStringLiteral("_compressed.") + fmt.toLower();
+            QString defaultPath = fi.absolutePath() + QStringLiteral("/") + fi.completeBaseName() +
+                                  QStringLiteral("_compressed.") + fmt.toLower();
             QString filter = buildImageSaveFilter(fmt);
             QString selectedPath = QFileDialog::getSaveFileName(this, tr("Save Compressed Image"),
                                                                 defaultPath, filter);
@@ -951,20 +1114,22 @@ void MainWindow::onProcessRequested()
             QString defaultDir = compressSettings.outputDir;
             if (defaultDir.isEmpty()) {
                 if (m_currentImageRow >= 0 && m_currentImageRow < m_model->rowCount()) {
-                    defaultDir = QFileInfo(m_model->itemAt(m_currentImageRow)->filePath()).absolutePath();
+                    defaultDir =
+                        QFileInfo(m_model->itemAt(m_currentImageRow)->filePath()).absolutePath();
                 } else if (!paths.isEmpty()) {
                     defaultDir = QFileInfo(paths.first()).absolutePath();
                 }
             }
-            QString selectedDir = QFileDialog::getExistingDirectory(this, tr("Select Output Directory"),
-                                                                    defaultDir);
+            QString selectedDir =
+                QFileDialog::getExistingDirectory(this, tr("Select Output Directory"), defaultDir);
             if (selectedDir.isEmpty())
                 break;
             compressSettings.explicitOutputDir = selectedDir;
         }
 
-        runEngineAsync<CompressEngine>(compressSettings, paths,
-            tr("Compressing..."), [this](const QList<CompressResult>& results) {
+        runEngineAsync<CompressEngine>(
+            compressSettings, paths, tr("Compressing..."),
+            [this](const QList<CompressResult>& results) {
                 QStringList outs;
                 qint64 totalOriginal = 0;
                 qint64 totalCompressed = 0;
@@ -980,7 +1145,9 @@ void MainWindow::onProcessRequested()
                     return;
                 ResultInfo info;
                 info.title = tr("Compress Complete");
-                int ratio = totalOriginal > 0 ? qRound((1.0 - totalCompressed / double(totalOriginal)) * 100) : 0;
+                int ratio = totalOriginal > 0
+                                ? qRound((1.0 - totalCompressed / double(totalOriginal)) * 100)
+                                : 0;
                 info.message = tr("Compressed %1 images, saved %2%").arg(outs.size()).arg(ratio);
                 info.files = outs;
                 info.totalFileSize = totalCompressed;
@@ -995,11 +1162,12 @@ void MainWindow::onProcessRequested()
         if (paths.size() == 1) {
             QFileInfo fi(paths.first());
             QString fmt = watermarkSettings.outputFormat == QStringLiteral("original")
-                              ? fi.suffix() : watermarkSettings.outputFormat;
+                              ? fi.suffix()
+                              : watermarkSettings.outputFormat;
             if (fmt.compare(QStringLiteral("jpg"), Qt::CaseInsensitive) == 0)
                 fmt = QStringLiteral("jpeg");
-            QString defaultPath = fi.absolutePath() + QStringLiteral("/") + fi.completeBaseName()
-                                  + QStringLiteral("_watermarked.") + fmt.toLower();
+            QString defaultPath = fi.absolutePath() + QStringLiteral("/") + fi.completeBaseName() +
+                                  QStringLiteral("_watermarked.") + fmt.toLower();
             QString filter = buildImageSaveFilter(fmt);
             QString selectedPath = QFileDialog::getSaveFileName(this, tr("Save Watermarked Image"),
                                                                 defaultPath, filter);
@@ -1010,20 +1178,21 @@ void MainWindow::onProcessRequested()
             QString defaultDir = watermarkSettings.outputDir;
             if (defaultDir.isEmpty()) {
                 if (m_currentImageRow >= 0 && m_currentImageRow < m_model->rowCount()) {
-                    defaultDir = QFileInfo(m_model->itemAt(m_currentImageRow)->filePath()).absolutePath();
+                    defaultDir =
+                        QFileInfo(m_model->itemAt(m_currentImageRow)->filePath()).absolutePath();
                 } else if (!paths.isEmpty()) {
                     defaultDir = QFileInfo(paths.first()).absolutePath();
                 }
             }
-            QString selectedDir = QFileDialog::getExistingDirectory(this, tr("Select Output Directory"),
-                                                                    defaultDir);
+            QString selectedDir =
+                QFileDialog::getExistingDirectory(this, tr("Select Output Directory"), defaultDir);
             if (selectedDir.isEmpty())
                 break;
             watermarkSettings.explicitOutputDir = selectedDir;
         }
 
-        runEngineAsync<WatermarkEngine>(watermarkSettings, paths,
-            tr("Watermarking..."), [this](const QStringList& outs) {
+        runEngineAsync<WatermarkEngine>(
+            watermarkSettings, paths, tr("Watermarking..."), [this](const QStringList& outs) {
                 if (outs.isEmpty())
                     return;
                 m_statusBar->setMessage(tr("Watermarked %1 images").arg(outs.size()));
@@ -1046,14 +1215,15 @@ void MainWindow::onProcessRequested()
         if (paths.size() == 1) {
             QFileInfo fi(paths.first());
             QString fmt = resizeSettings.outputFormat == QStringLiteral("original")
-                              ? fi.suffix() : resizeSettings.outputFormat;
+                              ? fi.suffix()
+                              : resizeSettings.outputFormat;
             if (fmt.compare(QStringLiteral("jpg"), Qt::CaseInsensitive) == 0)
                 fmt = QStringLiteral("jpeg");
-            QString defaultPath = fi.absolutePath() + QStringLiteral("/") + fi.completeBaseName()
-                                  + QStringLiteral("_resized.") + fmt.toLower();
+            QString defaultPath = fi.absolutePath() + QStringLiteral("/") + fi.completeBaseName() +
+                                  QStringLiteral("_resized.") + fmt.toLower();
             QString filter = buildImageSaveFilter(fmt);
-            QString selectedPath = QFileDialog::getSaveFileName(this, tr("Save Resized Image"),
-                                                                defaultPath, filter);
+            QString selectedPath =
+                QFileDialog::getSaveFileName(this, tr("Save Resized Image"), defaultPath, filter);
             if (selectedPath.isEmpty())
                 break;
             resizeSettings.explicitOutputPath = selectedPath;
@@ -1061,20 +1231,21 @@ void MainWindow::onProcessRequested()
             QString defaultDir = resizeSettings.outputDir;
             if (defaultDir.isEmpty()) {
                 if (m_currentImageRow >= 0 && m_currentImageRow < m_model->rowCount()) {
-                    defaultDir = QFileInfo(m_model->itemAt(m_currentImageRow)->filePath()).absolutePath();
+                    defaultDir =
+                        QFileInfo(m_model->itemAt(m_currentImageRow)->filePath()).absolutePath();
                 } else if (!paths.isEmpty()) {
                     defaultDir = QFileInfo(paths.first()).absolutePath();
                 }
             }
-            QString selectedDir = QFileDialog::getExistingDirectory(this, tr("Select Output Directory"),
-                                                                    defaultDir);
+            QString selectedDir =
+                QFileDialog::getExistingDirectory(this, tr("Select Output Directory"), defaultDir);
             if (selectedDir.isEmpty())
                 break;
             resizeSettings.explicitOutputDir = selectedDir;
         }
 
-        runEngineAsync<ResizeEngine>(resizeSettings, paths,
-            tr("Resizing..."), [this](const QStringList& outs) {
+        runEngineAsync<ResizeEngine>(
+            resizeSettings, paths, tr("Resizing..."), [this](const QStringList& outs) {
                 if (outs.isEmpty())
                     return;
                 m_statusBar->setMessage(tr("Resized %1 images").arg(outs.size()));
@@ -1103,7 +1274,8 @@ void MainWindow::onProcessRequested()
             QString defaultPath;
             if (selectedPaths.size() == 1) {
                 QFileInfo fi(selectedPaths.first());
-                defaultPath = fi.absolutePath() + QStringLiteral("/") + fi.completeBaseName() + QStringLiteral(".pdf");
+                defaultPath = fi.absolutePath() + QStringLiteral("/") + fi.completeBaseName() +
+                              QStringLiteral(".pdf");
             } else {
                 QFileInfo fi(selectedPaths.first());
                 defaultPath = fi.absolutePath() + QStringLiteral("/output.pdf");
@@ -1113,13 +1285,16 @@ void MainWindow::onProcessRequested()
             if (settings.outputPath.isEmpty())
                 break;
         }
-        runEngineAsync<PdfEngine>(settings, selectedPaths,
-            tr("Exporting PDF..."), [this, selectedPaths](const QString& out) {
-                if (out.isEmpty()) return;
+        runEngineAsync<PdfEngine>(
+            settings, selectedPaths, tr("Exporting PDF..."),
+            [this, selectedPaths](const QString& out) {
+                if (out.isEmpty())
+                    return;
                 m_statusBar->setMessage(tr("Exported PDF: %1").arg(out));
                 ResultInfo info;
                 info.title = tr("PDF Export Complete");
-                info.message = tr("Successfully exported %1 images to PDF").arg(selectedPaths.size());
+                info.message =
+                    tr("Successfully exported %1 images to PDF").arg(selectedPaths.size());
                 info.files << out;
                 info.totalFileSize = QFileInfo(out).size();
                 ResultDialog dialog(info, this);
@@ -1129,12 +1304,13 @@ void MainWindow::onProcessRequested()
     }
     case ToolType::Edit: {
         QImage img = m_editorWidget->renderedImage();
-        if (img.isNull()) break;
-        QString path = paths.first();
+        if (img.isNull())
+            break;
+        const QString& path = paths.first();
         QFileInfo fi(path);
         QString fmt = fi.suffix();
-        QString defaultPath = fi.absolutePath() + QStringLiteral("/") + fi.completeBaseName()
-                              + QStringLiteral("_edited.") + fmt;
+        QString defaultPath = fi.absolutePath() + QStringLiteral("/") + fi.completeBaseName() +
+                              QStringLiteral("_edited.") + fmt;
         QString filter = buildImageSaveFilter(fmt);
         QString out = QFileDialog::getSaveFileName(this, tr("Save Image"), defaultPath, filter);
         if (out.isEmpty())
@@ -1177,7 +1353,8 @@ void MainWindow::onBatchProcess()
 
     QDir outDir(batch.outputDir);
     if (!outDir.exists() && !outDir.mkpath(batch.outputDir)) {
-        m_statusBar->setMessage(tr("Batch: failed to create output directory %1").arg(batch.outputDir));
+        m_statusBar->setMessage(
+            tr("Batch: failed to create output directory %1").arg(batch.outputDir));
         return;
     }
 
@@ -1194,43 +1371,43 @@ void MainWindow::onBatchProcess()
                 copied.append(dest);
         }
 
-        m_statusBar->setMessage(tr("Batch saved %1 images to %2").arg(copied.size()).arg(batch.outputDir));
+        m_statusBar->setMessage(
+            tr("Batch saved %1 images to %2").arg(copied.size()).arg(batch.outputDir));
         if (!copied.isEmpty())
             ExportManager::showInFolder(copied.first());
     };
 
     switch (batch.targetTool) {
     case ToolType::Convert: {
-        runEngineAsync<ConvertEngine>(m_propertyPanel->convertSettings(), paths,
-            tr("Batch converting..."), [this, copyToBatchDir](const QStringList& outs) {
-                copyToBatchDir(outs);
-            }, false);
+        runEngineAsync<ConvertEngine>(
+            m_propertyPanel->convertSettings(), paths, tr("Batch converting..."),
+            [copyToBatchDir](const QStringList& outs) { copyToBatchDir(outs); }, false);
         break;
     }
     case ToolType::Compress: {
-        runEngineAsync<CompressEngine>(m_propertyPanel->compressSettings(), paths,
-            tr("Batch compressing..."), [this, copyToBatchDir](const QList<CompressResult>& results) {
+        runEngineAsync<CompressEngine>(
+            m_propertyPanel->compressSettings(), paths, tr("Batch compressing..."),
+            [copyToBatchDir](const QList<CompressResult>& results) {
                 QStringList outs;
                 for (const auto& r : results) {
                     if (r.success)
                         outs.append(r.outputPath);
                 }
                 copyToBatchDir(outs);
-            }, false);
+            },
+            false);
         break;
     }
     case ToolType::Watermark: {
-        runEngineAsync<WatermarkEngine>(m_propertyPanel->watermarkSettings(), paths,
-            tr("Batch watermarking..."), [this, copyToBatchDir](const QStringList& outs) {
-                copyToBatchDir(outs);
-            }, false);
+        runEngineAsync<WatermarkEngine>(
+            m_propertyPanel->watermarkSettings(), paths, tr("Batch watermarking..."),
+            [copyToBatchDir](const QStringList& outs) { copyToBatchDir(outs); }, false);
         break;
     }
     case ToolType::Resize: {
-        runEngineAsync<ResizeEngine>(m_propertyPanel->resizeSettings(), paths,
-            tr("Batch resizing..."), [this, copyToBatchDir](const QStringList& outs) {
-                copyToBatchDir(outs);
-            }, false);
+        runEngineAsync<ResizeEngine>(
+            m_propertyPanel->resizeSettings(), paths, tr("Batch resizing..."),
+            [copyToBatchDir](const QStringList& outs) { copyToBatchDir(outs); }, false);
         break;
     }
     default:
@@ -1313,8 +1490,8 @@ void MainWindow::updatePreview(bool applyToolEffect)
     input.previewSize *= 2;
     constexpr int kMaxPreviewLongEdge = 3840;
     if (qMax(input.previewSize.width(), input.previewSize.height()) > kMaxPreviewLongEdge) {
-        input.previewSize = input.previewSize.scaled(kMaxPreviewLongEdge, kMaxPreviewLongEdge,
-                                                      Qt::KeepAspectRatio);
+        input.previewSize =
+            input.previewSize.scaled(kMaxPreviewLongEdge, kMaxPreviewLongEdge, Qt::KeepAspectRatio);
     }
     input.applyToolEffect = applyToolEffect;
     input.stitchSettings = m_propertyPanel->stitchSettings();
@@ -1322,9 +1499,10 @@ void MainWindow::updatePreview(bool applyToolEffect)
     input.watermarkSettings = m_propertyPanel->watermarkSettings();
     input.resizeSettings = m_propertyPanel->resizeSettings();
 
-    bool needsProgress = applyToolEffect
-                         && (m_currentTool == ToolType::Stitch || m_currentTool == ToolType::Compress
-                             || m_currentTool == ToolType::Watermark || m_currentTool == ToolType::Resize);
+    bool needsProgress =
+        applyToolEffect &&
+        (m_currentTool == ToolType::Stitch || m_currentTool == ToolType::Compress ||
+         m_currentTool == ToolType::Watermark || m_currentTool == ToolType::Resize);
     if (needsProgress) {
         // 用标志位避免重复 push WaitCursor：当前任务被 cancel 时 finished 信号
         // 被抑制，restoreOverrideCursor 不会执行；若再次 setOverrideCursor 会导致
@@ -1348,32 +1526,47 @@ void MainWindow::updateToolPreview()
 
 void MainWindow::updateStatusBar()
 {
-    m_statusBar->setImageCount(m_model->rowCount(), m_model->selectedCount());
+    const int rowCount = m_model->rowCount();
+    m_statusBar->setImageCount(rowCount, m_model->selectedCount());
 
+    // 一次遍历同时累计总大小并收集尺寸：原先这里有多趟 O(n) 遍历
+    // （rowCount/selectedCount/selectedFilePaths 各一次），图片多时白白浪费。
     qint64 totalSize = 0;
-    QSize outputSize;
-    for (int i = 0; i < m_model->rowCount(); ++i) {
+    QList<QSize> allSizes;
+    QList<QSize> selectedSizes;
+    allSizes.reserve(rowCount);
+    for (int i = 0; i < rowCount; ++i) {
         const ImageItem* item = m_model->itemAt(i);
-        if (item) {
-            totalSize += item->fileSize();
-            if (i == 0)
-                outputSize = QSize(item->width(), item->height());
-        }
+        if (!item)
+            continue;
+        totalSize += item->fileSize();
+        if (!item->isValid())
+            continue;
+        const QSize size(item->width(), item->height());
+        allSizes.append(size);
+        if (item->isSelected() && !item->isHidden())
+            selectedSizes.append(size);
     }
     m_statusBar->setTotalFileSize(totalSize);
 
-    if (m_currentTool == ToolType::Stitch && m_model->rowCount() > 0) {
-        // 仅读取图片头信息估算输出尺寸，不加载像素数据，远快于跑完整拼接。
-        QStringList paths = m_model->selectedFilePaths();
-        if (paths.isEmpty())
-            paths = m_model->filePaths();
-        StitchSettings settings = m_propertyPanel->stitchSettings();
-        m_statusBar->setOutputSize(StitchEngine::estimateOutputSize(paths, settings));
-    } else if (m_currentImageRow >= 0 && m_currentImageRow < m_model->rowCount()) {
+    QSize outputSize;
+    if (m_currentTool == ToolType::Stitch) {
+        // 拼接输出尺寸：用**已缓存的图片尺寸**做纯内存估算。
+        // 原先调用按路径的estimateOutputSize，会逐个打开文件读图片头 ——
+        // 在主线程上对上百张图执行，每次选择变化都卡一下。
+        const QList<QSize>& used = selectedSizes.isEmpty() ? allSizes : selectedSizes;
+        if (!used.isEmpty()) {
+            const StitchSettings settings = m_propertyPanel->stitchSettings();
+            outputSize = StitchEngine::estimateOutputSize(used, settings);
+        }
+    } else if (m_currentImageRow >= 0 && m_currentImageRow < rowCount) {
         const ImageItem* item = m_model->itemAt(m_currentImageRow);
-        if (item)
+        if (item && item->isValid())
             outputSize = QSize(item->width(), item->height());
     }
+
+    // 只设置一次。原先拼接分支设置完尺寸后又无条件 setOutputSize(outputSize)
+    // 覆盖了一遍，而此时 outputSize 为空 → 标签被隐藏，拼接输出尺寸永远显示不出来。
     m_statusBar->setOutputSize(outputSize);
 }
 
@@ -1445,7 +1638,7 @@ void MainWindow::onPreviewFinished()
     m_statusBar->setMessage(tr("Ready"));
 
     if (m_currentTool == ToolType::Edit) {
-        m_editorWidget->setBaseImage(result.image);
+        m_editorWidget->setDocumentImage(result.image, result.sourcePath);
         return;
     }
 
@@ -1515,10 +1708,44 @@ void MainWindow::onPreviewDelete()
     }
 }
 
+void MainWindow::bringToFront()
+{
+    if (isMinimized())
+        showNormal();
+    else
+        show();
+
+    raise();
+    activateWindow();
+
+#ifdef Q_OS_WIN
+    // Windows 的前台窗口锁会阻止后台进程抢焦点：仅 activateWindow() 常常无效，
+    // 必须显式调用 SetForegroundWindow 才能真正把窗口提到最前。
+    // winId() 返回的就是 WId（无符号指针宽度整数），这是 Win32 句柄转换的固有写法。
+    // NOLINTNEXTLINE
+    ::SetForegroundWindow(reinterpret_cast<HWND>(winId()));
+#endif
+}
+
 void MainWindow::closeEvent(QCloseEvent* event)
 {
     QSettings settings;
     settings.setValue(QStringLiteral("geometry"), saveGeometry());
+
+    // 停止尚未触发的延迟预览，避免关闭过程中又启动新的后台任务。
+    if (m_previewDelayTimer)
+        m_previewDelayTimer->stop();
+
+    // 关闭进度对话框：否则它会无主地留在屏幕上，而进程要等全局线程池排空
+    // 才真正退出，用户会以为程序卡死。
+    // 注意：各引擎基于 QtConcurrent::run，无法中途取消，这里只能清理 UI，
+    // 无法缩短退出等待。
+    if (m_progressDialog) {
+        m_progressDialog->close();
+        m_progressDialog->deleteLater();
+        m_progressDialog = nullptr;
+    }
+
     event->accept();
 }
 

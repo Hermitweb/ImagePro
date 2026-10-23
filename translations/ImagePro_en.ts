@@ -1,4 +1,5 @@
-<?xml version='1.0' encoding='utf-8'?>
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE TS>
 <TS version="2.1" language="en">
 <context>
     <name>QObject</name>
@@ -16,6 +17,14 @@
     <message>
         <source>Failed to save compressed image</source>
         <translation>Failed to save compressed image</translation>
+    </message>
+    <message>
+        <source>No images to compress</source>
+        <translation>No images to compress</translation>
+    </message>
+    <message>
+        <source>Failed to create output file</source>
+        <translation>Failed to create output file</translation>
     </message>
 </context>
 <context>
@@ -43,75 +52,104 @@
 <context>
     <name>yingtu::ImageItemDelegate</name>
     <message>
-        <source>加载失败</source>
-        <translation>加载失败</translation>
+        <source>Load failed</source>
+        <translation>Load failed</translation>
     </message>
     <message>
-        <source>重试</source>
-        <translation>重试</translation>
+        <source>Retry</source>
+        <translation>Retry</translation>
     </message>
 </context>
 <context>
     <name>yingtu::ImageListWidget</name>
     <message>
-        <source>拖拽图片到此处或点击添加图片</source>
-        <translation>拖拽图片到此处或点击添加图片</translation>
+        <source>Drag images here or click Add Images</source>
+        <translation>Drag images here or click Add Images</translation>
     </message>
     <message>
-        <source>显示</source>
-        <translation>显示</translation>
+        <source>Show</source>
+        <translation>Show</translation>
     </message>
     <message>
-        <source>隐藏</source>
-        <translation>隐藏</translation>
+        <source>Hide</source>
+        <translation>Hide</translation>
     </message>
     <message>
-        <source>复制</source>
-        <translation>复制</translation>
+        <source>Duplicate</source>
+        <translation>Duplicate</translation>
     </message>
     <message>
-        <source>复制到剪贴板</source>
-        <translation>复制到剪贴板</translation>
+        <source>Copy to clipboard</source>
+        <translation>Copy to clipboard</translation>
     </message>
     <message>
-        <source>移到最前</source>
-        <translation>移到最前</translation>
+        <source>Move to front</source>
+        <translation>Move to front</translation>
     </message>
     <message>
-        <source>移到最后</source>
-        <translation>移到最后</translation>
+        <source>Move to back</source>
+        <translation>Move to back</translation>
     </message>
     <message>
-        <source>在资源管理器中显示</source>
-        <translation>在资源管理器中显示</translation>
+        <source>Rotate Left 90°</source>
+        <translation>Rotate Left 90°</translation>
     </message>
     <message>
-        <source>快速查看</source>
-        <translation>快速查看</translation>
+        <source>Flip Horizontal</source>
+        <translation>Flip Horizontal</translation>
     </message>
     <message>
-        <source>移除</source>
-        <translation>移除</translation>
+        <source>Flip Vertical</source>
+        <translation>Flip Vertical</translation>
     </message>
     <message>
-        <source>添加图片</source>
-        <translation>添加图片</translation>
+        <source>Move Up</source>
+        <translation>Move Up</translation>
     </message>
     <message>
-        <source>全选</source>
-        <translation>全选</translation>
+        <source>Move Down</source>
+        <translation>Move Down</translation>
     </message>
     <message>
-        <source>清空列表</source>
-        <translation>清空列表</translation>
+        <source>Show in Explorer</source>
+        <translation>Show in Explorer</translation>
+    </message>
+    <message>
+        <source>Quick Look</source>
+        <translation>Quick Look</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <translation>Remove</translation>
+    </message>
+    <message>
+        <source>Add Images</source>
+        <translation>Add Images</translation>
+    </message>
+    <message>
+        <source>Select All</source>
+        <translation>Select All</translation>
+    </message>
+    <message>
+        <source>Clear List</source>
+        <translation>Clear List</translation>
+    </message>
+</context>
+<context>
+    <name>yingtu::ImageProApp</name>
+    <message>
+        <source>Failed to initialize the image processing engine (libvips).
+Image loading, conversion, resizing and stitching will not work.
+
+Please verify the application was deployed correctly.</source>
+        <translation>Failed to initialize the image processing engine (libvips).
+Image loading, conversion, resizing and stitching will not work.
+
+Please verify the application was deployed correctly.</translation>
     </message>
 </context>
 <context>
     <name>yingtu::MainWindow</name>
-    <message>
-        <source>影图 ImagePro</source>
-        <translation>影图 ImagePro</translation>
-    </message>
     <message>
         <source>&amp;File</source>
         <translation>&amp;File</translation>
@@ -177,28 +215,12 @@
         <translation>&amp;Language</translation>
     </message>
     <message>
-        <source>Language Changed</source>
-        <translation>Language Changed</translation>
-    </message>
-    <message>
-        <source>The language setting has been changed. Please restart the application to apply.</source>
-        <translation>The language setting has been changed. Please restart the application to apply.</translation>
-    </message>
-    <message>
         <source>&amp;Help</source>
         <translation>&amp;Help</translation>
     </message>
     <message>
         <source>&amp;About</source>
         <translation>&amp;About</translation>
-    </message>
-    <message>
-        <source>About 影图 ImagePro</source>
-        <translation>About 影图 ImagePro</translation>
-    </message>
-    <message>
-        <source>&lt;h2&gt;影图 ImagePro&lt;/h2&gt;&lt;p&gt;Version 1.0.0&lt;/p&gt;&lt;p&gt;A powerful image processing tool.&lt;/p&gt;</source>
-        <translation>&lt;h2&gt;影图 ImagePro&lt;/h2&gt;&lt;p&gt;Version 1.0.0&lt;/p&gt;&lt;p&gt;A powerful image processing tool.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>Zoom Out</source>
@@ -247,10 +269,6 @@
     <message>
         <source>Select Images</source>
         <translation>Select Images</translation>
-    </message>
-    <message>
-        <source>Cancel</source>
-        <translation>Cancel</translation>
     </message>
     <message>
         <source>Warning</source>
@@ -503,10 +521,6 @@ Size: %2x%3</translation>
         <translation>Checking for updates...</translation>
     </message>
     <message>
-        <source>&lt;h2&gt;影图 ImagePro&lt;/h2&gt;&lt;p&gt;Version %1&lt;/p&gt;&lt;p&gt;A powerful image processing tool.&lt;/p&gt;</source>
-        <translation>&lt;h2&gt;影图 ImagePro&lt;/h2&gt;&lt;p&gt;Version %1&lt;/p&gt;&lt;p&gt;A powerful image processing tool.&lt;/p&gt;</translation>
-    </message>
-    <message>
         <source>New version %1 available. Use Help → Check for Updates to install.</source>
         <translation>New version %1 available. Use Help → Check for Updates to install.</translation>
     </message>
@@ -539,12 +553,12 @@ Size: %2x%3</translation>
         <translation>OK</translation>
     </message>
     <message>
-        <source>影图</source>
-        <translation>影图</translation>
+        <source>ImagePro</source>
+        <translation>ImagePro</translation>
     </message>
     <message>
-        <source>About 影图</source>
-        <translation>About 影图</translation>
+        <source>About ImagePro</source>
+        <translation>About ImagePro</translation>
     </message>
 </context>
 <context>
@@ -552,6 +566,10 @@ Size: %2x%3</translation>
     <message>
         <source>No images to export.</source>
         <translation>No images to export.</translation>
+    </message>
+    <message>
+        <source>Failed to write PDF: %1</source>
+        <translation>Failed to write PDF: %1</translation>
     </message>
 </context>
 <context>
@@ -614,13 +632,6 @@ Size: %2x%3</translation>
     </message>
 </context>
 <context>
-    <name>yingtu::ProgressDialog</name>
-    <message>
-        <source>Cancel</source>
-        <translation>Cancel</translation>
-    </message>
-</context>
-<context>
     <name>yingtu::PropertyPanel</name>
     <message>
         <source>Save</source>
@@ -663,20 +674,8 @@ Size: %2x%3</translation>
         <translation>Background:</translation>
     </message>
     <message>
-        <source>BG Color:</source>
-        <translation>BG Color:</translation>
-    </message>
-    <message>
         <source>Uniform Width</source>
         <translation>Uniform Width</translation>
-    </message>
-    <message>
-        <source>Remove White Edges</source>
-        <translation>Remove White Edges</translation>
-    </message>
-    <message>
-        <source>Auto Crop Edges</source>
-        <translation>Auto Crop Edges</translation>
     </message>
     <message>
         <source>Preset:</source>
@@ -1451,44 +1450,44 @@ Size: %2x%3</translation>
         <translation>%1 @%2x</translation>
     </message>
     <message>
-        <source>输入图 %1：%2×%3</source>
-        <translation>输入图 %1：%2×%3</translation>
+        <source>Input %1: %2×%3</source>
+        <translation>Input %1: %2×%3</translation>
     </message>
     <message>
-        <source>释放以加入拼接</source>
-        <translation>释放以加入拼接</translation>
+        <source>Release to add to the canvas</source>
+        <translation>Release to add to the canvas</translation>
     </message>
     <message>
-        <source>点击或拖入图片到合成图</source>
-        <translation>点击或拖入图片到合成图</translation>
+        <source>Click or drag images here</source>
+        <translation>Click or drag images here</translation>
     </message>
     <message>
-        <source>左旋</source>
-        <translation>左旋</translation>
+        <source>Rotate Left</source>
+        <translation>Rotate Left</translation>
     </message>
     <message>
-        <source>右旋</source>
-        <translation>右旋</translation>
+        <source>Rotate Right</source>
+        <translation>Rotate Right</translation>
     </message>
     <message>
-        <source>水平翻转</source>
-        <translation>水平翻转</translation>
+        <source>Flip Horizontal</source>
+        <translation>Flip Horizontal</translation>
     </message>
     <message>
-        <source>垂直翻转</source>
-        <translation>垂直翻转</translation>
+        <source>Flip Vertical</source>
+        <translation>Flip Vertical</translation>
     </message>
     <message>
-        <source>移除</source>
-        <translation>移除</translation>
+        <source>Remove</source>
+        <translation>Remove</translation>
     </message>
     <message>
-        <source>信息</source>
-        <translation>信息</translation>
+        <source>Info</source>
+        <translation>Info</translation>
     </message>
     <message>
-        <source>输入图 %1</source>
-        <translation>输入图 %1</translation>
+        <source>Input %1</source>
+        <translation>Input %1</translation>
     </message>
 </context>
 <context>
@@ -1509,6 +1508,10 @@ Size: %2x%3</translation>
         <source>Stitched image too large: estimated %1 pixels (limit %2). Please reduce image count, resolution, or enable downscaling.</source>
         <translation>Stitched image too large: estimated %1 pixels (limit %2). Please reduce image count, resolution, or enable downscaling.</translation>
     </message>
+    <message>
+        <source>Failed to create output file</source>
+        <translation>Failed to create output file</translation>
+    </message>
 </context>
 <context>
     <name>yingtu::ToolBarWidget</name>
@@ -1523,6 +1526,38 @@ Size: %2x%3</translation>
     <message>
         <source>Clear</source>
         <translation>Clear</translation>
+    </message>
+    <message>
+        <source>Icon: Stitch</source>
+        <translation>S</translation>
+    </message>
+    <message>
+        <source>Icon: Convert</source>
+        <translation>V</translation>
+    </message>
+    <message>
+        <source>Icon: Compress</source>
+        <translation>Z</translation>
+    </message>
+    <message>
+        <source>Icon: Watermark</source>
+        <translation>W</translation>
+    </message>
+    <message>
+        <source>Icon: Edit</source>
+        <translation>E</translation>
+    </message>
+    <message>
+        <source>Icon: Resize</source>
+        <translation>R</translation>
+    </message>
+    <message>
+        <source>Icon: Batch</source>
+        <translation>B</translation>
+    </message>
+    <message>
+        <source>Icon: PDF</source>
+        <translation>P</translation>
     </message>
     <message>
         <source>Stitch</source>

@@ -94,13 +94,18 @@ QImage applyFilter(const QImage& source, FilterType type)
                 int r = 0, g = 0, b = 0, a = 0, count = 0;
                 for (int dy = -1; dy <= 1; ++dy) {
                     int yy = y + dy;
-                    if (yy < 0 || yy >= h) continue;
+                    if (yy < 0 || yy >= h)
+                        continue;
                     const QRgb* in = reinterpret_cast<const QRgb*>(img.constScanLine(yy));
                     for (int dx = -1; dx <= 1; ++dx) {
                         int xx = x + dx;
-                        if (xx < 0 || xx >= w) continue;
+                        if (xx < 0 || xx >= w)
+                            continue;
                         QRgb p = in[xx];
-                        r += qRed(p); g += qGreen(p); b += qBlue(p); a += qAlpha(p);
+                        r += qRed(p);
+                        g += qGreen(p);
+                        b += qBlue(p);
+                        a += qAlpha(p);
                         ++count;
                     }
                 }
@@ -121,24 +126,24 @@ QImage applyFilter(const QImage& source, FilterType type)
                     yy = qBound(0, yy, h - 1);
                     return reinterpret_cast<const QRgb*>(base.constScanLine(yy))[xx];
                 };
-                auto conv = [&pixel](std::function<int(QRgb)> channel, int cx, int cy) {
+                auto conv = [&pixel](const std::function<int(QRgb)>& channel, int cx, int cy) {
                     int v = 0;
                     v += -1 * channel(pixel(cx - 1, cy - 1));
                     v += -1 * channel(pixel(cx, cy - 1));
                     v += -1 * channel(pixel(cx + 1, cy - 1));
                     v += -1 * channel(pixel(cx - 1, cy));
-                    v +=  9 * channel(pixel(cx, cy));
+                    v += 9 * channel(pixel(cx, cy));
                     v += -1 * channel(pixel(cx + 1, cy));
                     v += -1 * channel(pixel(cx - 1, cy + 1));
                     v += -1 * channel(pixel(cx, cy + 1));
                     v += -1 * channel(pixel(cx + 1, cy + 1));
                     return qBound(0, v, 255);
                 };
-                QRgb p = pixel(x, y);
-                int r = conv([](QRgb p) { return qRed(p); }, x, y);
-                int g = conv([](QRgb p) { return qGreen(p); }, x, y);
-                int b = conv([](QRgb p) { return qBlue(p); }, x, y);
-                out[x] = qRgba(r, g, b, qAlpha(p));
+                QRgb src = pixel(x, y);
+                int r = conv([](QRgb c) { return qRed(c); }, x, y);
+                int g = conv([](QRgb c) { return qGreen(c); }, x, y);
+                int b = conv([](QRgb c) { return qBlue(c); }, x, y);
+                out[x] = qRgba(r, g, b, qAlpha(src));
             }
         }
         break;
@@ -150,10 +155,7 @@ QImage applyFilter(const QImage& source, FilterType type)
 
 } // namespace
 
-EditEngine::EditEngine(QObject* parent)
-    : QObject(parent)
-{
-}
+EditEngine::EditEngine(QObject* parent) : QObject(parent) {}
 
 void EditEngine::addAction(const EditAction& action)
 {
@@ -213,9 +215,16 @@ QImage EditEngine::render() const
 
 QImage EditEngine::renderWithSelection(const QString& selectedId) const
 {
-    QImage result = m_baseImage.isNull() ? QImage(800, 600, QImage::Format_ARGB32) : m_baseImage.copy();
-    if (result.isNull())
+    // 统一到 ARGB32 再处理：下游 applyMosaic 等滤镜用 QRgb*（每像素 4 字节）直接写
+    // scanLine，而 loadImage 对 3 通道图返回的是 Format_RGB888（每像素 3 字节），
+    // 不转换会造成堆越界写入。convertToFormat 同时保证底图非空时格式确定。
+    QImage result;
+    if (m_baseImage.isNull()) {
+        result = QImage(800, 600, QImage::Format_ARGB32);
         result.fill(Qt::white);
+    } else {
+        result = m_baseImage.convertToFormat(QImage::Format_ARGB32);
+    }
 
     QRectF crop = cropBounds();
     QRect cropRect;
@@ -318,7 +327,8 @@ void EditEngine::drawAction(QPainter* painter, const EditAction& action) const
     }
     case EditToolType::Text: {
         QFont font = painter->font();
-        font.setFamily(action.fontFamily.isEmpty() ? QStringLiteral("Microsoft YaHei") : action.fontFamily);
+        font.setFamily(action.fontFamily.isEmpty() ? QStringLiteral("Microsoft YaHei")
+                                                   : action.fontFamily);
         font.setPointSize(action.fontSize > 0 ? action.fontSize : 16);
         font.setBold(action.fontBold);
         painter->setFont(font);
@@ -346,23 +356,34 @@ QRectF EditEngine::handleRect(const QRectF& bounds, int handleIndex)
 {
     const qreal s = 6;
     switch (handleIndex) {
-    case 0: return QRectF(bounds.left() - s, bounds.top() - s, s * 2, s * 2);
-    case 1: return QRectF(bounds.center().x() - s, bounds.top() - s, s * 2, s * 2);
-    case 2: return QRectF(bounds.right() - s, bounds.top() - s, s * 2, s * 2);
-    case 3: return QRectF(bounds.left() - s, bounds.center().y() - s, s * 2, s * 2);
-    case 4: return QRectF(bounds.right() - s, bounds.center().y() - s, s * 2, s * 2);
-    case 5: return QRectF(bounds.left() - s, bounds.bottom() - s, s * 2, s * 2);
-    case 6: return QRectF(bounds.center().x() - s, bounds.bottom() - s, s * 2, s * 2);
-    case 7: return QRectF(bounds.right() - s, bounds.bottom() - s, s * 2, s * 2);
+    case 0:
+        return QRectF(bounds.left() - s, bounds.top() - s, s * 2, s * 2);
+    case 1:
+        return QRectF(bounds.center().x() - s, bounds.top() - s, s * 2, s * 2);
+    case 2:
+        return QRectF(bounds.right() - s, bounds.top() - s, s * 2, s * 2);
+    case 3:
+        return QRectF(bounds.left() - s, bounds.center().y() - s, s * 2, s * 2);
+    case 4:
+        return QRectF(bounds.right() - s, bounds.center().y() - s, s * 2, s * 2);
+    case 5:
+        return QRectF(bounds.left() - s, bounds.bottom() - s, s * 2, s * 2);
+    case 6:
+        return QRectF(bounds.center().x() - s, bounds.bottom() - s, s * 2, s * 2);
+    case 7:
+        return QRectF(bounds.right() - s, bounds.bottom() - s, s * 2, s * 2);
+    default:
+        break;
     }
     return QRectF();
 }
 
 int EditEngine::hitTest(const QRectF& bounds, const QPointF& pos, int handleSize)
 {
+    // 用 qreal 计算命中区间的半宽：整除会让奇数 handleSize 的命中范围偏小。
+    const qreal half = handleSize / 2.0;
     for (int i = 0; i < 8; ++i) {
-        if (handleRect(bounds, i).adjusted(-handleSize / 2, -handleSize / 2, handleSize / 2, handleSize / 2)
-                .contains(pos))
+        if (handleRect(bounds, i).adjusted(-half, -half, half, half).contains(pos))
             return i;
     }
     if (bounds.contains(pos))

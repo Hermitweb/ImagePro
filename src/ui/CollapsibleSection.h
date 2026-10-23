@@ -18,8 +18,7 @@ class CollapsibleSection : public QWidget
     Q_PROPERTY(int contentHeight READ contentHeight WRITE setContentHeight)
 
 public:
-    explicit CollapsibleSection(const QString& title, QWidget* parent = nullptr)
-        : QWidget(parent)
+    explicit CollapsibleSection(const QString& title, QWidget* parent = nullptr) : QWidget(parent)
     {
         QVBoxLayout* mainLayout = new QVBoxLayout(this);
         mainLayout->setContentsMargins(0, 0, 0, 0);
@@ -31,9 +30,8 @@ public:
         m_header->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         updateHeaderStyle();
         setTitle(title);
-        connect(m_header, &QPushButton::toggled, this, [this](bool checked) {
-            setExpanded(checked);
-        });
+        connect(m_header, &QPushButton::toggled, this,
+                [this](bool checked) { setExpanded(checked); });
 
         mainLayout->addWidget(m_header);
 
@@ -58,7 +56,9 @@ public:
             return;
         if (m_content && m_content != content) {
             m_contentLayout->removeWidget(m_content);
-            m_content->setParent(nullptr);
+            // 之前只调用 setParent(nullptr)：被替换的内容控件既无父对象也无人
+            // delete，直接泄漏。用 deleteLater 以免在事件处理中同步析构。
+            m_content->deleteLater();
         }
         m_content = content;
         m_contentLayout->addWidget(content);
@@ -96,10 +96,7 @@ public:
         updateArrow();
     }
 
-    int contentHeight() const
-    {
-        return m_contentContainer ? m_contentContainer->height() : 0;
-    }
+    int contentHeight() const { return m_contentContainer ? m_contentContainer->height() : 0; }
 
     void setContentHeight(int height)
     {
@@ -129,20 +126,20 @@ private:
     void updateHeaderStyle()
     {
         QColor textColor = palette().color(QPalette::WindowText);
-        QString qss = QStringLiteral(
-            "QPushButton {"
-            "  border: none;"
-            "  border-bottom: 1px solid rgba(128,128,128,0.3);"
-            "  border-radius: 0px;"
-            "  padding: 6px 4px;"
-            "  text-align: left;"
-            "  font-weight: bold;"
-            "  color: %1;"
-            "  background-color: transparent;"
-            "}"
-            "QPushButton:hover { background-color: rgba(128,128,128,0.12); }"
-            "QPushButton:checked { background-color: rgba(128,128,128,0.08); }")
-            .arg(textColor.name());
+        QString qss =
+            QStringLiteral("QPushButton {"
+                           "  border: none;"
+                           "  border-bottom: 1px solid rgba(128,128,128,0.3);"
+                           "  border-radius: 0px;"
+                           "  padding: 6px 4px;"
+                           "  text-align: left;"
+                           "  font-weight: bold;"
+                           "  color: %1;"
+                           "  background-color: transparent;"
+                           "}"
+                           "QPushButton:hover { background-color: rgba(128,128,128,0.12); }"
+                           "QPushButton:checked { background-color: rgba(128,128,128,0.08); }")
+                .arg(textColor.name());
         m_header->setStyleSheet(qss);
     }
 

@@ -48,8 +48,7 @@ EditAction rotateAction(const EditAction& action, const QSize& fromSize, int deg
 
 } // namespace
 
-ImageEditorWidget::ImageEditorWidget(QWidget* parent)
-    : QWidget(parent)
+ImageEditorWidget::ImageEditorWidget(QWidget* parent) : QWidget(parent)
 {
     setFocusPolicy(Qt::StrongFocus);
 }
@@ -62,6 +61,22 @@ void ImageEditorWidget::setBaseImage(const QImage& image)
     m_rotation = 0;
     m_panOffset = QPointF();
     fitToWindow();
+}
+
+void ImageEditorWidget::setDocumentImage(const QImage& image, const QString& documentKey)
+{
+    // 只有文档真正变化时才清空标注与历史：否则同一张图的预览刷新
+    // （onPreviewFinished 每次都会调用）会把用户正在编辑的标注抹掉。
+    if (documentKey != m_documentKey) {
+        m_documentKey = documentKey;
+        m_engine.clearActions();
+        m_history.clear();
+        m_historyIndex = -1;
+        m_selection.selectedActionId.clear();
+        emit selectionChanged(QString());
+        emit historyChanged(m_history, m_historyIndex);
+    }
+    setBaseImage(image);
 }
 
 void ImageEditorWidget::setCurrentTool(const EditAction& actionTemplate)
@@ -140,11 +155,13 @@ void ImageEditorWidget::paintEvent(QPaintEvent* event)
 
     if (!m_canvasCache.isNull()) {
         painter.setWorldTransform(viewTransform());
-        painter.drawImage(QRectF(0, 0, m_canvasCache.width(), m_canvasCache.height()), m_canvasCache);
+        painter.drawImage(QRectF(0, 0, m_canvasCache.width(), m_canvasCache.height()),
+                          m_canvasCache);
     }
 
     // Preview the currently drawing mosaic region
-    if (m_drawing && m_currentAction.toolType == EditToolType::Mosaic && !m_currentAction.bounds.isEmpty()) {
+    if (m_drawing && m_currentAction.toolType == EditToolType::Mosaic &&
+        !m_currentAction.bounds.isEmpty()) {
         painter.setWorldTransform(viewTransform());
         QPen pen(QColor(255, 255, 255, 180));
         pen.setWidth(1);
@@ -245,14 +262,32 @@ void ImageEditorWidget::mouseMoveEvent(QMouseEvent* event)
             } else {
                 QRectF b = m_selection.originalBounds;
                 switch (m_selection.activeHandle) {
-                case 0: b.setTopLeft(b.topLeft() + delta); break;
-                case 1: b.setTop(b.top() + delta.y()); break;
-                case 2: b.setTopRight(b.topRight() + delta); break;
-                case 3: b.setLeft(b.left() + delta.x()); break;
-                case 4: b.setRight(b.right() + delta.x()); break;
-                case 5: b.setBottomLeft(b.bottomLeft() + delta); break;
-                case 6: b.setBottom(b.bottom() + delta.y()); break;
-                case 7: b.setBottomRight(b.bottomRight() + delta); break;
+                case 0:
+                    b.setTopLeft(b.topLeft() + delta);
+                    break;
+                case 1:
+                    b.setTop(b.top() + delta.y());
+                    break;
+                case 2:
+                    b.setTopRight(b.topRight() + delta);
+                    break;
+                case 3:
+                    b.setLeft(b.left() + delta.x());
+                    break;
+                case 4:
+                    b.setRight(b.right() + delta.x());
+                    break;
+                case 5:
+                    b.setBottomLeft(b.bottomLeft() + delta);
+                    break;
+                case 6:
+                    b.setBottom(b.bottom() + delta.y());
+                    break;
+                case 7:
+                    b.setBottomRight(b.bottomRight() + delta);
+                    break;
+                default:
+                    break;
                 }
                 a.bounds = b;
             }
@@ -310,6 +345,14 @@ void ImageEditorWidget::mouseDoubleClickEvent(QMouseEvent* event)
                 EditAction updated = a;
                 updated.text = text;
                 m_engine.updateAction(updated);
+                // 同步历史栈中的同一条目，否则下次 undo/redo/jump 会用旧文本重建。
+                for (auto& h : m_history) {
+                    if (h.id == updated.id) {
+                        h = updated;
+                        break;
+                    }
+                }
+                emit historyChanged(m_history, m_historyIndex);
                 updateCanvas();
             }
             return;
@@ -347,11 +390,34 @@ void ImageEditorWidget::resizeEvent(QResizeEvent* event)
 void ImageEditorWidget::keyPressEvent(QKeyEvent* event)
 {
     if (event->key() == Qt::Key_Delete && !m_selection.selectedActionId.isEmpty()) {
-        m_engine.removeAction(m_selection.selectedActionId);
+        const QString removedId = m_selection.selectedActionId;
+        m_engine.removeAction(removedId);
+
+        // 同步历史栈：undo/redo/jumpToHistoryIndex 都会用 m_history 重建引擎，
+        // 不同步的话被删掉的标注会在下一次撤销/重做时复活。
+        for (int i = 0; i < m_history.size(); ++i) {
+            if (m_history[i].id == removedId) {
+                m_history.removeAt(i);
+                // 删除的是「已应用」区间内的条目时，索引要跟着前移。
+                if (i <= m_historyIndex)
+                    --m_historyIndex;
+                break;
+            }
+        }
+        if (m_historyIndex < -1)
+            m_historyIndex = -1;
+        if (m_historyIndex >= m_history.size())
+            m_historyIndex = m_history.size() - 1;
+
         m_selection.selectedActionId.clear();
         emit selectionChanged(QString());
+        emit historyChanged(m_history, m_historyIndex);
         updateCanvas();
+        return;
     }
+
+    // 未处理的按键交回基类，否则编辑器会吞掉所有其它快捷键。
+    QWidget::keyPressEvent(event);
 }
 
 QRectF ImageEditorWidget::effectiveCropBounds() const
@@ -412,13 +478,15 @@ void ImageEditorWidget::clampPan()
     if (imageRect.width() <= viewport.width()) {
         m_panOffset.setX((viewport.width() - imageRect.width()) / 2.0);
     } else {
-        m_panOffset.setX(qMin(0.0, qMax(double(viewport.width() - imageRect.width()), m_panOffset.x())));
+        m_panOffset.setX(
+            qMin(0.0, qMax(double(viewport.width() - imageRect.width()), m_panOffset.x())));
     }
 
     if (imageRect.height() <= viewport.height()) {
         m_panOffset.setY((viewport.height() - imageRect.height()) / 2.0);
     } else {
-        m_panOffset.setY(qMin(0.0, qMax(double(viewport.height() - imageRect.height()), m_panOffset.y())));
+        m_panOffset.setY(
+            qMin(0.0, qMax(double(viewport.height() - imageRect.height()), m_panOffset.y())));
     }
 }
 
@@ -527,7 +595,8 @@ void ImageEditorWidget::applyRotation(int delta)
         return;
 
     QSize fromSize = rotatedImageSize();
-    QImage rotated = m_engine.baseImage().transformed(QTransform().rotate(delta), Qt::SmoothTransformation);
+    QImage rotated =
+        m_engine.baseImage().transformed(QTransform().rotate(delta), Qt::SmoothTransformation);
     m_engine.setBaseImage(rotated);
 
     for (auto& action : m_history)
@@ -551,20 +620,20 @@ void ImageEditorWidget::finishCurrentAction()
 {
     if (m_currentAction.toolType == EditToolType::Text) {
         bool ok = false;
-        QString text = QInputDialog::getText(this, tr("Input Text"), tr("Text:"),
-                                             QLineEdit::Normal, m_currentTemplate.text, &ok);
+        QString text = QInputDialog::getText(this, tr("Input Text"), tr("Text:"), QLineEdit::Normal,
+                                             m_currentTemplate.text, &ok);
         if (!ok || text.isEmpty())
             return;
         m_currentAction.text = text;
 
         QFont font;
-        font.setFamily(m_currentAction.fontFamily.isEmpty()
-                           ? QStringLiteral("Microsoft YaHei")
-                           : m_currentAction.fontFamily);
+        font.setFamily(m_currentAction.fontFamily.isEmpty() ? QStringLiteral("Microsoft YaHei")
+                                                            : m_currentAction.fontFamily);
         font.setPointSize(m_currentAction.fontSize > 0 ? m_currentAction.fontSize : 16);
         font.setBold(m_currentAction.fontBold);
         QFontMetrics fm(font);
-        QRect textRect = fm.boundingRect(QRect(), Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap, text);
+        QRect textRect =
+            fm.boundingRect(QRect(), Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap, text);
         m_currentAction.bounds = QRectF(m_currentAction.points.first(), textRect.size());
     }
 

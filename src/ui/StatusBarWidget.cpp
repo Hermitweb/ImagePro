@@ -1,20 +1,11 @@
 #include "StatusBarWidget.h"
+#include "app/ImageProApp.h"
+#include "utils/FileUtils.h"
+#include <QEvent>
 
 namespace yingtu {
 
-static QString formatFileSize(qint64 bytes)
-{
-    if (bytes < 1024)
-        return QStringLiteral("%1 B").arg(bytes);
-    if (bytes < 1024 * 1024)
-        return QStringLiteral("%1 KB").arg(bytes / 1024.0, 0, 'f', 1);
-    if (bytes < 1024 * 1024 * 1024)
-        return QStringLiteral("%1 MB").arg(bytes / (1024.0 * 1024.0), 0, 'f', 1);
-    return QStringLiteral("%1 GB").arg(bytes / (1024.0 * 1024.0 * 1024.0), 0, 'f', 1);
-}
-
-StatusBarWidget::StatusBarWidget(QWidget* parent)
-    : QStatusBar(parent)
+StatusBarWidget::StatusBarWidget(QWidget* parent) : QStatusBar(parent)
 {
     setFixedHeight(28);
 
@@ -44,6 +35,7 @@ StatusBarWidget::StatusBarWidget(QWidget* parent)
 
 void StatusBarWidget::setState(State state)
 {
+    m_state = state;
     switch (state) {
     case State::Ready:
         m_stateLabel->setText(QStringLiteral("✓ ") + tr("Ready"));
@@ -64,6 +56,33 @@ void StatusBarWidget::setState(State state)
     }
 }
 
+void StatusBarWidget::changeEvent(QEvent* event)
+{
+    QStatusBar::changeEvent(event);
+    if (event->type() == QEvent::LanguageChange && !ImageProApp::isLanguageSwitching())
+        retranslateUi();
+}
+
+void StatusBarWidget::retranslateUi()
+{
+    // 状态提示：按当前状态重新套用译文。
+    setState(m_state);
+
+    // 图片计数
+    if (m_selectedCount > 0)
+        m_countLabel->setText(tr("%1 images, %2 selected").arg(m_imageCount).arg(m_selectedCount));
+    else
+        m_countLabel->setText(tr("%1 images").arg(m_imageCount));
+
+    // 输出尺寸
+    if (m_outputSize.isValid() && m_outputSize.width() > 0 && m_outputSize.height() > 0) {
+        m_sizeLabel->setText(tr("%1 x %2").arg(m_outputSize.width()).arg(m_outputSize.height()));
+        m_sizeLabel->setVisible(true);
+    } else {
+        m_sizeLabel->setVisible(false);
+    }
+}
+
 void StatusBarWidget::setMessage(const QString& message)
 {
     m_messageLabel->setText(message);
@@ -71,6 +90,8 @@ void StatusBarWidget::setMessage(const QString& message)
 
 void StatusBarWidget::setImageCount(int total, int selected)
 {
+    m_imageCount = total;
+    m_selectedCount = selected;
     if (selected > 0)
         m_countLabel->setText(tr("%1 images, %2 selected").arg(total).arg(selected));
     else
@@ -79,6 +100,7 @@ void StatusBarWidget::setImageCount(int total, int selected)
 
 void StatusBarWidget::setOutputSize(const QSize& size)
 {
+    m_outputSize = size;
     if (size.isValid() && size.width() > 0 && size.height() > 0) {
         m_sizeLabel->setText(tr("%1 x %2").arg(size.width()).arg(size.height()));
         m_sizeLabel->setVisible(true);
@@ -87,10 +109,15 @@ void StatusBarWidget::setOutputSize(const QSize& size)
     }
 }
 
+QString StatusBarWidget::outputSizeText() const
+{
+    return m_sizeLabel ? m_sizeLabel->text() : QString();
+}
+
 void StatusBarWidget::setTotalFileSize(qint64 bytes)
 {
     if (bytes > 0) {
-        m_fileSizeLabel->setText(formatFileSize(bytes));
+        m_fileSizeLabel->setText(FileUtils::formatFileSize(bytes));
         m_fileSizeLabel->setVisible(true);
     } else {
         m_fileSizeLabel->setVisible(false);

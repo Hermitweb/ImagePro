@@ -1,4 +1,5 @@
 #include "PreviewWidget.h"
+#include "app/ImageProApp.h"
 #include "StitchCanvas.h"
 #include "core/ImageListModel.h"
 #include "utils/ImageLoader.h"
@@ -18,8 +19,7 @@
 
 namespace yingtu {
 
-PreviewWidget::PreviewWidget(QWidget* parent)
-    : QWidget(parent)
+PreviewWidget::PreviewWidget(QWidget* parent) : QWidget(parent)
 {
     QHBoxLayout* layout = new QHBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
@@ -38,22 +38,21 @@ PreviewWidget::PreviewWidget(QWidget* parent)
     m_stitchCanvas = new StitchCanvas(this);
     m_stitchCanvas->setVisible(false);
 
-    connect(m_stitchCanvas, &StitchCanvas::inputImageClicked,
-            this, &PreviewWidget::stitchInputImageClicked);
-    connect(m_stitchCanvas, &StitchCanvas::inputImageDoubleClicked,
-            this, &PreviewWidget::stitchInputImageDoubleClicked);
-    connect(m_stitchCanvas, &StitchCanvas::rotateInputImageRequested,
-            this, &PreviewWidget::stitchRotateInputImageRequested);
-    connect(m_stitchCanvas, &StitchCanvas::flipInputImageHorizontalRequested,
-            this, &PreviewWidget::stitchFlipInputImageHorizontalRequested);
-    connect(m_stitchCanvas, &StitchCanvas::flipInputImageVerticalRequested,
-            this, &PreviewWidget::stitchFlipInputImageVerticalRequested);
-    connect(m_stitchCanvas, &StitchCanvas::removeInputImageRequested,
-            this, &PreviewWidget::stitchRemoveInputImageRequested);
-    connect(m_stitchCanvas, &StitchCanvas::inputImageInfoRequested,
-            this, &PreviewWidget::stitchInputImageInfoRequested);
-    connect(m_stitchCanvas, &StitchCanvas::imageDropped,
-            this, &PreviewWidget::stitchImageDropped);
+    connect(m_stitchCanvas, &StitchCanvas::inputImageClicked, this,
+            &PreviewWidget::stitchInputImageClicked);
+    connect(m_stitchCanvas, &StitchCanvas::inputImageDoubleClicked, this,
+            &PreviewWidget::stitchInputImageDoubleClicked);
+    connect(m_stitchCanvas, &StitchCanvas::rotateInputImageRequested, this,
+            &PreviewWidget::stitchRotateInputImageRequested);
+    connect(m_stitchCanvas, &StitchCanvas::flipInputImageHorizontalRequested, this,
+            &PreviewWidget::stitchFlipInputImageHorizontalRequested);
+    connect(m_stitchCanvas, &StitchCanvas::flipInputImageVerticalRequested, this,
+            &PreviewWidget::stitchFlipInputImageVerticalRequested);
+    connect(m_stitchCanvas, &StitchCanvas::removeInputImageRequested, this,
+            &PreviewWidget::stitchRemoveInputImageRequested);
+    connect(m_stitchCanvas, &StitchCanvas::inputImageInfoRequested, this,
+            &PreviewWidget::stitchInputImageInfoRequested);
+    connect(m_stitchCanvas, &StitchCanvas::imageDropped, this, &PreviewWidget::stitchImageDropped);
 
     layout->addWidget(m_scrollArea);
     layout->addWidget(m_stitchCanvas);
@@ -70,8 +69,8 @@ void PreviewWidget::setImage(const QImage& image)
     updatePixmap();
 }
 
-void PreviewWidget::setSourcePath(const QString& path, int rotation,
-                                  bool flippedHorizontal, bool flippedVertical)
+void PreviewWidget::setSourcePath(const QString& path, int rotation, bool flippedHorizontal,
+                                  bool flippedVertical)
 {
     m_sourcePath = path;
     m_sourceRotation = rotation;
@@ -346,8 +345,7 @@ QImage PreviewWidget::loadSourcePreview(const QSize& targetSize)
         return QImage();
 
     // 缓存命中条件：同一路径、同一源翻转/旋转、目标尺寸足够覆盖当前请求
-    if (!m_cachedSourcePreview.isNull() &&
-        m_cachedSourcePreviewSize.isValid() &&
+    if (!m_cachedSourcePreview.isNull() && m_cachedSourcePreviewSize.isValid() &&
         m_cachedSourcePreviewSize.width() >= targetSize.width() &&
         m_cachedSourcePreviewSize.height() >= targetSize.height()) {
         return m_cachedSourcePreview;
@@ -424,9 +422,21 @@ QImage PreviewWidget::createComparisonImage(const QImage& original, const QImage
 
     painter.setPen(palette().color(QPalette::Text));
     painter.drawText(QRect(0, 4, orig.width() + 8, 20), Qt::AlignCenter, tr("Original"));
-    painter.drawText(QRect(12 + orig.width(), 4, proc.width() + 8, 20), Qt::AlignCenter, tr("Processed"));
+    painter.drawText(QRect(12 + orig.width(), 4, proc.width() + 8, 20), Qt::AlignCenter,
+                     tr("Processed"));
 
     return composite;
+}
+
+void PreviewWidget::changeEvent(QEvent* event)
+{
+    QWidget::changeEvent(event);
+    if (event->type() == QEvent::LanguageChange && !ImageProApp::isLanguageSwitching()) {
+        // 右键菜单与画布上的文字都在使用时/绘制时翻译，自动跟随语言；
+        // 这里只需处理常驻的占位提示。
+        if (m_imageLabel)
+            m_imageLabel->setText(tr("No image to preview"));
+    }
 }
 
 void PreviewWidget::updatePixmap()
@@ -446,16 +456,14 @@ void PreviewWidget::updatePixmap()
     double factor = m_zoomFactor;
     if (m_fitToWindow) {
         QSize viewSize = m_scrollArea->viewport()->size();
-        factor = qMin(viewSize.width() / double(img.width()),
-                      viewSize.height() / double(img.height()));
+        factor =
+            qMin(viewSize.width() / double(img.width()), viewSize.height() / double(img.height()));
         factor = qBound(0.05, factor, 10.0);
         m_zoomFactor = factor;
     }
 
-    QImage scaled = img.scaled(qRound(img.width() * factor),
-                               qRound(img.height() * factor),
-                               Qt::KeepAspectRatio,
-                               Qt::SmoothTransformation);
+    QImage scaled = img.scaled(qRound(img.width() * factor), qRound(img.height() * factor),
+                               Qt::KeepAspectRatio, Qt::SmoothTransformation);
     m_imageLabel->setPixmap(QPixmap::fromImage(scaled));
     m_imageLabel->resize(scaled.size());
     emit zoomChanged(m_zoomFactor);
@@ -465,8 +473,10 @@ void PreviewWidget::contextMenuEvent(QContextMenuEvent* event)
 {
     QMenu menu(this);
 
-    menu.addAction(tr("Original Size"), this, &PreviewWidget::resetZoom, QKeySequence(QStringLiteral("Ctrl+0")));
-    menu.addAction(tr("Fit to Window"), this, &PreviewWidget::fitToWindow, QKeySequence(QStringLiteral("Ctrl+F")));
+    menu.addAction(tr("Original Size"), this, &PreviewWidget::resetZoom,
+                   QKeySequence(QStringLiteral("Ctrl+0")));
+    menu.addAction(tr("Fit to Window"), this, &PreviewWidget::fitToWindow,
+                   QKeySequence(QStringLiteral("Ctrl+F")));
     menu.addSeparator();
     menu.addAction(tr("Rotate Left"), this, &PreviewWidget::rotateLeft);
     menu.addAction(tr("Rotate Right"), this, &PreviewWidget::rotateRight);
@@ -486,20 +496,27 @@ void PreviewWidget::contextMenuEvent(QContextMenuEvent* event)
             emit rotateCurrentRightRequested();
     });
     menu.addSeparator();
-    menu.addAction(tr("Copy Image"), this, [this]() {
-        QImage img = displayedImage();
-        if (!img.isNull())
-            QApplication::clipboard()->setImage(img);
-    }, QKeySequence::Copy);
-    menu.addAction(tr("Save Image"), this, [this]() {
-        QImage img = displayedImage();
-        if (img.isNull())
-            return;
-        QString path = QFileDialog::getSaveFileName(this, tr("Save Image"), QString(),
-                                                    QStringLiteral("PNG (*.png);;JPEG (*.jpg);;All Files (*)"));
-        if (!path.isEmpty())
-            ImageLoader::saveImage(img, path);
-    }, QKeySequence::Save);
+    menu.addAction(
+        tr("Copy Image"), this,
+        [this]() {
+            QImage img = displayedImage();
+            if (!img.isNull())
+                QApplication::clipboard()->setImage(img);
+        },
+        QKeySequence::Copy);
+    menu.addAction(
+        tr("Save Image"), this,
+        [this]() {
+            QImage img = displayedImage();
+            if (img.isNull())
+                return;
+            QString path = QFileDialog::getSaveFileName(
+                this, tr("Save Image"), QString(),
+                QStringLiteral("PNG (*.png);;JPEG (*.jpg);;All Files (*)"));
+            if (!path.isEmpty())
+                ImageLoader::saveImage(img, path);
+        },
+        QKeySequence::Save);
 
     menu.exec(event->globalPos());
 }
