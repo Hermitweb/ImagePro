@@ -49,12 +49,11 @@ jobs:
         shell: msys2 {0}
         run: |
           # CI runner 没有交互式桌面，Windows 的 QPA 渲染路径会直接崩溃。
-          # 改用 offscreen 平台插件（内存里渲染）。
           # 只在 CI 里设：本地有桌面，真实平台能更如实地验证布局。
-          export QT_QPA_PLATFORM=offscreen
-          # offscreen 平台用的是 Qt 的基础字体引擎，它只从 QT_QPA_FONTDIR
-          # 指定的目录读取字体；找不到字体时文字会渲染为空，
-          # 测试里“文字标注应该画出可见字形”的断言就会失败。
+          # ⚠ 不要设 QT_QPA_PLATFORM=offscreen：MSYS2 的 Qt 只带 windows 一个平台插件，
+          # 指向不存在的插件会让 Qt 直接 abort（所有用例以 0xc0000602 结束）。
+          #
+          # 测试目录自带运行库（不再靠 PATH 借用 MSYS2 前缀的 DLL）。
           export QT_QPA_FONTDIR="C:/Windows/Fonts"
           ctest --test-dir build --output-on-failure || {
             echo "::group::失败用例的详细输出"
@@ -251,7 +250,10 @@ jobs:
         if: matrix.msvc
         shell: pwsh
         run: |
-          $env:QT_QPA_PLATFORM = "offscreen"
+          # ⚠ 不要设 QT_QPA_PLATFORM=offscreen：MSYS2 的 Qt 只带 windows 一个平台插件，
+          # 指向不存在的插件会让 Qt 直接 abort（所有用例以 0xc0000602 结束）。
+          #
+          # 测试目录自带运行库（不再靠 PATH 借用 MSYS2 前缀的 DLL）。
           $env:QT_QPA_FONTDIR = "C:/Windows/Fonts"
           ctest --test-dir build -C Release --output-on-failure
 
@@ -293,10 +295,10 @@ jobs:
         if: ${{ !matrix.msvc }}
         shell: msys2 {0}
         run: |
-          export QT_QPA_PLATFORM=offscreen
-          # offscreen 平台用的是 Qt 的基础字体引擎，它只从 QT_QPA_FONTDIR
-          # 指定的目录读取字体；找不到字体时文字会渲染为空，
-          # 测试里“文字标注应该画出可见字形”的断言就会失败。
+          # ⚠ 不要设 QT_QPA_PLATFORM=offscreen：MSYS2 的 Qt 只带 windows 一个平台插件，
+          # 指向不存在的插件会让 Qt 直接 abort（所有用例以 0xc0000602 结束）。
+          #
+          # 测试目录自带运行库（不再靠 PATH 借用 MSYS2 前缀的 DLL）。
           export QT_QPA_FONTDIR="C:/Windows/Fonts"
           ctest --test-dir build --output-on-failure || {
             echo "::group::失败用例的详细输出"
