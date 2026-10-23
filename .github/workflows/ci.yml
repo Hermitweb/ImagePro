@@ -68,7 +68,8 @@ jobs:
               # 一个卡住的用例就能把作业无限挂住。
               timeout 60 "$t" -v2 -o test_report.txt,txt
               echo "exit=$?"
-              tail -40 test_report.txt 2>/dev/null
+              # 输出完整报告：FAIL 行可能在中间，tail 会把它截掉。
+              cat test_report.txt 2>/dev/null
             done
             echo "::endgroup::"
             exit 1
@@ -312,7 +313,8 @@ jobs:
               # 一个卡住的用例就能把作业无限挂住。
               timeout 60 "$t" -v2 -o test_report.txt,txt
               echo "exit=$?"
-              tail -40 test_report.txt 2>/dev/null
+              # 输出完整报告：FAIL 行可能在中间，tail 会把它截掉。
+              cat test_report.txt 2>/dev/null
             done
             echo "::endgroup::"
             exit 1
