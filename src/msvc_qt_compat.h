@@ -25,4 +25,4 @@
 #undef QT_MAKE_UNCHECKED_ARRAY_ITERATOR
 #define QT_MAKE_UNCHECKED_ARRAY_ITERATOR(x) (x)
 
-#endif  // _MSC_VER >= 1950
+#endif // _MSC_VER >= 1950
