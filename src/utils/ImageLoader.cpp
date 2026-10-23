@@ -382,18 +382,18 @@ static bool saveVipsImage(VipsImage* image, const QString& outputPath, const QSt
             vips_area_unref(VIPS_AREA(arr));
         }
         VipsImage* target = flat ? flat : image;
-        result = vips_jpegsave(target, path.constData(), "Q", q, NULL);
+        result = vips_jpegsave(target, path.constData(), "Q", q, nullptr);
         if (flat)
             g_object_unref(flat);
     } else if (fmt == QStringLiteral("webp")) {
         int q = quality >= 0 ? quality : 90;
-        result = vips_webpsave(image, path.constData(), "Q", q, NULL);
+        result = vips_webpsave(image, path.constData(), "Q", q, nullptr);
     } else if (fmt == QStringLiteral("png")) {
-        result = vips_pngsave(image, path.constData(), NULL);
+        result = vips_pngsave(image, path.constData(), nullptr);
     } else if (fmt == QStringLiteral("tif") || fmt == QStringLiteral("tiff")) {
-        result = vips_tiffsave(image, path.constData(), NULL);
+        result = vips_tiffsave(image, path.constData(), nullptr);
     } else {
-        result = vips_image_write_to_file(image, path.constData(), NULL);
+        result = vips_image_write_to_file(image, path.constData(), nullptr);
     }
 
     if (result)

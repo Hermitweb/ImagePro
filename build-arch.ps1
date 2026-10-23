@@ -153,7 +153,9 @@ x86 需要两份预编译包，请用 -QtRoot / -VipsRoot 指定：
     #   rules.ninja:23: expected newline, got lexing error
     # 该前缀由 VS 的安装语言决定，VSLANG=1033 也改不动（资源已烘焙）。
     # VS 生成器不走 Ninja 的依赖解析，因此不受影响。
-    $generator = 'Visual Studio 17 2022'
+    # 不写生成器版本：不同机器上的 Visual Studio 版本不同，
+    # 写死会拿不到实例（CI runner 上已是 VS 18）。
+    # 不给 -G 时 CMake 自动选最新的 VS 版本。
     $generatorArgs = @('-A', 'Win32')
 
     # 切换生成器时旧构建目录的缓存不兼容，先清掉。
@@ -162,8 +164,8 @@ x86 需要两份预编译包，请用 -QtRoot / -VipsRoot 指定：
     if (Test-Path $cacheFile) {
         $oldGen = (Select-String -Path $cacheFile -Pattern '^CMAKE_GENERATOR:INTERNAL=(.+)$' |
                    Select-Object -First 1).Matches.Groups[1].Value
-        if ($oldGen -and $oldGen -ne $generator) {
-            Write-Host "==> 生成器由 '$oldGen' 切换为 '$generator'，重建构建目录"
+        if ($oldGen -and $oldGen -notlike 'Visual Studio*') {
+            Write-Host "==> 生成器由 '$oldGen' 切换为 Visual Studio，重建构建目录"
             $trash = Join-Path $env:USERPROFILE '.minimax\bin\mavis-trash.cmd'
             if (Test-Path $trash) {
                 & $trash -- $buildDir
@@ -174,7 +176,7 @@ x86 需要两份预编译包，请用 -QtRoot / -VipsRoot 指定：
     }
 
     Write-Host "==> 配置 CMake..."
-    & $cmake -S $PSScriptRoot -B $buildDir -G $generator @generatorArgs `
+    & $cmake -S $PSScriptRoot -B $buildDir @generatorArgs `
         -DBUILD_TESTS=ON `
         -DIMAGEPRO_WERROR=ON `
         "-DCMAKE_PREFIX_PATH=$QtRoot" `

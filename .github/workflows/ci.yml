@@ -54,10 +54,16 @@ jobs:
           export QT_QPA_PLATFORM=offscreen
           ctest --test-dir build --output-on-failure || {
             echo "::group::失败用例的详细输出"
+            # set +e：默认 shell 带 -e，一个用例非零退出就会中断整个脚本，
+            # 后面的用例就遭不到诊断了。
+            set +e
             for t in build/tests/test_*.exe; do
               echo "---- $t"
-              "$t" -v2 2>&1 | tail -40
-              echo "exit=${PIPESTATUS[0]}"
+              # QTest 的文件日志是增量落盘的，进程崩溃也不会丢掉已写部分。
+              rm -f test_report.txt
+              "$t" -v2 -o test_report.txt,txt
+              echo "exit=$?"
+              tail -40 test_report.txt 2>/dev/null
             done
             echo "::endgroup::"
             exit 1
@@ -158,9 +164,13 @@ jobs:
           # 匹配到的那个目录本身就是 Qt 根目录（含 bin/ lib/ include/）：
           # aqt 的布局是 <outputdir>/<version>/<arch>。
           # 取 Parent 会多上一层，CMAKE_PREFIX_PATH 就指到错地方了。
+          # 按 qmake.exe 定位 Qt 根目录，不猜目录名：
+          # aqt 对 32 位 MSVC 的目录命名是「win32_msvc2019」去掉「win32_」后的
+          # 「msvc2019」，与我们传入的架构名不同。
           $qtRoot = (Get-ChildItem "$env:RUNNER_TEMP\qt" -Directory -Recurse |
-                     Where-Object { $_.Name -eq '${{ matrix.qt_arch }}' } |
+                     Where-Object { Test-Path (Join-Path $_.FullName 'bin\qmake.exe') } |
                      Select-Object -First 1).FullName
+          if (-not $qtRoot) { throw "未找到 Qt 根目录（$env:RUNNER_TEMP\qt 下没有含 qmake.exe 的目录）" }
           "CMAKE_PREFIX_PATH=$qtRoot" >> $env:GITHUB_ENV
           "QT_ROOT_DIR=$qtRoot" >> $env:GITHUB_ENV
           Write-Host "Qt root: $qtRoot"
@@ -208,7 +218,10 @@ jobs:
         if: matrix.msvc
         shell: pwsh
         run: |
-          cmake -S . -B build -G "Visual Studio 17 2022" -A Win32 `
+          # 不写生成器版本：CI runner 上的 Visual Studio 版本会漏节
+          # （当时是 17，现在已是 18），写死会拿不到实例。
+          # 不给 -G 时 CMake 自动选最新的 VS 版本。
+          cmake -S . -B build -A Win32 `
                 -DBUILD_TESTS=ON `
                 -DIMAGEPRO_WERROR=ON `
                 "-DCMAKE_PREFIX_PATH=$env:CMAKE_PREFIX_PATH" `
@@ -267,10 +280,16 @@ jobs:
           export QT_QPA_PLATFORM=offscreen
           ctest --test-dir build --output-on-failure || {
             echo "::group::失败用例的详细输出"
+            # set +e：默认 shell 带 -e，一个用例非零退出就会中断整个脚本，
+            # 后面的用例就遭不到诊断了。
+            set +e
             for t in build/tests/test_*.exe; do
               echo "---- $t"
-              "$t" -v2 2>&1 | tail -40
-              echo "exit=${PIPESTATUS[0]}"
+              # QTest 的文件日志是增量落盘的，进程崩溃也不会丢掉已写部分。
+              rm -f test_report.txt
+              "$t" -v2 -o test_report.txt,txt
+              echo "exit=$?"
+              tail -40 test_report.txt 2>/dev/null
             done
             echo "::endgroup::"
             exit 1
