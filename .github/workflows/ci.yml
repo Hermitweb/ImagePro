@@ -162,7 +162,6 @@ jobs:
         with:
           arch: x86
           # 输入名是 vsversion（无连字符）；写成 vs-version 会被当成未知输入而静默忽略。
-          vsversion: '2022'
 
       - name: Install Qt (${{ matrix.qt_arch }})
         if: matrix.msvc
