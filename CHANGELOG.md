@@ -127,6 +127,20 @@
   `qt5` 元包在 ucrt64 仓库没有（拆成 qt5-base / qt5-svg / qt5-tools）、
   `pkg-config` 的包名是 `pkgconf`、`tools-git` 已改名 `tools`、
   clangarm64 的编译器包是 `clang` 而不是 `gcc`。
+- **Windows 服务停不下来，卸载后整个安装目录残留**：服务主程序从未上报
+  `dwControlsAccepted`，SCM 因此**拒绝派发 STOP 控制** ——
+  `sc stop ImageProService` 直接返回 `ERROR_INVALID_CONTROL (1052)`。
+  连锁后果是：服务进程永不退出，它占用的 `ImagePro.exe` 与上百个运行库 DLL 被锁住，
+  卸载器删不掉，`C:\Program Files\ImagePro` **整个目录残留**（快捷方式与注册表键
+  反而是干净的，更难排查）。修复两处：
+  1. `serviceMain` 上报 `SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN`；
+  2. 卸载时不能只「请求」停止 —— `ControlService` 返回后服务才进入
+     `STOP_PENDING`，必须轮询到 `SERVICE_STOPPED` 再 `DeleteService`，
+     否则 exe 仍被占用。
+  实测（x64 UCRT64，服务处于**运行态**时执行卸载）：安装目录、桌面快捷方式、
+  开始菜单快捷方式、卸载注册表键、服务项全部清除，残留进程 0。
+  x86（MSVC + 官方 Qt5.15.2 + libvips 预编译包）同源改动同样编译通过、9/9 测试通过。
+
 ### 发布链路的修复（v1.5.0 发布前追溯）
 
 为了把发布真正跑通，这一轮把发布链路上的一系列真实阻断一一排除：
@@ -166,6 +180,14 @@
   （`bin/Hostx64/<target>/cl.exe`）推断真实目标架构。
 - **命令行自检**：`--version` / `--help` / `--service-status`，
   控制台输出固定为 UTF-8（此前在中文系统上会显示乱码）。
+- **v1.5.0 的发布产物原地替换**：v1.5.0 首次上线后，对**已发布的** win64 安装包
+  做安装→卸载闭环实测时发现了上面那条「服务停不下来、卸载后整个目录残留」的缺陷。
+  按既定决策不升版本号，而是把 `v1.5.0` 的 tag 与 Release 资产原地替换为含修复的构建。
+  由此带来两点已知影响：
+  - 已安装 v1.5.0 的用户**不会**收到这次修复 —— Velopack 按版本号判断，
+    同版本号不会触发更新（`RELEASES` / `releases.win.json` 里 nupkg 的 SHA1 也随之更新，
+    与替换后的产物自洽）。
+  - 替换完成后 Release 上的 `ImagePro-1.5.0-full.nupkg` 与初次发布的并非同一份二进制。
 
 ### UI 修复
 

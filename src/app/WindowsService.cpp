@@ -53,6 +53,11 @@ void WINAPI serviceMain(DWORD, LPWSTR*)
     g_service.status.dwWin32ExitCode = NO_ERROR;
     g_service.status.dwServiceSpecificExitCode = 0;
     g_service.status.dwWaitHint = 30000;
+    // 必须声明接受哪些控制码，否则 SCM 不会派发 STOP：
+    // ControlService(SERVICE_CONTROL_STOP) 会直接失败并返回 ERROR_INVALID_CONTROL(1052)，
+    // 于是「停止服务」与卸载时的「先停再删」全部失效 —— 服务进程不退，
+    // 它的 exe 与运行库被锁住，卸载器删不掉，$INSTDIR 整个残留下来。
+    g_service.status.dwControlsAccepted = SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN;
 
     g_service.handle = RegisterServiceCtrlHandlerExW(
         QStringLiteral("ImageProService").toStdWString().c_str(), serviceControlHandler, nullptr);
@@ -203,7 +208,22 @@ bool WindowsService::uninstall(const QString& serviceName, QString* errorMessage
 
     // 先停再删：运行中的服务无法直接删除。
     SERVICE_STATUS status;
-    ControlService(service, SERVICE_CONTROL_STOP, &status);
+    if (ControlService(service, SERVICE_CONTROL_STOP, &status)) {
+        // ControlService 只是「请求」停止，服务进程随后才会真正退出。
+        // 必须等到状态变成 SERVICE_STOPPED 再删：否则 exe 与运行库仍被占用，
+        // 卸载器删不掉，$INSTDIR 整个残留。
+        const DWORD deadline = GetTickCount() + 15000;
+        for (;;) {
+            SERVICE_STATUS current;
+            if (!QueryServiceStatus(service, &current))
+                break;
+            if (current.dwCurrentState == SERVICE_STOPPED)
+                break;
+            if (GetTickCount() > deadline)
+                break;
+            Sleep(100);
+        }
+    }
     DeleteService(service);
     CloseServiceHandle(service);
     CloseServiceHandle(manager);

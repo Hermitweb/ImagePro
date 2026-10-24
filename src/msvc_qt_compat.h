@@ -11,7 +11,10 @@
 //
 // 仅在 MSVC 18 及以上生效：更早的 MSVC 自带 stdext，不需要这层补丁。
 //
-// 用法（见 CMakeLists.txt）：target_compile_options(... PUBLIC "/FI<此文件路径>")
+// 用法（见 CMakeLists.txt）：目录级 add_compile_options("/FI<此文件路径>")。
+// 必须用目录级、且放在任何 add_executable / add_library 之前：
+// 只挂到 ImagePro 一个目标上会漏掉那些只链 Qt5::Gui 的目标（ moc 生成的
+// ImageListWidget.moc 等），而 add_compile_options 只对其后创建的目标生效。
 
 #pragma once
 
