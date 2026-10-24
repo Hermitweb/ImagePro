@@ -188,6 +188,24 @@
     同版本号不会触发更新（`RELEASES` / `releases.win.json` 里 nupkg 的 SHA1 也随之更新，
     与替换后的产物自洽）。
   - 替换完成后 Release 上的 `ImagePro-1.5.0-full.nupkg` 与初次发布的并非同一份二进制。
+- **对「发布出去的安装包」本身做了闭环验收**：不是只验本地构建产物，而是把
+  Release 上生效的 `ImagePro-1.5.0-win64.exe` 与 `ImagePro-1.5.0-win32.exe`
+  下载下来实测：静默安装 → 启动服务 → `sc stop` → **服务运行态**下卸载。
+  x64 与 x86 均：安装目录、桌面/开始菜单快捷方式、卸载注册表键、服务项全部清除，
+  残留进程 0。Velopack 元数据（`RELEASES` / `releases.win.json`）里的 nupkg
+  SHA1 与大小也已与替换后的 nupkg 对齐。
+- **x86 安装位置随 NSIS 位数而变**：发布链的 x86 作业用 choco 装的 32 位 NSIS，
+  `$PROGRAMFILES` 因此解析到 `C:\Program Files (x86)\ImagePro`，
+  卸载注册表键落在 `WOW6432Node` 视图 —— 这是 32 位安装器的标准行为。
+  （本地用 64 位 NSIS 打出来的 x86 包会装到 `C:\Program Files`，
+  两者都能正常装卸，但**以发布产物为准**。）
+- **ARM64 的安装器也是 32 位的**：`windows-11-arm` runner 预装的是
+  `C:\Program Files (x86)\NSIS\makensis.exe`，所以 ARM64 的 NSIS 安装包同样装到
+  `Program Files (x86)`、卸载键同样落在 `WOW6432Node`。
+  **被打包的程序本身是 ARM64**（CI 日志确认 `目标架构 = arm64`，
+  `CMAKE_SYSTEM_PROCESSOR=ARM64`）—— NSIS 只是复制文件，自身位数与载荷无关。
+  已用 HTTP Range 只取文件头的方式核对了三个架构产物的 PE Machine：
+  win64 = AMD64、win32 = I386、winarm64 = I386（后者是 32 位安装器本身）。
 
 ### UI 修复
 
@@ -342,6 +360,16 @@
   补这一项需要同时兼容两套方言 —— `rc.exe` 与 GNU `windres` 的 VERSIONINFO
   块语法并不完全一致，一份模板未必两边都能编过；
   待 MSVC 与 MinGW 两条链路都有稳定的模板写法后再补。
+- **手动删掉安装目录后再安装会被中止**：CPack 生成的 NSIS 安装器在 `.onInit`
+  里会先跑一遍旧版本卸载器（路径取自注册表的 `UninstallString`）。
+  如果安装目录被用户用资源管理器手动删掉了，卸载器文件已经不存在，
+  `ExecWait` 失败 → 弹出 `Uninstall failed.` 并 `Abort`，**安装不会继续**
+  （静默模式下同样会卡在这个对话框上）。
+  这是上游模板的行为，CPack 没有留出改写 `.onInit` 的钩子。
+  规避办法：重装前先把残留的注册表项删掉 ——
+  `HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\ImagePro`
+  （32 位安装包）或 64 位视图下的同名项。
+  正常走「卸载 → 重装」的流程不受影响：卸载器会自己把注册表项删干净（已实测）。
 
 ---
 

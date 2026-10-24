@@ -136,15 +136,30 @@ python -m aqt install-qt windows desktop 5.15.2 win32_msvc2019 -O D:/devtools/qt
 CI 的 `build-arch` 矩阵与之对应：x64 / x64-ucrt 跑在 `windows-latest`，
 ARM64 跑在 `windows-11-arm`，x86 跑在 `windows-latest` 的 MSVC 路线。
 
-**当前验证状态**：
+**当前验证状态**（v1.5.0 Release 产物本身的实测结果）：
 
-| 架构 | 构建 | 单元测试 | 安装包 / 便捷版 | 安装→卸载闭环 |
+| 架构 | 构建 | 单元测试 | 安装包 / 便捷版 | 安装→卸载闭环（对**已发布**的安装包实测） |
 |---|---|---|---|---|
-| x64 | ✅ 本地 | ✅ 9/9 | ✅ | ✅ 注册表/快捷方式/服务全部验证，卸载后无残留 |
-| x86 | ✅ 本地（MSVC） | ✅ 9/9 | ✅ | ✅ 同上 |
-| ARM64 | ⏳ 由 CI 的 `windows-11-arm` 执行 | ⏳ | ⏳ | ⏳ |
+| x64 | ✅ 本地 + CI | ✅ 9/9 | ✅ | ✅ 安装/服务/快捷方式/注册表全对，`sc stop` 可停，服务运行态卸载后无任何残留 |
+| x86 | ✅ CI（MSVC） | ✅ 9/9 | ✅ | ✅ 同上（在 `Program Files (x86)` 下实测） |
+| ARM64 | ✅ CI（`windows-11-arm` 原生构建） | ✅ 9/9 | ✅ | ⏳ 需 ARM64 机器实测 |
 
 > ARM64 之所以无法本地验证，是环境硬约束而非项目缺陷 —— 见上面的说明。
+
+**安装位置随「安装器本身的位数」而变**（不是 bug，但要知道）：
+
+| 架构 | 安装目录 | 卸载注册表键所在视图 |
+|---|---|---|
+| x64 | `C:\Program Files\ImagePro` | 64 位视图 |
+| x86 | `C:\Program Files (x86)\ImagePro` | `WOW6432Node`（32 位视图） |
+| ARM64 | `C:\Program Files (x86)\ImagePro` | `WOW6432Node`（32 位视图） |
+
+> NSIS 安装器只是个「复制文件」的程序，它的位数由 **makensis 的位数**决定，
+> 与被打包的程序无关：x64 用 MSYS2 的 64 位 makensis，x86 与 ARM64 用
+> runner 上预装的 32 位 NSIS。
+> 32 位安装器的 `$PROGRAMFILES` 解析到 `Program Files (x86)`，
+> 卸载注册表键也落在 `WOW6432Node` 视图。
+> **被打包的程序本身始终是对应架构**（x86 → I386、x64 → AMD64、ARM64 → ARM64）。
 
 ---
 
