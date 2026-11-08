@@ -182,10 +182,9 @@ void AutoProcessService::scanOnce()
             const int attempts = m_failures.value(key, 0) + 1;
             m_failures.insert(key, attempts);
             if (attempts >= kMaxProcessAttempts)
-                Logger::warning(QStringLiteral("自动处理连续失败 %1 次，放弃该文件：%2")
-                                    .arg(attempts)
-                                    .arg(key),
-                                QStringLiteral("Service"));
+                Logger::warning(
+                    QStringLiteral("自动处理连续失败 %1 次，放弃该文件：%2").arg(attempts).arg(key),
+                    QStringLiteral("Service"));
         }
     }
 

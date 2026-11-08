@@ -169,8 +169,7 @@ QImage ImageLoader::vipsImageToQImage(VipsImage* image)
             QRgb* line = reinterpret_cast<QRgb*>(result.scanLine(y));
             const uchar* srow = src + static_cast<size_t>(y) * static_cast<size_t>(width) * 4;
             for (int x = 0; x < width; ++x) {
-                line[x] = qRgba(srow[x * 4 + 0], srow[x * 4 + 1], srow[x * 4 + 2],
-                                srow[x * 4 + 3]);
+                line[x] = qRgba(srow[x * 4 + 0], srow[x * 4 + 1], srow[x * 4 + 2], srow[x * 4 + 3]);
             }
         }
     } else if (bands == 3) {
@@ -307,26 +306,25 @@ ExifSummary ImageLoader::readExifSummary(const QString& filePath)
         return summary;
 
     ensureVipsInitialized();
-    VipsImage* image = autorotateImage(vips_image_new_from_file(filePath.toUtf8().constData(), "access",
-                                                VIPS_ACCESS_SEQUENTIAL, nullptr));
+    VipsImage* image = autorotateImage(vips_image_new_from_file(
+        filePath.toUtf8().constData(), "access", VIPS_ACCESS_SEQUENTIAL, nullptr));
     if (!image) {
         vips_error_clear();
         return summary;
     }
 
     // libvips 会把 EXIF 平铺成 exif-ifdN-Tag 形式的字段，按候选 tag 逐一读取。
-    const struct
-    {
+    const struct {
         const char* field;
         QString* out;
     } candidates[] = {
-        { "exif-ifd0-Model", &summary.camera },
-        { "exif-ifd2-DateTimeOriginal", &summary.dateTime },
-        { "exif-ifd0-DateTime", &summary.dateTime },
-        { "exif-ifd2-ISOSpeedRatings", &summary.iso },
-        { "exif-ifd2-ExposureTime", &summary.exposure },
-        { "exif-ifd2-FNumber", &summary.aperture },
-        { "exif-ifd2-FocalLength", &summary.focalLength },
+        {"exif-ifd0-Model", &summary.camera},
+        {"exif-ifd2-DateTimeOriginal", &summary.dateTime},
+        {"exif-ifd0-DateTime", &summary.dateTime},
+        {"exif-ifd2-ISOSpeedRatings", &summary.iso},
+        {"exif-ifd2-ExposureTime", &summary.exposure},
+        {"exif-ifd2-FNumber", &summary.aperture},
+        {"exif-ifd2-FocalLength", &summary.focalLength},
     };
 
     for (const auto& c : candidates) {
@@ -385,8 +383,8 @@ ImageInfo ImageLoader::loadInfoImpl(const QString& filePath, bool reportErrors)
     info.fileSize = fi.size();
 
     // SEQUENTIAL：单遍读取；全局 operation/memory/file cache 已禁用，避免 tile cache 累积。
-    VipsImage* image = autorotateImage(vips_image_new_from_file(filePath.toUtf8().constData(), "access",
-                                                VIPS_ACCESS_SEQUENTIAL, nullptr));
+    VipsImage* image = autorotateImage(vips_image_new_from_file(
+        filePath.toUtf8().constData(), "access", VIPS_ACCESS_SEQUENTIAL, nullptr));
     if (!image) {
         const QString err = QString::fromUtf8(vips_error_buffer());
         vips_error_clear();
@@ -418,8 +416,8 @@ QImage ImageLoader::loadImage(const QString& filePath)
     ensureVipsInitialized();
 
     // SEQUENTIAL：单遍读取；全局 operation/memory/file cache 已禁用。
-    VipsImage* image = autorotateImage(vips_image_new_from_file(filePath.toUtf8().constData(), "access",
-                                                VIPS_ACCESS_SEQUENTIAL, nullptr));
+    VipsImage* image = autorotateImage(vips_image_new_from_file(
+        filePath.toUtf8().constData(), "access", VIPS_ACCESS_SEQUENTIAL, nullptr));
     if (!image) {
         const QString err = QString::fromUtf8(vips_error_buffer());
         vips_error_clear();
@@ -532,8 +530,8 @@ bool ImageLoader::convertFile(const QString& inputPath, const QString& outputPat
     ensureVipsInitialized();
 
     // SEQUENTIAL：单遍读取；全局 operation/memory/file cache 已禁用。
-    VipsImage* image = autorotateImage(vips_image_new_from_file(inputPath.toUtf8().constData(), "access",
-                                                VIPS_ACCESS_SEQUENTIAL, nullptr));
+    VipsImage* image = autorotateImage(vips_image_new_from_file(
+        inputPath.toUtf8().constData(), "access", VIPS_ACCESS_SEQUENTIAL, nullptr));
     if (!image)
         return false;
 
@@ -552,8 +550,8 @@ bool ImageLoader::resizeFile(const QString& inputPath, const QString& outputPath
         return convertFile(inputPath, outputPath, format, quality);
 
     // SEQUENTIAL：单遍读取；全局 operation/memory/file cache 已禁用。
-    VipsImage* image = autorotateImage(vips_image_new_from_file(inputPath.toUtf8().constData(), "access",
-                                                VIPS_ACCESS_SEQUENTIAL, nullptr));
+    VipsImage* image = autorotateImage(vips_image_new_from_file(
+        inputPath.toUtf8().constData(), "access", VIPS_ACCESS_SEQUENTIAL, nullptr));
     if (!image)
         return false;
 
@@ -610,8 +608,8 @@ bool ImageLoader::convertToSRgbFile(const QString& inputPath, const QString& out
     ensureVipsInitialized();
 
     // SEQUENTIAL：单遍读取；全局 operation/memory/file cache 已禁用。
-    VipsImage* image = autorotateImage(vips_image_new_from_file(inputPath.toUtf8().constData(), "access",
-                                                VIPS_ACCESS_SEQUENTIAL, nullptr));
+    VipsImage* image = autorotateImage(vips_image_new_from_file(
+        inputPath.toUtf8().constData(), "access", VIPS_ACCESS_SEQUENTIAL, nullptr));
     if (!image)
         return false;
 
@@ -645,7 +643,7 @@ bool ImageLoader::compressToTargetSize(const QString& inputPath, const QString& 
     } else {
         // SEQUENTIAL：单遍读取；全局 operation/memory/file cache 已禁用。
         image = autorotateImage(vips_image_new_from_file(inputPath.toUtf8().constData(), "access",
-                                         VIPS_ACCESS_SEQUENTIAL, nullptr));
+                                                         VIPS_ACCESS_SEQUENTIAL, nullptr));
         if (!image)
             return false;
     }

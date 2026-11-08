@@ -212,9 +212,9 @@ int main(int argc, char* argv[])
         yingtu::AutoProcessService service;
         // dispatcher 启动失败（如从普通控制台直接以 --service 启动）时返回 1，
         // 退出码必须传导：脚本/安装器靠它判断服务是否真的跑起来了。
-        return yingtu::WindowsService::run(yingtu::WindowsService::defaultServiceName(),
-                                           [&service]() { return service.run(); },
-                                           [&service]() { service.requestStop(); });
+        return yingtu::WindowsService::run(
+            yingtu::WindowsService::defaultServiceName(), [&service]() { return service.run(); },
+            [&service]() { service.requestStop(); });
     }
 
     // ── 注册 / 卸载服务（需要管理员权限）──────────────────────────

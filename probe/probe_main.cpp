@@ -116,7 +116,8 @@ static QImage alphaPatternImage(int w, int h)
     const int third = qMax(1, h / 3);
     for (int y = 0; y < h; ++y) {
         const uchar a = y < third ? 0 : (y < 2 * third ? 128 : 255);
-        const QColor c = y < third ? QColor(255, 0, 0) : (y < 2 * third ? QColor(0, 255, 0) : QColor(0, 0, 255));
+        const QColor c =
+            y < third ? QColor(255, 0, 0) : (y < 2 * third ? QColor(0, 255, 0) : QColor(0, 0, 255));
         for (int x = 0; x < w; ++x)
             img.setPixel(x, y, qRgba(c.red(), c.green(), c.blue(), a));
     }
@@ -138,11 +139,16 @@ static bool colorNear(const QImage& img, int x, int y, const QColor& expect, int
 {
     if (x < 0 || y < 0 || x >= img.width() || y >= img.height()) {
         if (why)
-            *why = QStringLiteral("采样点越界 (%1,%2) size=%3x%4").arg(x).arg(y).arg(img.width()).arg(img.height());
+            *why = QStringLiteral("采样点越界 (%1,%2) size=%3x%4")
+                       .arg(x)
+                       .arg(y)
+                       .arg(img.width())
+                       .arg(img.height());
         return false;
     }
     const QColor c = img.pixelColor(x, y);
-    const bool near = qAbs(c.red() - expect.red()) <= tol && qAbs(c.green() - expect.green()) <= tol &&
+    const bool near = qAbs(c.red() - expect.red()) <= tol &&
+                      qAbs(c.green() - expect.green()) <= tol &&
                       qAbs(c.blue() - expect.blue()) <= tol;
     if (!near && why) {
         *why = QStringLiteral("点(%1,%2) 实际 rgb(%3,%4,%5) 期望 rgb(%6,%7,%8)")
@@ -207,7 +213,7 @@ int main(int argc, char** argv)
         bool pixOk = !back.isNull();
         QString why;
         if (pixOk) {
-            const int xs[] = { 0, 25, 50, 75, 100 };
+            const int xs[] = {0, 25, 50, 75, 100};
             for (int x : xs) {
                 if (!colorNear(back, x, 30, src.pixelColor(x, 30), 2, &why)) {
                     pixOk = false;
@@ -227,13 +233,16 @@ int main(int argc, char** argv)
         bool aOk = back.format() == QImage::Format_ARGB32 || back.hasAlphaChannel();
         QString why;
         if (aOk && !back.isNull()) {
-            const int ys[] = { 2, 15, 28 }; // 三段 alpha 的中点
-            const int expectA[] = { 0, 128, 255 };
+            const int ys[] = {2, 15, 28}; // 三段 alpha 的中点
+            const int expectA[] = {0, 128, 255};
             for (int i = 0; i < 3; ++i) {
                 const int a = back.pixelColor(18, ys[i]).alpha();
                 if (qAbs(a - expectA[i]) > 2) {
                     aOk = false;
-                    why = QStringLiteral("y=%1 alpha 实际 %2 期望 %3").arg(ys[i]).arg(a).arg(expectA[i]);
+                    why = QStringLiteral("y=%1 alpha 实际 %2 期望 %3")
+                              .arg(ys[i])
+                              .arg(a)
+                              .arg(expectA[i]);
                     break;
                 }
             }
@@ -277,7 +286,8 @@ int main(int argc, char** argv)
                   .arg(inf.width)
                   .arg(inf.height)
                   .arg(inf.format));
-        check(QFile(inf.filePath).size() == QFileInfo(p).size() && inf.fileSize > 0, "loadInfo 文件大小");
+        check(QFile(inf.filePath).size() == QFileInfo(p).size() && inf.fileSize > 0,
+              "loadInfo 文件大小");
     }
 
     // 1.5 错误路径：损坏 / 缺失 / 空 / 目录 / 扩展名不符
@@ -300,16 +310,19 @@ int main(int argc, char** argv)
         // libvips 默认宽容解码截断的 JPEG（补灰而不报错）——记录为观测行为而非缺陷；
         // 若要严格模式可在 vips_jpegload 上加 "fail" 选项（属于产品决策）。
         info("截断 JPEG 宽容解码", QStringLiteral("loadInfo valid=%1, loadImage %2")
-                                            .arg(inf.valid)
-                                            .arg(yingtu::ImageLoader::loadImage(trunc).isNull()
-                                                     ? QStringLiteral("为空")
-                                                     : QStringLiteral("返回部分图像")));
+                                       .arg(inf.valid)
+                                       .arg(yingtu::ImageLoader::loadImage(trunc).isNull()
+                                                ? QStringLiteral("为空")
+                                                : QStringLiteral("返回部分图像")));
 
         inf = yingtu::ImageLoader::loadInfo(dir + QStringLiteral("/__missing__.png"));
         check(!inf.valid && !inf.errorString.isEmpty(), "缺失文件 loadInfo 报错");
 
         const QString empty = dir + QStringLiteral("/empty.jpg");
-        { QFile f(empty); f.open(QIODevice::WriteOnly); }
+        {
+            QFile f(empty);
+            f.open(QIODevice::WriteOnly);
+        }
         check(yingtu::ImageLoader::loadImage(empty).isNull(), "0 字节文件加载为空（不崩溃）");
 
         check(yingtu::ImageLoader::loadImage(dir).isNull(), "传入目录路径返回空（不崩溃）");
@@ -318,7 +331,8 @@ int main(int argc, char** argv)
         const QString lying = dir + QStringLiteral("/actually_png.jpg");
         yingtu::ImageLoader::saveImage(solidImage(50, 40, Qt::cyan), lying, "PNG");
         const QImage lie = yingtu::ImageLoader::loadImage(lying);
-        check(!lie.isNull(), "扩展名不符仍可解码", lie.isNull() ? QStringLiteral("返回空") : QStringLiteral("成功"));
+        check(!lie.isNull(), "扩展名不符仍可解码",
+              lie.isNull() ? QStringLiteral("返回空") : QStringLiteral("成功"));
     }
 
     // 1.6 16-bit 灰度 PNG（高位深输入）
@@ -329,7 +343,8 @@ int main(int argc, char** argv)
         src.save(p, "PNG");
         const QImage back = yingtu::ImageLoader::loadImage(p);
         check(!back.isNull(), "16-bit 灰度 PNG 可加载",
-              back.isNull() ? QStringLiteral("返回空") : QStringLiteral("%1x%2").arg(back.width()).arg(back.height()));
+              back.isNull() ? QStringLiteral("返回空")
+                            : QStringLiteral("%1x%2").arg(back.width()).arg(back.height()));
     }
 
     // 1.7 loadPreview 尺寸约束
@@ -347,7 +362,9 @@ int main(int argc, char** argv)
 
     {
         const QImage src = gradientImage(80, 60);
-        const struct { const char* fmt; } fmts[] = { { "png" }, { "jpg" }, { "webp" }, { "tif" }, { "bmp" } };
+        const struct {
+            const char* fmt;
+        } fmts[] = {{"png"}, {"jpg"}, {"webp"}, {"tif"}, {"bmp"}};
         for (const auto& f : fmts) {
             const QString p = dir + QStringLiteral("/out.") + f.fmt;
             const bool ok = yingtu::ImageLoader::saveImage(src, p);
@@ -363,14 +380,19 @@ int main(int argc, char** argv)
         // 未知扩展名：应干净失败而不是产出坏文件
         const QString p = dir + QStringLiteral("/out.unknownxyz");
         const bool ok = yingtu::ImageLoader::saveImage(gradientImage(40, 40), p);
-        info("未知扩展名保存", ok ? QStringLiteral("返回 true（有回退）") : QStringLiteral("返回 false"));
+        info("未知扩展名保存",
+             ok ? QStringLiteral("返回 true（有回退）") : QStringLiteral("返回 false"));
         check(!QFileInfo(p).exists() || ok, "未知扩展名不产生半成品文件");
     }
 
     {
         // 目标是「已存在的普通文件当目录」→ 应干净失败
         const QString blocker = dir + QStringLiteral("/blocker");
-        { QFile f(blocker); f.open(QIODevice::WriteOnly); f.write("x"); }
+        {
+            QFile f(blocker);
+            f.open(QIODevice::WriteOnly);
+            f.write("x");
+        }
         const bool ok = yingtu::ImageLoader::saveImage(gradientImage(40, 40),
                                                        blocker + QStringLiteral("/sub.png"));
         check(!ok, "目标目录不可创建时保存失败", ok ? QStringLiteral("竟然成功") : QString());
@@ -382,8 +404,9 @@ int main(int argc, char** argv)
         const QString lo = dir + QStringLiteral("/q15.jpg");
         yingtu::ImageLoader::saveImage(src, hi, "JPEG", 95);
         yingtu::ImageLoader::saveImage(src, lo, "JPEG", 15);
-        check(QFileInfo(hi).size() > QFileInfo(lo).size(), "JPEG 质量参数影响体积",
-              QStringLiteral("q95=%1B q15=%2B").arg(QFileInfo(hi).size()).arg(QFileInfo(lo).size()));
+        check(
+            QFileInfo(hi).size() > QFileInfo(lo).size(), "JPEG 质量参数影响体积",
+            QStringLiteral("q95=%1B q15=%2B").arg(QFileInfo(hi).size()).arg(QFileInfo(lo).size()));
     }
 
     // ══ 三、转换 ══════════════════════════════════════════════════
@@ -397,26 +420,29 @@ int main(int argc, char** argv)
         check(ok, "透明 PNG → JPEG 成功");
         if (ok) {
             const QImage back = yingtu::ImageLoader::loadImage(out);
-            check(!back.isNull() && back.allGray() == false && back.pixelColor(10, 5).alpha() == 255,
-                  "转换结果不透明", QStringLiteral("size=%1x%2").arg(back.width()).arg(back.height()));
+            check(!back.isNull() && back.allGray() == false &&
+                      back.pixelColor(10, 5).alpha() == 255,
+                  "转换结果不透明",
+                  QStringLiteral("size=%1x%2").arg(back.width()).arg(back.height()));
         }
     }
 
     {
         yingtu::ConvertEngine eng;
         QStringList errs;
-        QObject::connect(&eng, &yingtu::ConvertEngine::error, &eng, [&](const QString& m) { errs << m; });
+        QObject::connect(&eng, &yingtu::ConvertEngine::error, &eng,
+                         [&](const QString& m) { errs << m; });
         yingtu::ConvertSettings cs;
         cs.targetFormat = QStringLiteral("webp");
         cs.quality = 80;
         cs.explicitOutputPath = dir + QStringLiteral("/conv.webp");
         eng.setSettings(cs);
         bool ok = false;
-        const QStringList outs = eng.process({ dir + QStringLiteral("/g888.png") }, &ok);
+        const QStringList outs = eng.process({dir + QStringLiteral("/g888.png")}, &ok);
         check(ok && !outs.isEmpty() && QFileInfo(cs.explicitOutputPath).exists(),
-              "ConvertEngine PNG → WebP",
-              ok ? QString() : errs.join(QStringLiteral("; ")));
-        check(yingtu::ConvertEngine::estimateSize(gradientImage(600, 400), cs) > 0, "estimateSize 返回正值");
+              "ConvertEngine PNG → WebP", ok ? QString() : errs.join(QStringLiteral("; ")));
+        check(yingtu::ConvertEngine::estimateSize(gradientImage(600, 400), cs) > 0,
+              "estimateSize 返回正值");
     }
 
     // ══ 四、缩放 ══════════════════════════════════════════════════
@@ -442,11 +468,12 @@ int main(int argc, char** argv)
         eng.setSettings(rs);
         bool ok = true;
         QStringList errs;
-        QObject::connect(&eng, &yingtu::ResizeEngine::error, &eng, [&](const QString& m) { errs << m; });
-        const QStringList outs = eng.process({ dir + QStringLiteral("/g888.png") }, &ok);
-        const QImage back = ok && !outs.isEmpty() ? yingtu::ImageLoader::loadImage(outs.first()) : QImage();
-        check(!ok || (!back.isNull() && back.width() >= 1 && back.height() >= 1),
-              "0% 缩放行为有界",
+        QObject::connect(&eng, &yingtu::ResizeEngine::error, &eng,
+                         [&](const QString& m) { errs << m; });
+        const QStringList outs = eng.process({dir + QStringLiteral("/g888.png")}, &ok);
+        const QImage back =
+            ok && !outs.isEmpty() ? yingtu::ImageLoader::loadImage(outs.first()) : QImage();
+        check(!ok || (!back.isNull() && back.width() >= 1 && back.height() >= 1), "0% 缩放行为有界",
               ok ? QStringLiteral("成功 %1x%2").arg(back.width()).arg(back.height())
                  : QStringLiteral("报错: %1").arg(errs.value(0)));
     }
@@ -469,9 +496,11 @@ int main(int argc, char** argv)
         eng.setSettings(rs);
         bool ok = false;
         QStringList errs;
-        QObject::connect(&eng, &yingtu::ResizeEngine::error, &eng, [&](const QString& m) { errs << m; });
-        const QStringList outs = eng.process({ in }, &ok);
-        const QImage back = ok && !outs.isEmpty() ? yingtu::ImageLoader::loadImage(outs.first()) : QImage();
+        QObject::connect(&eng, &yingtu::ResizeEngine::error, &eng,
+                         [&](const QString& m) { errs << m; });
+        const QStringList outs = eng.process({in}, &ok);
+        const QImage back =
+            ok && !outs.isEmpty() ? yingtu::ImageLoader::loadImage(outs.first()) : QImage();
         check(ok && !back.isNull() && back.size() == predicted, "实际输出与预测一致",
               ok ? QStringLiteral("%1x%2").arg(back.width()).arg(back.height())
                  : errs.join(QStringLiteral("; ")));
@@ -506,8 +535,8 @@ int main(int argc, char** argv)
     {
         // M2 回归探针：带透明的图压缩为 JPEG
         const QString out = dir + QStringLiteral("/alpha_target.jpg");
-        const bool ok = yingtu::ImageLoader::compressToTargetSize(dir + QStringLiteral("/alpha.png"), out,
-                                                                  QSize(), 8000, "JPEG");
+        const bool ok = yingtu::ImageLoader::compressToTargetSize(
+            dir + QStringLiteral("/alpha.png"), out, QSize(), 8000, "JPEG");
         check(ok, "透明 PNG → 目标体积 JPEG", ok ? QString() : QStringLiteral("压缩失败"));
     }
 
@@ -521,7 +550,7 @@ int main(int argc, char** argv)
         cs.outputFormat = QStringLiteral("JPEG");
         cs.explicitOutputPath = dir + QStringLiteral("/compressed.jpg");
         eng.setSettings(cs);
-        const QList<yingtu::CompressResult> results = eng.process({ in });
+        const QList<yingtu::CompressResult> results = eng.process({in});
         bool ok = results.size() == 1 && results.first().success;
         const qint64 before = QFileInfo(in).size();
         const qint64 after = QFileInfo(cs.explicitOutputPath).size();
@@ -529,8 +558,7 @@ int main(int argc, char** argv)
               ok ? QStringLiteral("%1B → %2B").arg(before).arg(after)
                  : results.value(0).errorString);
         if (ok) {
-            info("压缩率", QStringLiteral("%1%")
-                                .arg(before > 0 ? after * 100 / before : -1));
+            info("压缩率", QStringLiteral("%1%").arg(before > 0 ? after * 100 / before : -1));
         }
     }
 
@@ -554,8 +582,10 @@ int main(int argc, char** argv)
         yingtu::StitchSettings s = ss;
         s.explicitOutputPath = out;
         eng.setSettings(s);
-        QObject::connect(&eng, &yingtu::StitchEngine::error, &eng,
-                         [errs](const QString& m) { if (errs->isEmpty()) *errs = m; });
+        QObject::connect(&eng, &yingtu::StitchEngine::error, &eng, [errs](const QString& m) {
+            if (errs->isEmpty())
+                *errs = m;
+        });
         const QString path = eng.process(inputs, ok);
         if (*ok && !QFileInfo::exists(path))
             *errs = QStringLiteral("process 报成功但文件不存在: %1").arg(path);
@@ -569,14 +599,16 @@ int main(int argc, char** argv)
         ss.uniformWidth = true;
         bool ok = false;
         QString errs;
-        const QImage out = runStitch({ red100x40, blue150x50 }, ss, dir + QStringLiteral("/st_vw.png"), &ok, &errs);
+        const QImage out =
+            runStitch({red100x40, blue150x50}, ss, dir + QStringLiteral("/st_vw.png"), &ok, &errs);
         check(ok && !out.isNull(), "纵向+统一宽度 拼接成功", errs);
         QString why;
-        const bool pixelsOk = ok && out.width() >= 148 && out.width() <= 152 &&
-                              qAbs(out.height() - 110) <= 4 &&
-                              colorNear(out, out.width() / 2, 30, QColor(255, 0, 0), 20, &why) &&
-                              colorNear(out, out.width() / 2, out.height() - 20, QColor(0, 0, 255), 20, &why);
-        check(pixelsOk, "纵向+统一宽度 尺寸与颜色", why.isEmpty() ? QStringLiteral("%1x%2").arg(out.width()).arg(out.height()) : why);
+        const bool pixelsOk =
+            ok && out.width() >= 148 && out.width() <= 152 && qAbs(out.height() - 110) <= 4 &&
+            colorNear(out, out.width() / 2, 30, QColor(255, 0, 0), 20, &why) &&
+            colorNear(out, out.width() / 2, out.height() - 20, QColor(0, 0, 255), 20, &why);
+        check(pixelsOk, "纵向+统一宽度 尺寸与颜色",
+              why.isEmpty() ? QStringLiteral("%1x%2").arg(out.width()).arg(out.height()) : why);
     }
 
     {
@@ -585,7 +617,8 @@ int main(int argc, char** argv)
         ss.direction = yingtu::StitchSettings::Vertical;
         bool ok = false;
         QString errs;
-        const QImage out = runStitch({ red100x50, blue100x50 }, ss, dir + QStringLiteral("/st_v.png"), &ok, &errs);
+        const QImage out =
+            runStitch({red100x50, blue100x50}, ss, dir + QStringLiteral("/st_v.png"), &ok, &errs);
         QString why;
         const bool okPix = ok && out.size() == QSize(100, 100) &&
                            colorNear(out, 50, 25, QColor(255, 0, 0), 10, &why) &&
@@ -600,7 +633,8 @@ int main(int argc, char** argv)
         ss.uniformHeight = true;
         bool ok = false;
         QString errs;
-        const QImage out = runStitch({ red100x50, blue80x50 }, ss, dir + QStringLiteral("/st_h.png"), &ok, &errs);
+        const QImage out =
+            runStitch({red100x50, blue80x50}, ss, dir + QStringLiteral("/st_h.png"), &ok, &errs);
         QString why;
         const bool okPix = ok && out.size() == QSize(180, 50) &&
                            colorNear(out, 50, 25, QColor(255, 0, 0), 10, &why) &&
@@ -625,7 +659,8 @@ int main(int argc, char** argv)
         ss.gridColumns = 2;
         bool ok = false;
         QString errs;
-        const QImage out = runStitch({ g1, g2, g3, g4 }, ss, dir + QStringLiteral("/st_grid.png"), &ok, &errs);
+        const QImage out =
+            runStitch({g1, g2, g3, g4}, ss, dir + QStringLiteral("/st_grid.png"), &ok, &errs);
         QString why;
         const bool okPix = ok && out.size() == QSize(100, 80) &&
                            colorNear(out, 25, 20, QColor(255, 0, 0), 10, &why) &&
@@ -647,7 +682,7 @@ int main(int argc, char** argv)
         ss.background = QStringLiteral("white");
         bool ok = false;
         QString errs;
-        const QImage out = runStitch({ a, b }, ss, dir + QStringLiteral("/st_sp.png"), &ok, &errs);
+        const QImage out = runStitch({a, b}, ss, dir + QStringLiteral("/st_sp.png"), &ok, &errs);
         QString why;
         const bool okPix = ok && out.size() == QSize(50, 70) &&
                            colorNear(out, 25, 35, QColor(255, 255, 255), 10, &why) &&
@@ -664,7 +699,8 @@ int main(int argc, char** argv)
         ss.background = QStringLiteral("transparent");
         bool ok = false;
         QString errs;
-        const QImage out = runStitch({ a, red100x50 }, ss, dir + QStringLiteral("/st_al.png"), &ok, &errs);
+        const QImage out =
+            runStitch({a, red100x50}, ss, dir + QStringLiteral("/st_al.png"), &ok, &errs);
         check(ok && !out.isNull(), "透明背景 + alpha 输入不崩溃", errs);
     }
 
@@ -676,17 +712,21 @@ int main(int argc, char** argv)
         yingtu::ImageLoader::saveImage(gradientImage(100, 800), tall, "PNG");
         yingtu::StitchSettings ss;
         ss.direction = yingtu::StitchSettings::Vertical;
-        const QImage pv = yingtu::StitchEngine::preview({ tall, tall }, ss, 400);
+        const QImage pv = yingtu::StitchEngine::preview({tall, tall}, ss, 400);
         check(!pv.isNull() && pv.width() == 50 && pv.height() == 800,
-              QStringLiteral("preview maxLongEdge 逐输入限制 (%1x%2)").arg(pv.width()).arg(pv.height()));
+              QStringLiteral("preview maxLongEdge 逐输入限制 (%1x%2)")
+                  .arg(pv.width())
+                  .arg(pv.height()));
     }
 
     {
         // 估算（无 IO 重载）
         yingtu::StitchSettings ss;
         ss.direction = yingtu::StitchSettings::Vertical;
-        const QSize est = yingtu::StitchEngine::estimateOutputSize(QList<QSize>{ QSize(100, 50), QSize(100, 50) }, ss);
-        check(est == QSize(100, 100), "estimateOutputSize 纵向", QStringLiteral("%1x%2").arg(est.width()).arg(est.height()));
+        const QSize est = yingtu::StitchEngine::estimateOutputSize(
+            QList<QSize>{QSize(100, 50), QSize(100, 50)}, ss);
+        check(est == QSize(100, 100), "estimateOutputSize 纵向",
+              QStringLiteral("%1x%2").arg(est.width()).arg(est.height()));
     }
 
     // ══ 七、水印 ══════════════════════════════════════════════════
@@ -756,7 +796,7 @@ int main(int argc, char** argv)
         ws.outputFormat = QStringLiteral("png");
         eng.setSettings(ws);
         bool ok = false;
-        const QStringList outs = eng.process({ in }, &ok);
+        const QStringList outs = eng.process({in}, &ok);
         check(ok && !outs.isEmpty() && QFileInfo(ws.explicitOutputPath).exists(),
               "WatermarkEngine 写出文件");
     }
@@ -770,10 +810,11 @@ int main(int argc, char** argv)
         ps.outputPath = dir + QStringLiteral("/out.pdf");
         eng.setSettings(ps);
         bool ok = false;
-        const QString path = eng.process({ red100x40, blue150x50 }, &ok);
+        const QString path = eng.process({red100x40, blue150x50}, &ok);
         check(ok && QFileInfo(ps.outputPath).exists() && QFileInfo(ps.outputPath).size() > 500,
               "双图导出 PDF",
-              ok ? QStringLiteral("%1B").arg(QFileInfo(ps.outputPath).size()) : QStringLiteral("失败"));
+              ok ? QStringLiteral("%1B").arg(QFileInfo(ps.outputPath).size())
+                 : QStringLiteral("失败"));
         if (ok) {
             QFile f(ps.outputPath);
             f.open(QIODevice::ReadOnly);
@@ -788,8 +829,10 @@ int main(int argc, char** argv)
         eng.setSettings(ps);
         bool ok = true;
         QStringList errs;
-        QObject::connect(&eng, &yingtu::PdfEngine::error, &eng, [&](const QString& m) { errs << m; });
-        eng.process({ dir + QStringLiteral("/__no1__.png"), dir + QStringLiteral("/__no2__.png") }, &ok);
+        QObject::connect(&eng, &yingtu::PdfEngine::error, &eng,
+                         [&](const QString& m) { errs << m; });
+        eng.process({dir + QStringLiteral("/__no1__.png"), dir + QStringLiteral("/__no2__.png")},
+                    &ok);
         check(!ok, "全部输入不可读时报失败（不假成功）",
               errs.isEmpty() ? QStringLiteral("ok=%1").arg(ok) : errs.join(QStringLiteral("; ")));
     }
@@ -801,7 +844,7 @@ int main(int argc, char** argv)
         ps.outputPath = dir + QStringLiteral("/grid.pdf");
         eng.setSettings(ps);
         bool ok = false;
-        eng.process({ red100x40, blue150x50, red100x50, blue80x50 }, &ok);
+        eng.process({red100x40, blue150x50, red100x50, blue80x50}, &ok);
         check(ok && QFileInfo(ps.outputPath).exists(), "2x2 版式导出");
     }
 
@@ -842,8 +885,7 @@ int main(int argc, char** argv)
         eng.addAction(f);
         out = eng.renderWithSelection(QString());
         const QColor c = out.pixelColor(50, 30);
-        check(qAbs(c.red() - c.green()) < 6 && qAbs(c.green() - c.blue()) < 6,
-              "灰度滤镜使区域变灰",
+        check(qAbs(c.red() - c.green()) < 6 && qAbs(c.green() - c.blue()) < 6, "灰度滤镜使区域变灰",
               QStringLiteral("rgb(%1,%2,%3)").arg(c.red()).arg(c.green()).arg(c.blue()));
 
         // 动作管理
@@ -883,16 +925,21 @@ int main(int argc, char** argv)
         p.rows = 2;
         p.columns = 3;
         p.category = QStringLiteral("Probing");
-        p.tags = QStringList{ QStringLiteral("probe") };
+        p.tags = QStringList{QStringLiteral("probe")};
         check(mgr.savePreset(p), "savePreset 成功");
 
         const QList<yingtu::GridPreset> all = mgr.loadPresets();
-        const auto it = std::find_if(all.cbegin(), all.cend(),
-                                     [](const yingtu::GridPreset& g) { return g.id == QStringLiteral("probe-p1"); });
-        check(it != all.cend() && it->rows == 2 && it->columns == 3 && it->category == QStringLiteral("Probing"),
+        const auto it = std::find_if(all.cbegin(), all.cend(), [](const yingtu::GridPreset& g) {
+            return g.id == QStringLiteral("probe-p1");
+        });
+        check(it != all.cend() && it->rows == 2 && it->columns == 3 &&
+                  it->category == QStringLiteral("Probing"),
               "预设往返字段完整（含 category）",
               it == all.cend() ? QStringLiteral("未找到")
-                               : QStringLiteral("rows=%1 cols=%2 cat=%3").arg(it->rows).arg(it->columns).arg(it->category));
+                               : QStringLiteral("rows=%1 cols=%2 cat=%3")
+                                     .arg(it->rows)
+                                     .arg(it->columns)
+                                     .arg(it->category));
         check(mgr.presetExists(QStringLiteral("探针预设")), "presetExists 按名称命中");
 
         // M20：无效预设必须被拒绝
@@ -934,15 +981,23 @@ int main(int argc, char** argv)
     {
         const QString outDir = dir + QStringLiteral("/uniq");
         QDir().mkpath(outDir);
-        const QString p1 = yingtu::FileUtils::generateUniqueOutputPath(outDir, QStringLiteral("img"), QStringLiteral("png"));
+        const QString p1 = yingtu::FileUtils::generateUniqueOutputPath(
+            outDir, QStringLiteral("img"), QStringLiteral("png"));
         check(!p1.isEmpty() && !QFileInfo::exists(p1), "generateUniqueOutputPath 首次不冲突", p1);
-        { QFile f(p1); f.open(QIODevice::WriteOnly); f.write("x"); }
-        const QString p2 = yingtu::FileUtils::generateUniqueOutputPath(outDir, QStringLiteral("img"), QStringLiteral("png"));
+        {
+            QFile f(p1);
+            f.open(QIODevice::WriteOnly);
+            f.write("x");
+        }
+        const QString p2 = yingtu::FileUtils::generateUniqueOutputPath(
+            outDir, QStringLiteral("img"), QStringLiteral("png"));
         check(!p2.isEmpty() && p2 != p1, "已占用时给出新名字", p2);
 
         // 原子占位
-        const QString r1 = yingtu::FileUtils::reserveUniqueOutputPath(outDir, QStringLiteral("res"), QStringLiteral("png"));
-        const QString r2 = yingtu::FileUtils::reserveUniqueOutputPath(outDir, QStringLiteral("res"), QStringLiteral("png"));
+        const QString r1 = yingtu::FileUtils::reserveUniqueOutputPath(outDir, QStringLiteral("res"),
+                                                                      QStringLiteral("png"));
+        const QString r2 = yingtu::FileUtils::reserveUniqueOutputPath(outDir, QStringLiteral("res"),
+                                                                      QStringLiteral("png"));
         check(!r1.isEmpty() && !r2.isEmpty() && r1 != r2, "reserveUniqueOutputPath 并发不重名");
         {
             QFile f(r2);

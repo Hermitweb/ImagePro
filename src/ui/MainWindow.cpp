@@ -371,9 +371,9 @@ void MainWindow::setupMenuBar()
     auto addToolAction = [this, toolMenu](const QString& text, ToolType tool, QKeySequence ctrl) {
         QAction* action =
             toolMenu->addAction(text, this, [this, tool]() { m_toolBar->setCurrentTool(tool); });
-        action->setShortcuts({ QKeySequence(static_cast<int>(Qt::Key_F1) + static_cast<int>(tool) -
-                                            static_cast<int>(ToolType::Stitch)),
-                               ctrl });
+        action->setShortcuts({QKeySequence(static_cast<int>(Qt::Key_F1) + static_cast<int>(tool) -
+                                           static_cast<int>(ToolType::Stitch)),
+                              ctrl});
     };
     addToolAction(tr("&Stitch"), ToolType::Stitch, QKeySequence(QStringLiteral("Ctrl+K")));
     addToolAction(tr("&Convert"), ToolType::Convert, QKeySequence(QStringLiteral("Ctrl+E")));
@@ -895,8 +895,8 @@ void MainWindow::onAddImages()
 
 void MainWindow::onAddFolder()
 {
-    const QString dir = QFileDialog::getExistingDirectory(this, tr("Add Folder"),
-                                                          lastBrowseDirectory());
+    const QString dir =
+        QFileDialog::getExistingDirectory(this, tr("Add Folder"), lastBrowseDirectory());
     if (dir.isEmpty())
         return;
     const QStringList files = FileUtils::expandToImageFiles(QStringList{dir});
@@ -1108,19 +1108,18 @@ void MainWindow::runEngineAsync(
                 m_statusBar->setState(StatusBarWidget::State::Ready);
             });
 
-    auto future =
-        QtConcurrent::run(ImageTaskPools::enginePool(),
-                          [settings, paths, currentProgressDlg, cancelFlag]() -> ResultType {
-                              EngineType engine;
-                              engine.setSettings(settings);
-                              engine.setCancelFlag(cancelFlag.data());
-                              // 对话框若已销毁，QPointer 为空，connect 会安全返回 false 而不是崩溃。
-                              if (currentProgressDlg)
-                                  QObject::connect(&engine, &EngineType::progress,
-                                                   currentProgressDlg.data(),
-                                                   &QProgressDialog::setValue);
-                              return engine.process(paths);
-                          });
+    auto future = QtConcurrent::run(
+        ImageTaskPools::enginePool(),
+        [settings, paths, currentProgressDlg, cancelFlag]() -> ResultType {
+            EngineType engine;
+            engine.setSettings(settings);
+            engine.setCancelFlag(cancelFlag.data());
+            // 对话框若已销毁，QPointer 为空，connect 会安全返回 false 而不是崩溃。
+            if (currentProgressDlg)
+                QObject::connect(&engine, &EngineType::progress, currentProgressDlg.data(),
+                                 &QProgressDialog::setValue);
+            return engine.process(paths);
+        });
     watcher->setFuture(future);
 }
 
@@ -1154,8 +1153,8 @@ void MainWindow::onProcessRequested()
         // 文件名模板此前只是装饰：面板里写的 {name}_stitched_{time} 从不生效。
         // 现在用它展开出默认输出名（另存对话框可改），与预览所见一致。
         const QString templatedName = FileUtils::applyFileNameTemplate(
-            m_propertyPanel->outputFileNameTemplate(),
-            QFileInfo(stitchPaths.first()).fileName(), 1, QSize(), QStringLiteral("stitched"));
+            m_propertyPanel->outputFileNameTemplate(), QFileInfo(stitchPaths.first()).fileName(), 1,
+            QSize(), QStringLiteral("stitched"));
         if (!settings.outputDir.isEmpty()) {
             defaultPath = settings.outputDir + QStringLiteral("/") + templatedName +
                           QStringLiteral(".") + fmt;
@@ -1214,9 +1213,8 @@ void MainWindow::onProcessRequested()
             QFileInfo fi(selectedPaths.first());
             QString fmt = convertSettings.targetFormat.toLower();
             QString defaultPath =
-            (lastBrowseDirectory().isEmpty() ? fi.absolutePath() : lastBrowseDirectory()) +
-            QStringLiteral("/") + fi.completeBaseName() +
-                                  QStringLiteral(".") + fmt;
+                (lastBrowseDirectory().isEmpty() ? fi.absolutePath() : lastBrowseDirectory()) +
+                QStringLiteral("/") + fi.completeBaseName() + QStringLiteral(".") + fmt;
             QString filter = buildImageSaveFilter(fmt);
             QString selectedPath =
                 QFileDialog::getSaveFileName(this, tr("Save Converted Image"), defaultPath, filter);
@@ -1278,9 +1276,9 @@ void MainWindow::onProcessRequested()
             if (fmt.compare(QStringLiteral("jpg"), Qt::CaseInsensitive) == 0)
                 fmt = QStringLiteral("jpeg");
             QString defaultPath =
-            (lastBrowseDirectory().isEmpty() ? fi.absolutePath() : lastBrowseDirectory()) +
-            QStringLiteral("/") + fi.completeBaseName() +
-                                  QStringLiteral("_compressed.") + fmt.toLower();
+                (lastBrowseDirectory().isEmpty() ? fi.absolutePath() : lastBrowseDirectory()) +
+                QStringLiteral("/") + fi.completeBaseName() + QStringLiteral("_compressed.") +
+                fmt.toLower();
             QString filter = buildImageSaveFilter(fmt);
             QString selectedPath = QFileDialog::getSaveFileName(this, tr("Save Compressed Image"),
                                                                 defaultPath, filter);
@@ -1343,9 +1341,9 @@ void MainWindow::onProcessRequested()
             if (fmt.compare(QStringLiteral("jpg"), Qt::CaseInsensitive) == 0)
                 fmt = QStringLiteral("jpeg");
             QString defaultPath =
-            (lastBrowseDirectory().isEmpty() ? fi.absolutePath() : lastBrowseDirectory()) +
-            QStringLiteral("/") + fi.completeBaseName() +
-                                  QStringLiteral("_watermarked.") + fmt.toLower();
+                (lastBrowseDirectory().isEmpty() ? fi.absolutePath() : lastBrowseDirectory()) +
+                QStringLiteral("/") + fi.completeBaseName() + QStringLiteral("_watermarked.") +
+                fmt.toLower();
             QString filter = buildImageSaveFilter(fmt);
             QString selectedPath = QFileDialog::getSaveFileName(this, tr("Save Watermarked Image"),
                                                                 defaultPath, filter);
@@ -1397,9 +1395,9 @@ void MainWindow::onProcessRequested()
             if (fmt.compare(QStringLiteral("jpg"), Qt::CaseInsensitive) == 0)
                 fmt = QStringLiteral("jpeg");
             QString defaultPath =
-            (lastBrowseDirectory().isEmpty() ? fi.absolutePath() : lastBrowseDirectory()) +
-            QStringLiteral("/") + fi.completeBaseName() +
-                                  QStringLiteral("_resized.") + fmt.toLower();
+                (lastBrowseDirectory().isEmpty() ? fi.absolutePath() : lastBrowseDirectory()) +
+                QStringLiteral("/") + fi.completeBaseName() + QStringLiteral("_resized.") +
+                fmt.toLower();
             QString filter = buildImageSaveFilter(fmt);
             QString selectedPath =
                 QFileDialog::getSaveFileName(this, tr("Save Resized Image"), defaultPath, filter);
@@ -1488,8 +1486,7 @@ void MainWindow::onProcessRequested()
         QString fmt = fi.suffix();
         QString defaultPath =
             (lastBrowseDirectory().isEmpty() ? fi.absolutePath() : lastBrowseDirectory()) +
-            QStringLiteral("/") + fi.completeBaseName() +
-                              QStringLiteral("_edited.") + fmt;
+            QStringLiteral("/") + fi.completeBaseName() + QStringLiteral("_edited.") + fmt;
         QString filter = buildImageSaveFilter(fmt);
         QString out = QFileDialog::getSaveFileName(this, tr("Save Image"), defaultPath, filter);
         if (out.isEmpty())
@@ -1523,14 +1520,14 @@ void MainWindow::showProcessResult(const ResultInfo& info)
 
     // 完成反馈走轻提示：不打断操作流。「打开」直达系统查看器，
     // 「结果」打开结果清单 —— 结果信息一秒可达，不再只是记到日志里。
-    ToastManager::instance().showInfo(
-        info.message,
-        ToastAction{tr("Open"),
-                    [this]() {
-                        if (!m_lastResult.files.isEmpty())
-                            ExportManager::openFile(m_lastResult.files.first());
-                    }},
-        this);
+    ToastManager::instance().showInfo(info.message,
+                                      ToastAction{tr("Open"),
+                                                  [this]() {
+                                                      if (!m_lastResult.files.isEmpty())
+                                                          ExportManager::openFile(
+                                                              m_lastResult.files.first());
+                                                  }},
+                                      this);
 }
 
 void MainWindow::onShowLastResult()
@@ -1977,12 +1974,11 @@ void MainWindow::keyPressEvent(QKeyEvent* event)
     // 裸键快捷键：文本输入框聚焦时不拦截（面板里有文件名模板/质量等输入框），
     // 否则 Space/←/→/L/R/H/V 全窗口生效。
     const QWidget* focused = QApplication::focusWidget();
-    const bool textFocused =
-        focused && (qobject_cast<const QLineEdit*>(focused) ||
-                    qobject_cast<const QTextEdit*>(focused) ||
-                    qobject_cast<const QPlainTextEdit*>(focused) ||
-                    (qobject_cast<const QComboBox*>(focused) &&
-                     qobject_cast<const QComboBox*>(focused)->isEditable()));
+    const bool textFocused = focused && (qobject_cast<const QLineEdit*>(focused) ||
+                                         qobject_cast<const QTextEdit*>(focused) ||
+                                         qobject_cast<const QPlainTextEdit*>(focused) ||
+                                         (qobject_cast<const QComboBox*>(focused) &&
+                                          qobject_cast<const QComboBox*>(focused)->isEditable()));
     if (!textFocused) {
         switch (event->key()) {
         case Qt::Key_Space:

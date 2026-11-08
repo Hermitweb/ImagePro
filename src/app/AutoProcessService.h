@@ -71,9 +71,9 @@ private:
 
     QString outputPathFor(const QString& path) const;
 
-    QSet<QString> m_seen;              // 已成功处理过的文件
-    QHash<QString, qint64> m_sizes;    // 上一轮观测到的文件大小（判断落盘稳定）
-    QHash<QString, int> m_failures;    // 连续失败次数（有上限，避免死循环刷日志）
+    QSet<QString> m_seen; // 已成功处理过的文件
+    QHash<QString, qint64> m_sizes; // 上一轮观测到的文件大小（判断落盘稳定）
+    QHash<QString, int> m_failures; // 连续失败次数（有上限，避免死循环刷日志）
     Config m_config;
     std::atomic<bool> m_stopRequested{false};
 };

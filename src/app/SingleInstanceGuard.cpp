@@ -90,18 +90,19 @@ bool SingleInstanceGuard::tryBecomePrimary()
         // 其它错误必须让用户看到，否则应用会无提示退出、看似「点不开」。
         if (m_lockFile->error() == QLockFile::LockFailedError) {
             const bool notified = notifyExistingInstance(serverName());
-            Logger::info(
-                QStringLiteral("Another instance is already running; "
-                               "activation request %1.")
-                    .arg(notified ? QStringLiteral("sent") : QStringLiteral("could not be delivered")),
-                QStringLiteral("SingleInstance"));
+            Logger::info(QStringLiteral("Another instance is already running; "
+                                        "activation request %1.")
+                             .arg(notified ? QStringLiteral("sent")
+                                           : QStringLiteral("could not be delivered")),
+                         QStringLiteral("SingleInstance"));
             return false;
         }
 
         // QLockFile 只提供 error() 枚举（没有 errorString），按枚举给出可读原因。
-        const QString reason = m_lockFile->error() == QLockFile::PermissionError
-                                   ? QStringLiteral("锁文件无写入权限")
-                                   : QStringLiteral("未知错误（错误码 %1）").arg(int(m_lockFile->error()));
+        const QString reason =
+            m_lockFile->error() == QLockFile::PermissionError
+                ? QStringLiteral("锁文件无写入权限")
+                : QStringLiteral("未知错误（错误码 %1）").arg(int(m_lockFile->error()));
         const QString message = QStringLiteral("无法确认程序是否已在运行（%1）。\n"
                                                "锁文件位置：%2")
                                     .arg(reason, lockFilePath());

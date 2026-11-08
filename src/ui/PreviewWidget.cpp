@@ -322,8 +322,7 @@ bool PreviewWidget::eventFilter(QObject* watched, QEvent* event)
             // 图片未撑出滚动条时没有可平移的内容，交给默认处理。
             const bool scrollable = m_scrollArea->horizontalScrollBar()->maximum() > 0 ||
                                     m_scrollArea->verticalScrollBar()->maximum() > 0;
-            if (scrollable &&
-                (e->button() == Qt::MiddleButton || e->button() == Qt::LeftButton)) {
+            if (scrollable && (e->button() == Qt::MiddleButton || e->button() == Qt::LeftButton)) {
                 m_panning = true;
                 m_panStartPos = e->globalPos();
                 m_panStartH = m_scrollArea->horizontalScrollBar()->value();
@@ -345,8 +344,7 @@ bool PreviewWidget::eventFilter(QObject* watched, QEvent* event)
         }
         case QEvent::MouseButtonRelease: {
             auto* e = static_cast<QMouseEvent*>(event);
-            if (m_panning &&
-                (e->button() == Qt::MiddleButton || e->button() == Qt::LeftButton)) {
+            if (m_panning && (e->button() == Qt::MiddleButton || e->button() == Qt::LeftButton)) {
                 m_panning = false;
                 m_scrollArea->viewport()->unsetCursor();
                 return true;

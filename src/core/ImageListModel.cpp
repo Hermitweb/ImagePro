@@ -179,8 +179,7 @@ bool ImageListModel::dropMimeData(const QMimeData* data, Qt::DropAction action, 
         QByteArray encoded = data->data(QStringLiteral("application/x-imagepro-row"));
         QDataStream stream(&encoded, QIODevice::ReadOnly);
         // 逐行读出全部被拖拽的行：此前只读第一行，多选拖动只会移动一张。
-        struct DragRow
-        {
+        struct DragRow {
             int fromRow = -1;
             QString id;
         };
@@ -757,9 +756,7 @@ void ImageListModel::drainThumbnailQueue()
         if (decode) {
             const ImageLoadResult result = loadImageDataTask(task);
             QMetaObject::invokeMethod(
-                this,
-                [this, result]() { onThumbnailTaskDone(result); },
-                Qt::QueuedConnection);
+                this, [this, result]() { onThumbnailTaskDone(result); }, Qt::QueuedConnection);
         } else {
             QMetaObject::invokeMethod(this, &ImageListModel::onThumbnailTaskSkipped,
                                       Qt::QueuedConnection);
@@ -806,8 +803,8 @@ void ImageListModel::onThumbnailTaskDone(const ImageLoadResult& result)
         }
 
         emit dataChanged(this->index(row), this->index(row),
-                         {WidthRole, HeightRole, FileSizeRole, FormatRole, ValidRole,
-                          ThumbnailRole, ResolutionRole, LoadStateRole});
+                         {WidthRole, HeightRole, FileSizeRole, FormatRole, ValidRole, ThumbnailRole,
+                          ResolutionRole, LoadStateRole});
     }
     // row < 0：对应图片已被移除 —— 结果丢弃（跳过也计入进度，进度条能走完）。
     onThumbnailTaskSettled();

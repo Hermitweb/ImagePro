@@ -181,8 +181,8 @@ void OutputSettingsSection::setTemplatePreview(const QString& text)
         return;
     }
     const int available = m_templatePreview->width() > 0 ? m_templatePreview->width() : 200;
-    m_templatePreview->setText(m_templatePreview->fontMetrics().elidedText(text, Qt::ElideMiddle,
-                                                                           available));
+    m_templatePreview->setText(
+        m_templatePreview->fontMetrics().elidedText(text, Qt::ElideMiddle, available));
     m_templatePreview->setToolTip(text);
     m_templatePreview->setVisible(true);
 }
@@ -195,8 +195,9 @@ void OutputSettingsSection::setValidationText(const QString& text, bool isError,
         m_validation->setVisible(false);
         return;
     }
-    const QColor color = isError ? QColor(0xE8, 0x11, 0x23)
-                                 : (isWarning ? QColor(0xFF, 0xC1, 0x07) : QColor(0x10, 0x7C, 0x10));
+    const QColor color = isError
+                             ? QColor(0xE8, 0x11, 0x23)
+                             : (isWarning ? QColor(0xFF, 0xC1, 0x07) : QColor(0x10, 0x7C, 0x10));
     m_validation->setText(text);
     m_validation->setStyleSheet(QStringLiteral("color: %1; font-size: 12px;").arg(color.name()));
     m_validation->setVisible(true);

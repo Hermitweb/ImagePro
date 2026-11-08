@@ -98,8 +98,8 @@ static VipsImage* loadVipsImage(const QString& path)
     // 拼接需要对多张图进行 resize/insert 组合，后续 vips_insert 评估管线时
     // 会多次读取输入；SEQUENTIAL 在此场景下会导致崩溃或读取失败，改用 RANDOM。
     // EXIF 方向在此转正（vips_thumbnail 路径自带方向处理，无需重复）。
-    VipsImage* image = vips_image_new_from_file(path.toUtf8().constData(), "access",
-                                                VIPS_ACCESS_RANDOM, nullptr);
+    VipsImage* image =
+        vips_image_new_from_file(path.toUtf8().constData(), "access", VIPS_ACCESS_RANDOM, nullptr);
     if (!image)
         return nullptr;
     VipsImage* rotated = nullptr;
@@ -121,8 +121,8 @@ static VipsImage* loadVipsImageShrunk(const QString& path, int targetLongEdge)
         return loadVipsImage(path);
 
     VipsImage* thumb = nullptr;
-    if (vips_thumbnail(path.toUtf8().constData(), &thumb, targetLongEdge, "size",
-                       VIPS_SIZE_DOWN, nullptr))
+    if (vips_thumbnail(path.toUtf8().constData(), &thumb, targetLongEdge, "size", VIPS_SIZE_DOWN,
+                       nullptr))
         return loadVipsImage(path); // thumbnail 失败回退为全尺寸加载
     return thumb;
 }
@@ -290,9 +290,8 @@ static QList<VipsImageInfo> loadAndPrepareImages(const QStringList& filePaths,
             targetLongEdge = qMax(finalW, targetCellH);
         } else if (settings.direction == StitchSettings::Grid && targetCellW > 0 &&
                    targetCellH > 0) {
-            const double scale =
-                qMin(static_cast<double>(targetCellW) / orig.width(),
-                     static_cast<double>(targetCellH) / orig.height());
+            const double scale = qMin(static_cast<double>(targetCellW) / orig.width(),
+                                      static_cast<double>(targetCellH) / orig.height());
             targetLongEdge = qRound(qMax(orig.width(), orig.height()) * scale);
         } else if (maxLongEdge > 0 && (orig.width() != displayW || orig.height() != displayH)) {
             targetLongEdge = qMax(displayW, displayH);
@@ -559,8 +558,8 @@ static QImage vipsStitchPreview(const QStringList& filePaths, const StitchSettin
     const qint64 outPixels = static_cast<qint64>(vips_image_get_width(stitched)) *
                              static_cast<qint64>(vips_image_get_height(stitched));
     if (outPixels > kMaxPreviewOutputPixels) {
-        const double scale = qSqrt(static_cast<double>(kMaxPreviewOutputPixels) /
-                                   static_cast<double>(outPixels));
+        const double scale =
+            qSqrt(static_cast<double>(kMaxPreviewOutputPixels) / static_cast<double>(outPixels));
         VipsImage* smaller = nullptr;
         if (vips_resize(stitched, &smaller, scale, nullptr) == 0 && smaller) {
             g_object_unref(stitched);

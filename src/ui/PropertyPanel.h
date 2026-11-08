@@ -263,7 +263,8 @@ private:
     QComboBox* m_watermarkType = nullptr;
     QLineEdit* m_watermarkText = nullptr;
     QLineEdit* m_watermarkImagePath = nullptr;
-    QSpinBox* m_watermarkImageScale = nullptr;    QComboBox* m_watermarkFontFamily = nullptr;
+    QSpinBox* m_watermarkImageScale = nullptr;
+    QComboBox* m_watermarkFontFamily = nullptr;
     QSpinBox* m_watermarkFontSize = nullptr;
     QPushButton* m_watermarkColorBtn = nullptr;
     QColor m_watermarkColor = Qt::white;

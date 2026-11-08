@@ -53,9 +53,9 @@ QList<CompressResult> CompressEngine::process(const QStringList& filePaths)
             if (!result.success) {
                 // 压缩引擎没有 error 信号，结果里的 errorString 是唯一的失败出口。
                 // 这里补上统一错误上报，使失败在日志与错误码表中都可追溯。
-                ErrorHandler::instance().report(ErrorCode::WRITE_FAILED,
-                                                filePaths.at(idx) + QStringLiteral(": ") +
-                                                    result.errorString);
+                ErrorHandler::instance().report(ErrorCode::WRITE_FAILED, filePaths.at(idx) +
+                                                                             QStringLiteral(": ") +
+                                                                             result.errorString);
             }
         }
         results[idx] = result;

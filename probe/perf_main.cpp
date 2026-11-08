@@ -102,12 +102,14 @@ int main(int argc, char** argv)
         const bool jpeg = i < 60;
         const QImage img = jpeg ? makeGradient(1600, 1200, QColor(255, 128, 64))
                                 : makeGradient(800, 600, QColor(64, 128, 255));
-        const QString path = dir + QStringLiteral("/img_%1.%2").arg(i, 3, 10, QChar('0'))
-                                 .arg(jpeg ? QStringLiteral("jpg") : QStringLiteral("png"));
+        const QString path = dir + QStringLiteral("/img_%1.%2")
+                                       .arg(i, 3, 10, QChar('0'))
+                                       .arg(jpeg ? QStringLiteral("jpg") : QStringLiteral("png"));
         yingtu::ImageLoader::saveImage(img, path);
         paths.append(path);
     }
-    bench(QStringLiteral("准备"), QStringLiteral("已生成 100 张测试图（60 JPEG 1600×1200 + 40 PNG 800×600）"));
+    bench(QStringLiteral("准备"),
+          QStringLiteral("已生成 100 张测试图（60 JPEG 1600×1200 + 40 PNG 800×600）"));
 
     // ── 基准 1：批量加载 100 张到缩略图全部就绪 ──────────────────────
     {
@@ -137,7 +139,7 @@ int main(int argc, char** argv)
     {
         yingtu::ImageListModel model;
         model.addImages(paths);
-        model.loadVisibleRange(0, 9);  // 先看前 10
+        model.loadVisibleRange(0, 9); // 先看前 10
         model.loadVisibleRange(90, 99); // 立刻跳到末尾（中部任务应作废）
         qint64 elapsed = 0;
         waitForLoadFinished(model, 60000, &elapsed);
@@ -146,7 +148,9 @@ int main(int argc, char** argv)
             if (model.itemAt(i) && model.itemAt(i)->isValid())
                 ++tailValid;
         bench(QStringLiteral("滚动作废"),
-              QStringLiteral("%1 ms, 末尾 10 行有效 %2/10（中部解码被跳过）").arg(elapsed).arg(tailValid));
+              QStringLiteral("%1 ms, 末尾 10 行有效 %2/10（中部解码被跳过）")
+                  .arg(elapsed)
+                  .arg(tailValid));
     }
 
     // ── 基准 3：30 张纵向拼接（统一宽度）preview ────────────────────

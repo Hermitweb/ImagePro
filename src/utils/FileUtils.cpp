@@ -90,8 +90,7 @@ QStringList FileUtils::expandToImageFiles(const QStringList& paths)
 }
 
 QString FileUtils::applyFileNameTemplate(const QString& templ, const QString& sourceFileName,
-                                         int index, const QSize& size,
-                                         const QString& fallbackBase)
+                                         int index, const QSize& size, const QString& fallbackBase)
 {
     QString result = templ;
     const QDateTime now = QDateTime::currentDateTime();

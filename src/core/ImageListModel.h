@@ -81,7 +81,12 @@ public:
     void loadVisibleRange(int firstRow, int lastRow, int buffer = 5);
 
     /** 列表排序字段（右键菜单「排序」）。日期按文件修改时间。 */
-    enum class SortField { Name, FileSize, Date, Dimensions };
+    enum class SortField {
+        Name,
+        FileSize,
+        Date,
+        Dimensions
+    };
     void sortByField(SortField field, Qt::SortOrder order);
 
     QStringList filePaths() const;
@@ -158,7 +163,7 @@ private:
     // 当前可视窗口（+buffer）内待加载图片的 id 集合：
     // loadVisibleRange 每次整体重算，cancelable 任务开工前不在集合内即跳过。
     QSet<QString> m_wantedIds;
-    int m_inFlight = 0;      // 已解码、待 GUI 回写的任务数
+    int m_inFlight = 0; // 已解码、待 GUI 回写的任务数
     int m_activeWorkers = 0; // 池中正在拉活的 worker 数
     int m_imageDataLoadDone = 0;
     int m_imageDataLoadTotal = 0;

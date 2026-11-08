@@ -45,8 +45,7 @@ QImage applyFilter(const QImage& source, FilterType type, int strength)
                 int tr = qMin(255, qRound(0.393 * r + 0.769 * g + 0.189 * b));
                 int tg = qMin(255, qRound(0.349 * r + 0.686 * g + 0.168 * b));
                 int tb = qMin(255, qRound(0.272 * r + 0.534 * g + 0.131 * b));
-                line[x] = qRgba(qRound(r * (1 - mix) + tr * mix),
-                                qRound(g * (1 - mix) + tg * mix),
+                line[x] = qRgba(qRound(r * (1 - mix) + tr * mix), qRound(g * (1 - mix) + tg * mix),
                                 qRound(b * (1 - mix) + tb * mix), qAlpha(p));
             }
         }

@@ -28,8 +28,8 @@ static QIcon themedIcon(const QString& baseName)
     QFile file(QStringLiteral(":/icons/icons/tools/%1.svg").arg(baseName));
     if (!file.open(QIODevice::ReadOnly))
         return QIcon();
-    const QColor color = ThemeManager::instance().isDark() ? QColor(0xE6, 0xE6, 0xE6)
-                                                           : QColor(0x1A, 0x1A, 0x1A);
+    const QColor color =
+        ThemeManager::instance().isDark() ? QColor(0xE6, 0xE6, 0xE6) : QColor(0x1A, 0x1A, 0x1A);
     QByteArray data = file.readAll();
     data.replace("@COLOR@", color.name().toUtf8());
 

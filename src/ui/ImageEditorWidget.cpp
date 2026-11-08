@@ -260,15 +260,15 @@ void ImageEditorWidget::mouseMoveEvent(QMouseEvent* event)
                         m_selection.activeHandle == 5 || m_selection.activeHandle == 7)) {
                 // 角部手柄 + 比例锁：以被拖角为锚，按原 bounds 宽高比重建矩形。
                 const QRectF orig = m_selection.originalBounds;
-                const double aspect =
-                    orig.height() > 0 ? orig.width() / orig.height() : 1.0;
+                const double aspect = orig.height() > 0 ? orig.width() / orig.height() : 1.0;
                 const bool topLeftAnchor =
                     (m_selection.activeHandle == 2 || m_selection.activeHandle == 5);
                 const bool topAnchor =
                     (m_selection.activeHandle == 2 || m_selection.activeHandle == 0);
                 const bool leftAnchor =
                     (m_selection.activeHandle == 0 || m_selection.activeHandle == 5);
-                const double w = qMax(8.0, qAbs(pos.x() - (topLeftAnchor ? orig.right() : orig.left())));
+                const double w =
+                    qMax(8.0, qAbs(pos.x() - (topLeftAnchor ? orig.right() : orig.left())));
                 double h = w / aspect;
                 QRectF b(QPointF(0, 0), QSizeF(w, h));
                 b.moveLeft(leftAnchor ? orig.right() - w : orig.left());
@@ -655,8 +655,8 @@ void ImageEditorWidget::finishCurrentAction()
     // 区域滤镜：空白处单击（未拖出有效矩形）→ 退回旧行为，作用于全图。
     if (m_currentAction.toolType == EditToolType::Filter &&
         (m_currentAction.bounds.width() <= 2 || m_currentAction.bounds.height() <= 2)) {
-        m_currentAction.bounds = QRectF(0, 0, m_engine.baseImage().width(),
-                                        m_engine.baseImage().height());
+        m_currentAction.bounds =
+            QRectF(0, 0, m_engine.baseImage().width(), m_engine.baseImage().height());
     }
 
     m_engine.addAction(m_currentAction);

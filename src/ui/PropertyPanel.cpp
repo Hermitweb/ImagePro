@@ -135,9 +135,8 @@ PropertyPanel::PropertyPanel(QWidget* parent) : QWidget(parent)
     }
     for (OutputSettingsSection* section : m_outputSections) {
         // 目录「提交」（浏览/新建/编辑完成）时记入跨工具共享的历史。
-        connect(section, &OutputSettingsSection::directoryCommitted, this, [this, section]() {
-            addOutputHistory(section->directory());
-        });
+        connect(section, &OutputSettingsSection::directoryCommitted, this,
+                [this, section]() { addOutputHistory(section->directory()); });
         if (section != m_stitchOutputSection) {
             connect(section, &OutputSettingsSection::directoryEdited, this,
                     &PropertyPanel::onSettingsChanged);
@@ -458,10 +457,9 @@ void PropertyPanel::buildStitchPanel()
     settingsLayout->addWidget(m_stitchGridRowWidget);
 
     m_stitchOutputFormat = new QComboBox(settingsContent);
-    m_stitchOutputFormat->addItems(QStringList()
-                                   << QStringLiteral("PNG") << QStringLiteral("JPG")
-                                   << QStringLiteral("WebP") << QStringLiteral("TIFF")
-                                   << QStringLiteral("BMP"));
+    m_stitchOutputFormat->addItems(QStringList() << QStringLiteral("PNG") << QStringLiteral("JPG")
+                                                 << QStringLiteral("WebP") << QStringLiteral("TIFF")
+                                                 << QStringLiteral("BMP"));
     settingsLayout->addWidget(createFormRow(tr("Format:"), m_stitchOutputFormat));
 
     m_stitchQuality = new QSlider(Qt::Horizontal, settingsContent);
@@ -977,8 +975,7 @@ void PropertyPanel::buildEditPanel()
 
     // 裁剪比例锁：拖拽角部手柄时保持宽高比（经信号同步到编辑器）。
     m_editCropAspectLock = new QCheckBox(tr("Lock Crop Aspect"), toolsContent);
-    connect(m_editCropAspectLock, &QCheckBox::toggled, this,
-            &PropertyPanel::cropAspectLockChanged);
+    connect(m_editCropAspectLock, &QCheckBox::toggled, this, &PropertyPanel::cropAspectLockChanged);
     toolsLayout->addWidget(m_editCropAspectLock);
 
     QWidget* textColorRow = new QWidget(toolsContent);
@@ -1236,8 +1233,7 @@ void PropertyPanel::buildBatchPanel()
     m_batchSummary->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     settingsLayout->addWidget(m_batchSummary);
     // 任一面板参数变化都刷新摘要（settingsChanged 由全部设置控件触发）。
-    connect(this, &PropertyPanel::settingsChanged, this,
-            &PropertyPanel::updateBatchSummary);
+    connect(this, &PropertyPanel::settingsChanged, this, &PropertyPanel::updateBatchSummary);
     connect(m_batchTargetTool, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
             &PropertyPanel::updateBatchSummary);
     updateBatchSummary();
@@ -1294,13 +1290,11 @@ void PropertyPanel::buildPdfPanel()
     customSizeLayout->addStretch();
     m_pdfCustomSizeRow->setVisible(false);
     settingsLayout->addWidget(m_pdfCustomSizeRow);
-    connect(m_pdfPageSize, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
-            [this](int) {
-                const bool custom = static_cast<PdfSettings::PageSize>(
-                                        m_pdfPageSize->currentData().toInt()) ==
-                                    PdfSettings::Custom;
-                m_pdfCustomSizeRow->setVisible(custom);
-            });
+    connect(m_pdfPageSize, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) {
+        const bool custom = static_cast<PdfSettings::PageSize>(
+                                m_pdfPageSize->currentData().toInt()) == PdfSettings::Custom;
+        m_pdfCustomSizeRow->setVisible(custom);
+    });
 
     m_pdfLayout = new QComboBox(settingsContent);
     m_pdfLayout->addItem(tr("Single Per Page"), static_cast<int>(PdfSettings::SinglePerPage));
@@ -1914,9 +1908,9 @@ QString PropertyPanel::previewFileNameFromTemplate(const QString& templ) const
 {
     // 占位符展开逻辑与 FileUtils::applyFileNameTemplate 共用一套语义，
     // 预览里看到的名字就是实际输出名。
-    const QString expanded = FileUtils::applyFileNameTemplate(
-        templ, QStringLiteral("wechat_screenshot_001.png"), 1, QSize(1920, 1080),
-        QStringLiteral("stitched"));
+    const QString expanded =
+        FileUtils::applyFileNameTemplate(templ, QStringLiteral("wechat_screenshot_001.png"), 1,
+                                         QSize(1920, 1080), QStringLiteral("stitched"));
     return tr("Preview: %1").arg(expanded + QStringLiteral(".png"));
 }
 
@@ -2047,8 +2041,7 @@ bool PropertyPanel::validateStitchSettings(QString* errorMessage, QString* warni
         }
     }
 
-    QString templ =
-        m_stitchOutputSection ? m_stitchOutputSection->fileNameTemplate() : QString();
+    QString templ = m_stitchOutputSection ? m_stitchOutputSection->fileNameTemplate() : QString();
     if (templ.isEmpty()) {
         errors.append(tr("File name template is empty"));
         ok = false;

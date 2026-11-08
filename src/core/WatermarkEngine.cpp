@@ -190,14 +190,24 @@ QImage WatermarkEngine::preview(const QImage& source, const WatermarkSettings& s
                 int px = settings.margin;
                 int py = settings.margin;
                 switch (col) {
-                case 1: px = (result.width() - wm.width()) / 2; break;
-                case 2: px = result.width() - wm.width() - settings.margin; break;
-                default: break;
+                case 1:
+                    px = (result.width() - wm.width()) / 2;
+                    break;
+                case 2:
+                    px = result.width() - wm.width() - settings.margin;
+                    break;
+                default:
+                    break;
                 }
                 switch (row) {
-                case 1: py = (result.height() - wm.height()) / 2; break;
-                case 2: py = result.height() - wm.height() - settings.margin; break;
-                default: break;
+                case 1:
+                    py = (result.height() - wm.height()) / 2;
+                    break;
+                case 2:
+                    py = result.height() - wm.height() - settings.margin;
+                    break;
+                default:
+                    break;
                 }
                 return QPoint(px, py);
             };
