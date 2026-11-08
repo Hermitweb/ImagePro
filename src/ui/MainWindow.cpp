@@ -368,7 +368,8 @@ void MainWindow::setupMenuBar()
 
     QMenu* toolMenu = bar->addMenu(tr("&Tools"));
     // 工具切换双快捷键：F1-F8（原有）+ Ctrl+K/E/M/B（设计文档第 6 章承诺）。
-    auto addToolAction = [this, toolMenu](const QString& text, ToolType tool, QKeySequence ctrl) {
+    auto addToolAction = [this, toolMenu](const QString& text, ToolType tool,
+                                          const QKeySequence& ctrl) {
         QAction* action =
             toolMenu->addAction(text, this, [this, tool]() { m_toolBar->setCurrentTool(tool); });
         action->setShortcuts({QKeySequence(static_cast<int>(Qt::Key_F1) + static_cast<int>(tool) -
