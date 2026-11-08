@@ -56,16 +56,16 @@ ResultDialog::ResultDialog(const ResultInfo& info, QWidget* parent) : QDialog(pa
     QHBoxLayout* btnLayout = new QHBoxLayout();
     // 用系统打开第一个结果：ExportManager::openFile 此前已实现但零调用。
     QPushButton* openFileBtn = new QPushButton(tr("Open File"), this);
-    connect(openFileBtn, &QPushButton::clicked, this, [this, info]() {
+    connect(openFileBtn, &QPushButton::clicked, this, [info]() {
         if (!info.files.isEmpty())
             ExportManager::openFile(info.files.first());
     });
     btnLayout->addWidget(openFileBtn);
 
     QPushButton* openFolderBtn = new QPushButton(tr("Open Folder"), this);
-    connect(openFolderBtn, &QPushButton::clicked, this, [this, info]() {
-        if (!info.files.isEmpty())
-            ExportManager::showInFolder(info.files.first());
+    connect(openFolderBtn, &QPushButton::clicked, this, [this, files = info.files]() {
+        if (!files.isEmpty())
+            ExportManager::showInFolder(files.first());
         accept();
     });
     btnLayout->addWidget(openFolderBtn);
