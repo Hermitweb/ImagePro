@@ -26,6 +26,11 @@ ResultDialog::ResultDialog(const ResultInfo& info, QWidget* parent) : QDialog(pa
 
     QListWidget* list = new QListWidget(this);
     list->addItems(info.files);
+    // 双击单条结果直接用系统打开（导出完成的图片常需要立即查看）。
+    connect(list, &QListWidget::itemDoubleClicked, this, [](QListWidgetItem* item) {
+        if (item)
+            ExportManager::openFile(item->text());
+    });
     layout->addWidget(list);
 
     QGridLayout* infoLayout = new QGridLayout();
@@ -49,6 +54,14 @@ ResultDialog::ResultDialog(const ResultInfo& info, QWidget* parent) : QDialog(pa
         layout->addLayout(infoLayout);
 
     QHBoxLayout* btnLayout = new QHBoxLayout();
+    // 用系统打开第一个结果：ExportManager::openFile 此前已实现但零调用。
+    QPushButton* openFileBtn = new QPushButton(tr("Open File"), this);
+    connect(openFileBtn, &QPushButton::clicked, this, [this, info]() {
+        if (!info.files.isEmpty())
+            ExportManager::openFile(info.files.first());
+    });
+    btnLayout->addWidget(openFileBtn);
+
     QPushButton* openFolderBtn = new QPushButton(tr("Open Folder"), this);
     connect(openFolderBtn, &QPushButton::clicked, this, [this, info]() {
         if (!info.files.isEmpty())

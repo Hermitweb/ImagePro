@@ -6,6 +6,8 @@
 #include <QString>
 #include <QStringList>
 
+#include <atomic>
+
 namespace yingtu {
 
 enum class WatermarkType {
@@ -17,6 +19,7 @@ struct WatermarkSettings {
     WatermarkType type = WatermarkType::Text;
     QString text = QStringLiteral("影图");
     QString imagePath;
+    int imageScalePercent = 25; // 图片水印宽度 = 主图宽度的百分比
     QString fontFamily = QStringLiteral("Microsoft YaHei");
     int fontSize = 24;
     QColor color = Qt::white;
@@ -41,6 +44,9 @@ public:
 
     void setSettings(const WatermarkSettings& settings) { m_settings = settings; }
 
+    /** 取消标志（可选）：置位后剩余文件跳过，已完成部分正常返回。 */
+    void setCancelFlag(std::atomic<bool>* flag) { m_cancelFlag = flag; }
+
     QStringList process(const QStringList& filePaths, bool* ok = nullptr);
     static QImage preview(const QImage& source, const WatermarkSettings& settings);
 
@@ -53,6 +59,8 @@ private:
     QString processSingle(const QString& filePath);
 
     WatermarkSettings m_settings;
+    std::atomic<bool>* m_cancelFlag = nullptr;
+    bool cancelRequested() const { return m_cancelFlag && m_cancelFlag->load(); }
 };
 
 } // namespace yingtu

@@ -5,6 +5,8 @@
 #include <QString>
 #include <QStringList>
 
+#include <atomic>
+
 namespace yingtu {
 
 struct PdfSettings {
@@ -41,6 +43,9 @@ public:
     void setSettings(const PdfSettings& settings) { m_settings = settings; }
     PdfSettings settings() const { return m_settings; }
 
+    /** 取消标志（可选）：置位后剩余文件跳过，已完成部分正常返回。 */
+    void setCancelFlag(std::atomic<bool>* flag) { m_cancelFlag = flag; }
+
     QString process(const QStringList& filePaths, bool* ok = nullptr);
 
     static QSizeF pageSizeMm(PdfSettings::PageSize size);
@@ -52,6 +57,8 @@ signals:
 
 private:
     PdfSettings m_settings;
+    std::atomic<bool>* m_cancelFlag = nullptr;
+    bool cancelRequested() const { return m_cancelFlag && m_cancelFlag->load(); }
 };
 
 } // namespace yingtu

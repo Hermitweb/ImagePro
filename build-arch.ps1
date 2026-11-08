@@ -212,12 +212,12 @@ x86 需要两份预编译包，请用 -QtRoot / -VipsRoot 指定：
     }
     Push-Location $buildDir
     try {
-        # 单配置生成器（Ninja）不能加 -C Release：
-        # 它会让 CPack 去找 <build>/Release/ 子目录（单配置没有），
-        # 安装步骤静默失败、产物不生成。
-        & cpack -G ZIP -B package
+        # cpack 需要 -C Release：本分支用 VS 多配置生成器（见 $generatorArgs），
+        # 多配置下 cpack 不带 -C 时的行为依赖未成文的默认值，官方文档要求显式指定。
+        # （Ninja 单配置才不能加 -C —— 那是旧版脚本里 Ninja 分支的限制。）
+        & cpack -C Release -G ZIP -B package
         if ($LASTEXITCODE -ne 0) { throw '打包失败' }
-        & cpack -G NSIS -B package
+        & cpack -C Release -G NSIS -B package
         if ($LASTEXITCODE -ne 0) { throw 'NSIS 打包失败' }
         & $cmake --build . --config Release --target portable
         if ($LASTEXITCODE -ne 0) { throw '便捷版打包失败' }
@@ -241,7 +241,9 @@ x86 需要两份预编译包，请用 -QtRoot / -VipsRoot 指定：
 # 把包前缀当目录用会得到「找不到编译器」这种误导性的报错。
 $archMap = @{
     'x64'      = @{ msystem = 'MINGW64';   dir = 'mingw64';   pkg = 'mingw-w64-x86_64';       pe = 'x64'; variant = '' }
-    'x64-ucrt' = @{ msystem = 'UCRT64';    dir = 'ucrt64';    pkg = 'mingw-w64-ucrt-x86_64';   pe = 'x64'; variant = '' }
+    # x64-ucrt 必须带 ucrt 变体：否则与 x64（mingw64）的产物同名（都是 win64），
+    # 两个变体互相覆盖。CI 的 x64 走 MINGW64，变体留空即可。
+    'x64-ucrt' = @{ msystem = 'UCRT64';    dir = 'ucrt64';    pkg = 'mingw-w64-ucrt-x86_64';   pe = 'x64'; variant = 'ucrt' }
     'arm64'    = @{ msystem = 'CLANGARM64'; dir = 'clangarm64'; pkg = 'mingw-w64-clang-aarch64'; pe = 'arm64'; variant = '' }
 }
 

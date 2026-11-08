@@ -612,3 +612,13 @@ QFrame[frameShape="4"],
 QFrame[frameShape="5"] {
     border: 1px solid rgba(255, 255, 255, 0.12);
 }
+
+/* 拼接模式的列表提示条：温和的强调色背景，明示「单击=勾选参与拼接」 */
+QLabel#stitchHint {
+    background-color: rgba(74, 158, 255, 0.12);
+    color: #5CABFF;
+    border: 1px solid rgba(74, 158, 255, 0.30);
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-size: 11px;
+}

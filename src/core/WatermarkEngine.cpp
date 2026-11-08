@@ -32,10 +32,12 @@ QStringList WatermarkEngine::process(const QStringList& filePaths, bool* ok)
             continue;
         }
 
-        QString out = processSingle(path);
+        QString out;
+        if (!cancelRequested())
+            out = processSingle(path);
         if (!out.isEmpty()) {
             outputPaths.append(out);
-        } else {
+        } else if (!cancelRequested()) {
             ErrorHandler::instance().report(ErrorCode::WRITE_FAILED, path);
         }
         emit progress(qRound((i + 1) * 100.0 / total));
@@ -170,11 +172,45 @@ QImage WatermarkEngine::preview(const QImage& source, const WatermarkSettings& s
     } else {
         QImage wm = ImageLoader::loadImage(settings.imagePath);
         if (!wm.isNull()) {
-            wm = wm.scaled(result.width() / 4, result.height() / 4, Qt::KeepAspectRatio,
-                           Qt::SmoothTransformation);
+            // 缩放按主图宽度的百分比（此前硬编码缩到原图 1/4 且不可调）。
+            const int targetW =
+                qMax(8, result.width() * qBound(1, settings.imageScalePercent, 100) / 100);
+            wm = wm.scaledToWidth(targetW, Qt::SmoothTransformation);
+            if (wm.height() > result.height())
+                wm = wm.scaledToHeight(qMax(1, result.height()), Qt::SmoothTransformation);
+
             painter.setOpacity(settings.opacity / 100.0);
-            painter.drawImage(result.width() - wm.width() - settings.margin,
-                              result.height() - wm.height() - settings.margin, wm);
+
+            // 九宫格定位：与文字水印同一套语义（此前硬编码右下角，
+            // 面板上的位置/平铺控件对图片水印全是无效假控件）。
+            auto anchorPoint = [&]() -> QPoint {
+                constexpr int cols = 3;
+                const int row = settings.position / cols;
+                const int col = settings.position % cols;
+                int px = settings.margin;
+                int py = settings.margin;
+                switch (col) {
+                case 1: px = (result.width() - wm.width()) / 2; break;
+                case 2: px = result.width() - wm.width() - settings.margin; break;
+                default: break;
+                }
+                switch (row) {
+                case 1: py = (result.height() - wm.height()) / 2; break;
+                case 2: py = result.height() - wm.height() - settings.margin; break;
+                default: break;
+                }
+                return QPoint(px, py);
+            };
+
+            if (settings.tile) {
+                const int stepX = qMax(1, wm.width() + settings.tileSpacing);
+                const int stepY = qMax(1, wm.height() + settings.tileSpacing);
+                for (int x = settings.margin; x < result.width() + wm.width(); x += stepX)
+                    for (int y = settings.margin; y < result.height() + wm.height(); y += stepY)
+                        painter.drawImage(x, y, wm);
+            } else {
+                painter.drawImage(anchorPoint(), wm);
+            }
         }
     }
 

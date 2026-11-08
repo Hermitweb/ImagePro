@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(ImagePro
-    VERSION 1.5.0
+    VERSION 1.6.0
     DESCRIPTION "影图 — 基于 Qt 5 + libvips 的跨平台桌面图像处理工具"
     HOMEPAGE_URL "https://github.com/Hermitweb/ImagePro"
     LANGUAGES CXX
@@ -80,6 +80,7 @@ set(LIB_SOURCES
     src/ui/ImageEditorWidget.cpp
     src/ui/ImageListWidget.cpp
     src/ui/MainWindow.cpp
+    src/ui/OutputSettingsSection.cpp
     src/ui/PreviewWidget.cpp
     src/ui/PropertyPanel.cpp
     src/ui/StitchCanvas.cpp
@@ -92,6 +93,7 @@ set(LIB_SOURCES
     src/utils/FlowLayout.cpp
     src/utils/ImageLoader.cpp
     src/utils/ImageProError.cpp
+    src/utils/ImageTaskPools.cpp
     src/utils/Logger.cpp
     src/utils/PresetData.cpp
     src/utils/PresetManager.cpp
@@ -125,6 +127,7 @@ set(HEADERS
     src/ui/ImageEditorWidget.h
     src/ui/ImageListWidget.h
     src/ui/MainWindow.h
+    src/ui/OutputSettingsSection.h
     src/ui/PreviewWidget.h
     src/ui/PropertyPanel.h
     src/ui/StitchCanvas.h
@@ -138,6 +141,7 @@ set(HEADERS
     src/utils/FlowLayout.h
     src/utils/ImageLoader.h
     src/utils/ImageProError.h
+    src/utils/ImageTaskPools.h
     src/utils/Logger.h
     src/utils/PresetData.h
     src/utils/PresetManager.h
@@ -352,6 +356,14 @@ option(BUILD_TESTS "Build test executables" OFF)
 if(BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
+endif()
+
+# ── 探针审计 ─────────────────────────────────────────────────────
+# 手动审计工具：直接驱动各引擎的真实操作路径并输出 PASS/FAIL 清单。
+# 与 ctest 分离（探针会写临时文件、依赖真实 GUI 平台插件），不进 CI。
+option(IMAGEPRO_BUILD_PROBES "Build probe audit executables" OFF)
+if(IMAGEPRO_BUILD_PROBES)
+    add_subdirectory(probe)
 endif()
 
 # ── 打包 ─────────────────────────────────────────────────────────

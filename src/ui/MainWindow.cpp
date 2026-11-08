@@ -21,6 +21,8 @@
 #include "utils/FileUtils.h"
 #include "utils/FlowLayout.h"
 #include "utils/ImageLoader.h"
+#include "utils/AppPaths.h"
+#include "utils/ImageTaskPools.h"
 #include "utils/ImageProError.h"
 #include <QApplication>
 #include <QCoreApplication>
@@ -34,6 +36,11 @@
 #include <QStandardPaths>
 #include <QFrame>
 #include <QLabel>
+#include <QComboBox>
+#include <QLineEdit>
+#include <QClipboard>
+#include <QPlainTextEdit>
+#include <QTextEdit>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
@@ -129,6 +136,8 @@ struct PreviewTaskInput {
     QStringList allFilePaths;
     QSize previewSize;
     bool applyToolEffect = false;
+    bool forceOriginal = false; // 工具栏「对比」开关：结果附原图供并排比较
+    qint64 generation = 0;
     StitchSettings stitchSettings;
     CompressSettings compressSettings;
     WatermarkSettings watermarkSettings;
@@ -140,15 +149,18 @@ struct PreviewTaskResult {
     bool comparisonMode = false;
     QImage originalImage;
     QString sourcePath;
+    QSize sourceSize;
     int sourceRotation = 0;
     bool sourceFlippedH = false;
     bool sourceFlippedV = false;
     QVector<QRect> stitchInputRects;
+    qint64 generation = 0;
 };
 
 static PreviewTaskResult generatePreview(const PreviewTaskInput& input)
 {
     PreviewTaskResult result;
+    result.generation = input.generation;
 
     // 左侧切换图片时只加载单张原图，不触发 Stitch/Compress 等全量工具效果
     if (!input.applyToolEffect || input.tool == ToolType::Convert) {
@@ -156,6 +168,8 @@ static PreviewTaskResult generatePreview(const PreviewTaskInput& input)
         item.reloadInfo();
         result.image = item.loadPreviewImage(input.previewSize);
         result.sourcePath = input.currentFilePath;
+        // 尺寸随结果带给 PreviewWidget：免去它在 GUI 线程再读一次文件头。
+        result.sourceSize = QSize(item.width(), item.height());
         result.sourceRotation = item.rotation();
         result.sourceFlippedH = item.flippedHorizontal();
         result.sourceFlippedV = item.flippedVertical();
@@ -176,13 +190,17 @@ static PreviewTaskResult generatePreview(const PreviewTaskInput& input)
         QImage original = item.loadPreviewImage(input.previewSize);
         result.originalImage = original;
         result.image = CompressEngine::preview(original, input.compressSettings);
-        result.comparisonMode = input.compressSettings.showOriginal;
+        result.comparisonMode = input.compressSettings.showOriginal || input.forceOriginal;
         break;
     }
     case ToolType::Watermark: {
         ImageItem item(input.currentFilePath, false);
         item.reloadInfo();
         QImage img = item.loadPreviewImage(input.previewSize);
+        if (input.forceOriginal) {
+            result.originalImage = img;
+            result.comparisonMode = true;
+        }
         result.image = WatermarkEngine::preview(img, input.watermarkSettings);
         break;
     }
@@ -190,6 +208,10 @@ static PreviewTaskResult generatePreview(const PreviewTaskInput& input)
         ImageItem item(input.currentFilePath, false);
         item.reloadInfo();
         QImage img = item.loadPreviewImage(input.previewSize);
+        if (input.forceOriginal) {
+            result.originalImage = img;
+            result.comparisonMode = true;
+        }
         result.image = ResizeEngine::resize(img, input.resizeSettings);
         break;
     }
@@ -241,6 +263,18 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     connect(m_previewWatcher, &QFutureWatcher<PreviewTaskResult>::finished, this,
             &MainWindow::onPreviewFinished);
 
+    // 状态栏刷新防抖：批量加载 100 张时尺寸逐张到达（见 dataChanged 连接处）。
+    m_statusBarRefreshTimer = new QTimer(this);
+    m_statusBarRefreshTimer->setSingleShot(true);
+    m_statusBarRefreshTimer->setInterval(200);
+    connect(m_statusBarRefreshTimer, &QTimer::timeout, this, &MainWindow::updateStatusBar);
+
+    // 错误突发结束后的汇总提示（见 showErrorToastCoalesced）。
+    m_errorBurstTimer = new QTimer(this);
+    m_errorBurstTimer->setSingleShot(true);
+    m_errorBurstTimer->setInterval(1200);
+    connect(m_errorBurstTimer, &QTimer::timeout, this, &MainWindow::flushSuppressedErrors);
+
     // 统一错误上报 → 用户可见提示。
     // 各引擎只负责 ErrorHandler::instance().report(ErrorCode)，如何呈现由 UI 层决定：
     // 这样新增错误码无需改动引擎，且所有失败路径都有同一出口，不再静默失败。
@@ -249,7 +283,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             [this](const ImageProError& error, const QString& /*detail*/) {
                 if (error.level() == ErrorLevel::Info)
                     return; // 信息级只记日志，不打扰用户
-                ToastManager::instance().show(error.level(), error.message(), this);
+                showErrorToastCoalesced(error);
             });
 
     connectSignals();
@@ -309,6 +343,10 @@ void MainWindow::setupMenuBar()
 
     QMenu* fileMenu = bar->addMenu(tr("&File"));
     fileMenu->addAction(tr("&Add Images"), this, &MainWindow::onAddImages, QKeySequence::Open);
+    fileMenu->addAction(tr("Add Fol&der..."), this, &MainWindow::onAddFolder,
+                        QKeySequence(QStringLiteral("Ctrl+Shift+O")));
+    m_recentMenu = fileMenu->addMenu(tr("Recent &Files"));
+    rebuildRecentFilesMenu();
     fileMenu->addSeparator();
     fileMenu->addAction(tr("E&xit"), this, &QWidget::close, QKeySequence::Quit);
 
@@ -329,27 +367,45 @@ void MainWindow::setupMenuBar()
         QKeySequence::Redo);
 
     QMenu* toolMenu = bar->addMenu(tr("&Tools"));
-    toolMenu->addAction(
-        tr("&Stitch"), this, [this]() { m_toolBar->setCurrentTool(ToolType::Stitch); }, Qt::Key_F1);
-    toolMenu->addAction(
-        tr("&Convert"), this, [this]() { m_toolBar->setCurrentTool(ToolType::Convert); },
-        Qt::Key_F2);
-    toolMenu->addAction(
-        tr("&Compress"), this, [this]() { m_toolBar->setCurrentTool(ToolType::Compress); },
-        Qt::Key_F3);
-    toolMenu->addAction(
-        tr("&Watermark"), this, [this]() { m_toolBar->setCurrentTool(ToolType::Watermark); },
-        Qt::Key_F4);
-    toolMenu->addAction(
-        tr("&Edit"), this, [this]() { m_toolBar->setCurrentTool(ToolType::Edit); }, Qt::Key_F5);
-    toolMenu->addAction(
-        tr("&Resize"), this, [this]() { m_toolBar->setCurrentTool(ToolType::Resize); }, Qt::Key_F6);
-    toolMenu->addAction(
-        tr("&Batch"), this, [this]() { m_toolBar->setCurrentTool(ToolType::Batch); }, Qt::Key_F7);
-    toolMenu->addAction(
-        tr("&PDF"), this, [this]() { m_toolBar->setCurrentTool(ToolType::Pdf); }, Qt::Key_F8);
+    // 工具切换双快捷键：F1-F8（原有）+ Ctrl+K/E/M/B（设计文档第 6 章承诺）。
+    auto addToolAction = [this, toolMenu](const QString& text, ToolType tool, QKeySequence ctrl) {
+        QAction* action =
+            toolMenu->addAction(text, this, [this, tool]() { m_toolBar->setCurrentTool(tool); });
+        action->setShortcuts({ QKeySequence(static_cast<int>(Qt::Key_F1) + static_cast<int>(tool) -
+                                            static_cast<int>(ToolType::Stitch)),
+                               ctrl });
+    };
+    addToolAction(tr("&Stitch"), ToolType::Stitch, QKeySequence(QStringLiteral("Ctrl+K")));
+    addToolAction(tr("&Convert"), ToolType::Convert, QKeySequence(QStringLiteral("Ctrl+E")));
+    addToolAction(tr("&Compress"), ToolType::Compress, QKeySequence(QStringLiteral("Ctrl+M")));
+    addToolAction(tr("&Watermark"), ToolType::Watermark, QKeySequence(QStringLiteral("Ctrl+B")));
+    addToolAction(tr("&Edit"), ToolType::Edit, QKeySequence());
+    addToolAction(tr("&Resize"), ToolType::Resize, QKeySequence());
+    addToolAction(tr("&Batch"), ToolType::Batch, QKeySequence());
+    addToolAction(tr("&PDF"), ToolType::Pdf, QKeySequence());
 
     QMenu* viewMenu = bar->addMenu(tr("&View"));
+    // Ctrl+0 = 实际大小 / Ctrl+1 = 适应窗口（修正预览右键菜单里两者的语义颠倒）。
+    viewMenu->addAction(tr("Zoom &In"), this, &MainWindow::onPreviewZoomIn, QKeySequence::ZoomIn);
+    viewMenu->addAction(tr("Zoom &Out"), this, &MainWindow::onPreviewZoomOut,
+                        QKeySequence::ZoomOut);
+    viewMenu->addAction(tr("&Actual Size"), this, &MainWindow::onPreviewResetZoom,
+                        QKeySequence(QStringLiteral("Ctrl+0")));
+    viewMenu->addAction(tr("&Fit to Window"), this, &MainWindow::onPreviewFitToWindow,
+                        QKeySequence(QStringLiteral("Ctrl+1")));
+    // 全屏：F11 走菜单 action；Space 在 keyPressEvent 里处理（裸键不进菜单，
+    // 避免与面板输入框争抢字符）。
+    viewMenu->addAction(tr("&Full Screen"), this, &MainWindow::toggleFullScreen,
+                        QKeySequence(QStringLiteral("F11")));
+    viewMenu->addSeparator();
+    // 裸键（L/R/H/V/←/→）统一在 keyPressEvent 分发，避免文本框聚焦时误触发。
+    viewMenu->addAction(tr("Rotate &Left"), this, &MainWindow::onPreviewRotateLeft);
+    viewMenu->addAction(tr("Rotate &Right"), this, &MainWindow::onPreviewRotateRight);
+    viewMenu->addAction(tr("Flip &Horizontal"), this, &MainWindow::onPreviewFlipHorizontal);
+    viewMenu->addAction(tr("Flip &Vertical"), this, &MainWindow::onPreviewFlipVertical);
+    viewMenu->addSeparator();
+    viewMenu->addAction(tr("&Previous Image"), this, &MainWindow::onPreviousImage);
+    viewMenu->addAction(tr("&Next Image"), this, &MainWindow::onNextImage);
     viewMenu->addAction(
         tr("Toggle &Theme"), this, []() { ThemeManager::instance().toggleTheme(); },
         Qt::ALT + Qt::SHIFT + Qt::Key_D);
@@ -559,6 +615,26 @@ void MainWindow::populatePreviewToolBar()
     flowLayout->addWidget(separator2);
 
     addButton(tr("Delete"), tr("Delete Current Image"), &MainWindow::onPreviewDelete);
+
+    // 对比原图：处理后效果 vs 原图并排。此前只有压缩工具的 showOriginal
+    // 能触发 comparisonMode，其他四个处理工具都没有入口。
+    m_compareBtn = new QToolButton(m_previewToolBar);
+    m_compareBtn->setText(tr("Compare"));
+    m_compareBtn->setToolTip(tr("Show the original image side by side"));
+    m_compareBtn->setCheckable(true);
+    m_compareBtn->setAutoRaise(true);
+    m_compareBtn->setEnabled(false);
+    connect(m_compareBtn, &QToolButton::toggled, this, [this](bool checked) {
+        m_compareOriginal = checked;
+        requestDelayedPreview();
+    });
+    m_previewToolBarLayout->addWidget(m_compareBtn);
+
+    // 最近一次处理结果的入口：完成时只发轻提示，不打断操作流；
+    // 需要回看输出清单时点这里（语言切换重建后按 m_lastResult 恢复可用态）。
+    m_lastResultBtn = addButton(tr("Results"), tr("Show the result of the last operation"),
+                                &MainWindow::onShowLastResult);
+    m_lastResultBtn->setEnabled(!m_lastResult.files.isEmpty());
 }
 
 void MainWindow::rebuildPreviewToolBar()
@@ -593,6 +669,7 @@ void MainWindow::connectSignals()
             m_previewDelayTimer->start();
     });
     connect(m_listWidget, &ImageListWidget::removeRequested, this, &MainWindow::removeImages);
+    connect(m_listWidget, &ImageListWidget::pasteRequested, this, &MainWindow::onPasteImage);
     connect(m_listWidget, &ImageListWidget::rotateRequested, this,
             [this](int row) { m_model->rotateItem(row); });
     connect(m_listWidget, &ImageListWidget::flipHorizontalRequested, this,
@@ -610,12 +687,13 @@ void MainWindow::connectSignals()
     connect(m_model, &ImageListModel::selectionChanged, this, &MainWindow::updateStatusBar);
     // 图片尺寸是**异步**加载出来的：addImages 触发 countChanged 时还不知道尺寸，
     // 状态栏的输出尺寸会一直是空的，直到用户碰巧做了别的操作才被刷新。
-    // 这里按尺寸相关角色过滤后刷新，保证尺寸一到就更新。
+    // 这里按尺寸相关角色过滤后刷新。批量加载 100 张时会连发 100 次 ——
+    // 用 200ms 单发定时器合并，updateStatusBar 本身是 O(n)，不合并就是 O(n²)。
     connect(m_model, &ImageListModel::dataChanged, this,
             [this](const QModelIndex&, const QModelIndex&, const QVector<int>& roles) {
                 if (roles.contains(ImageListModel::WidthRole) ||
                     roles.contains(ImageListModel::HeightRole))
-                    updateStatusBar();
+                    m_statusBarRefreshTimer->start();
             });
     connect(m_model, &ImageListModel::thumbnailLoadStarted, this,
             &MainWindow::onThumbnailLoadStarted);
@@ -752,6 +830,9 @@ void MainWindow::connectSignals()
 
     connect(m_editorWidget, &ImageEditorWidget::historyChanged, m_propertyPanel,
             &PropertyPanel::refreshEditHistory);
+    // 裁剪比例锁：面板复选框 → 编辑器状态。
+    connect(m_propertyPanel, &PropertyPanel::cropAspectLockChanged, m_editorWidget,
+            &ImageEditorWidget::setCropAspectLocked);
     connect(m_propertyPanel, &PropertyPanel::editUndoRequested, m_editorWidget,
             &ImageEditorWidget::undo);
     connect(m_propertyPanel, &PropertyPanel::editRedoRequested, m_editorWidget,
@@ -804,10 +885,81 @@ void MainWindow::connectSignals()
 
 void MainWindow::onAddImages()
 {
-    QStringList files = QFileDialog::getOpenFileNames(this, tr("Select Images"), QDir::homePath(),
-                                                      FileUtils::imageFileFilter());
-    if (!files.isEmpty()) {
-        m_model->addImages(files);
+    const QStringList files = QFileDialog::getOpenFileNames(
+        this, tr("Add Images"), lastBrowseDirectory(), FileUtils::imageFileFilter());
+    if (files.isEmpty())
+        return;
+    rememberRecentFiles(files);
+    m_model->addImages(files);
+}
+
+void MainWindow::onAddFolder()
+{
+    const QString dir = QFileDialog::getExistingDirectory(this, tr("Add Folder"),
+                                                          lastBrowseDirectory());
+    if (dir.isEmpty())
+        return;
+    const QStringList files = FileUtils::expandToImageFiles(QStringList{dir});
+    if (files.isEmpty()) {
+        ToastManager::instance().showWarning(tr("No supported images found in the folder"), this);
+        return;
+    }
+    rememberRecentFiles(files);
+    m_model->addImages(files);
+}
+
+void MainWindow::onPasteImage()
+{
+    const QImage img = QGuiApplication::clipboard()->image();
+    if (img.isNull())
+        return;
+    // 粘贴截图落盘到应用配置目录：列表以文件为中心，需要持久的实体文件。
+    QDir().mkpath(appConfigDir() + QStringLiteral("/clipboard"));
+    const QString path = appConfigDir() + QStringLiteral("/clipboard/paste_") +
+                         QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_HHmmss")) +
+                         QStringLiteral(".png");
+    if (!ImageLoader::saveImage(img, path))
+        return;
+    m_model->addImages(QStringList{path});
+}
+
+QString MainWindow::lastBrowseDirectory() const
+{
+    // 优先用跨工具共享的输出目录历史（ui-state 持久化），比每次都落到
+    // 系统默认目录顺手得多。
+    const QString recent = m_propertyPanel->recentOutputDirectory();
+    return recent.isEmpty() ? QString() : recent;
+}
+
+void MainWindow::rememberRecentFiles(const QStringList& files)
+{
+    QSettings settings;
+    QStringList recent = settings.value(QStringLiteral("recentFiles")).toStringList();
+    for (const QString& f : files) {
+        recent.removeAll(f);
+        recent.prepend(f);
+    }
+    while (recent.size() > 10)
+        recent.removeLast();
+    settings.setValue(QStringLiteral("recentFiles"), recent);
+}
+
+void MainWindow::rebuildRecentFilesMenu()
+{
+    if (!m_recentMenu)
+        return;
+    m_recentMenu->clear();
+    QSettings settings;
+    const QStringList recent = settings.value(QStringLiteral("recentFiles")).toStringList();
+    if (recent.isEmpty()) {
+        m_recentMenu->addAction(tr("(empty)"))->setEnabled(false);
+        return;
+    }
+    for (const QString& f : recent) {
+        m_recentMenu->addAction(f, this, [this, f]() {
+            if (QFileInfo::exists(f))
+                m_model->addImages(QStringList{f});
+        });
     }
 }
 
@@ -879,7 +1031,8 @@ void MainWindow::onToolChanged(ToolType tool)
                     watcher->deleteLater();
                 });
                 watcher->setFuture(
-                    QtConcurrent::run([path]() -> QImage { return ImageLoader::loadImage(path); }));
+                    QtConcurrent::run(ImageTaskPools::previewPool(),
+                                      [path]() -> QImage { return ImageLoader::loadImage(path); }));
             }
         }
     } else if (tool == ToolType::Batch) {
@@ -891,6 +1044,17 @@ void MainWindow::onToolChanged(ToolType tool)
     } else {
         m_centerStack->setCurrentWidget(m_previewWidget);
         updateToolPreview();
+    }
+
+    // 对比原图仅对单图处理工具有意义（拼接是多图合成、编辑有自己的画布）。
+    if (m_compareBtn) {
+        const bool comparable = tool == ToolType::Convert || tool == ToolType::Compress ||
+                                tool == ToolType::Watermark || tool == ToolType::Resize;
+        m_compareBtn->setEnabled(comparable);
+        if (!comparable && m_compareOriginal) {
+            m_compareOriginal = false;
+            m_compareBtn->setChecked(false);
+        }
     }
 }
 
@@ -910,18 +1074,21 @@ void MainWindow::runEngineAsync(
     // 用 QPointer 而非裸指针：下一次 runEngineAsync 会对上一个对话框执行
     // close()+deleteLater()，裸指针会在完成回调里变成释放后使用。
     QPointer<QProgressDialog> currentProgressDlg;
+    // 取消标志：对话框取消按钮置位，引擎在每个文件开工前检查。
+    // 引擎是工作线程里的栈对象，用 shared_ptr 保证生命周期覆盖整个执行过程。
+    auto cancelFlag = QSharedPointer<std::atomic<bool>>::create(false);
     if (showProgressDialog) {
         if (m_progressDialog) {
             m_progressDialog->close();
             m_progressDialog->deleteLater();
         }
-        // 不显示取消按钮：各引擎通过 QtConcurrent::run 执行，本身不可取消，
-        // 而 canceled() 之前也从未被连接——点了取消只会隐藏对话框，任务照旧
-        // 写文件、状态栏停在「处理中」，之后还会弹出结果对话框。与其给一个
-        // 无效按钮，不如不显示。若将来引擎支持轮询中止标志，再恢复取消按钮。
-        m_progressDialog = new QProgressDialog(progressTitle, QString(), 0, 100, this);
+        // 引擎支持协作式取消（每个文件之间检查标志）：恢复取消按钮。
+        // 已完成的文件保留，剩余文件跳过 —— 进度照常走到 100% 后正常收尾。
+        m_progressDialog = new QProgressDialog(progressTitle, tr("Cancel"), 0, 100, this);
         m_progressDialog->setWindowModality(Qt::WindowModal);
         m_progressDialog->setMinimumDuration(0);
+        connect(m_progressDialog, &QProgressDialog::canceled, this,
+                [cancelFlag]() { cancelFlag->store(true); });
         currentProgressDlg = m_progressDialog;
     }
 
@@ -941,15 +1108,19 @@ void MainWindow::runEngineAsync(
                 m_statusBar->setState(StatusBarWidget::State::Ready);
             });
 
-    auto future = QtConcurrent::run([settings, paths, currentProgressDlg]() -> ResultType {
-        EngineType engine;
-        engine.setSettings(settings);
-        // 对话框若已销毁，QPointer 为空，connect 会安全返回 false 而不是崩溃。
-        if (currentProgressDlg)
-            QObject::connect(&engine, &EngineType::progress, currentProgressDlg.data(),
-                             &QProgressDialog::setValue);
-        return engine.process(paths);
-    });
+    auto future =
+        QtConcurrent::run(ImageTaskPools::enginePool(),
+                          [settings, paths, currentProgressDlg, cancelFlag]() -> ResultType {
+                              EngineType engine;
+                              engine.setSettings(settings);
+                              engine.setCancelFlag(cancelFlag.data());
+                              // 对话框若已销毁，QPointer 为空，connect 会安全返回 false 而不是崩溃。
+                              if (currentProgressDlg)
+                                  QObject::connect(&engine, &EngineType::progress,
+                                                   currentProgressDlg.data(),
+                                                   &QProgressDialog::setValue);
+                              return engine.process(paths);
+                          });
     watcher->setFuture(future);
 }
 
@@ -980,16 +1151,20 @@ void MainWindow::onProcessRequested()
         QString fmt = settings.outputFormat.toLower();
 
         QString defaultPath;
+        // 文件名模板此前只是装饰：面板里写的 {name}_stitched_{time} 从不生效。
+        // 现在用它展开出默认输出名（另存对话框可改），与预览所见一致。
+        const QString templatedName = FileUtils::applyFileNameTemplate(
+            m_propertyPanel->outputFileNameTemplate(),
+            QFileInfo(stitchPaths.first()).fileName(), 1, QSize(), QStringLiteral("stitched"));
         if (!settings.outputDir.isEmpty()) {
-            defaultPath = settings.outputDir + QStringLiteral("/") + settings.baseName +
+            defaultPath = settings.outputDir + QStringLiteral("/") + templatedName +
                           QStringLiteral(".") + fmt;
         } else {
             QString sourceDir = commonParentDirectory(stitchPaths);
             if (sourceDir.isEmpty())
                 sourceDir = QFileInfo(stitchPaths.first()).absolutePath();
-            QFileInfo fi(stitchPaths.first());
             defaultPath =
-                sourceDir + QStringLiteral("/") + fi.completeBaseName() + QStringLiteral(".") + fmt;
+                sourceDir + QStringLiteral("/") + templatedName + QStringLiteral(".") + fmt;
         }
 
         QString filter;
@@ -1028,8 +1203,7 @@ void MainWindow::onProcessRequested()
                 ImageInfo ii = ImageLoader::loadInfo(out);
                 if (ii.valid)
                     info.resolution = QSize(ii.width, ii.height);
-                ResultDialog dialog(info, this);
-                dialog.exec();
+                showProcessResult(info);
             });
         break;
     }
@@ -1039,7 +1213,9 @@ void MainWindow::onProcessRequested()
         if (selectedPaths.size() == 1) {
             QFileInfo fi(selectedPaths.first());
             QString fmt = convertSettings.targetFormat.toLower();
-            QString defaultPath = fi.absolutePath() + QStringLiteral("/") + fi.completeBaseName() +
+            QString defaultPath =
+            (lastBrowseDirectory().isEmpty() ? fi.absolutePath() : lastBrowseDirectory()) +
+            QStringLiteral("/") + fi.completeBaseName() +
                                   QStringLiteral(".") + fmt;
             QString filter = buildImageSaveFilter(fmt);
             QString selectedPath =
@@ -1087,8 +1263,7 @@ void MainWindow::onProcessRequested()
                                           for (const QString& p : outs)
                                               totalSize += QFileInfo(p).size();
                                           info.totalFileSize = totalSize;
-                                          ResultDialog dialog(info, this);
-                                          dialog.exec();
+                                          showProcessResult(info);
                                       });
         break;
     }
@@ -1102,7 +1277,9 @@ void MainWindow::onProcessRequested()
                               : compressSettings.outputFormat;
             if (fmt.compare(QStringLiteral("jpg"), Qt::CaseInsensitive) == 0)
                 fmt = QStringLiteral("jpeg");
-            QString defaultPath = fi.absolutePath() + QStringLiteral("/") + fi.completeBaseName() +
+            QString defaultPath =
+            (lastBrowseDirectory().isEmpty() ? fi.absolutePath() : lastBrowseDirectory()) +
+            QStringLiteral("/") + fi.completeBaseName() +
                                   QStringLiteral("_compressed.") + fmt.toLower();
             QString filter = buildImageSaveFilter(fmt);
             QString selectedPath = QFileDialog::getSaveFileName(this, tr("Save Compressed Image"),
@@ -1151,8 +1328,7 @@ void MainWindow::onProcessRequested()
                 info.message = tr("Compressed %1 images, saved %2%").arg(outs.size()).arg(ratio);
                 info.files = outs;
                 info.totalFileSize = totalCompressed;
-                ResultDialog dialog(info, this);
-                dialog.exec();
+                showProcessResult(info);
             });
         break;
     }
@@ -1166,7 +1342,9 @@ void MainWindow::onProcessRequested()
                               : watermarkSettings.outputFormat;
             if (fmt.compare(QStringLiteral("jpg"), Qt::CaseInsensitive) == 0)
                 fmt = QStringLiteral("jpeg");
-            QString defaultPath = fi.absolutePath() + QStringLiteral("/") + fi.completeBaseName() +
+            QString defaultPath =
+            (lastBrowseDirectory().isEmpty() ? fi.absolutePath() : lastBrowseDirectory()) +
+            QStringLiteral("/") + fi.completeBaseName() +
                                   QStringLiteral("_watermarked.") + fmt.toLower();
             QString filter = buildImageSaveFilter(fmt);
             QString selectedPath = QFileDialog::getSaveFileName(this, tr("Save Watermarked Image"),
@@ -1204,8 +1382,7 @@ void MainWindow::onProcessRequested()
                 for (const QString& p : outs)
                     totalSize += QFileInfo(p).size();
                 info.totalFileSize = totalSize;
-                ResultDialog dialog(info, this);
-                dialog.exec();
+                showProcessResult(info);
             });
         break;
     }
@@ -1219,7 +1396,9 @@ void MainWindow::onProcessRequested()
                               : resizeSettings.outputFormat;
             if (fmt.compare(QStringLiteral("jpg"), Qt::CaseInsensitive) == 0)
                 fmt = QStringLiteral("jpeg");
-            QString defaultPath = fi.absolutePath() + QStringLiteral("/") + fi.completeBaseName() +
+            QString defaultPath =
+            (lastBrowseDirectory().isEmpty() ? fi.absolutePath() : lastBrowseDirectory()) +
+            QStringLiteral("/") + fi.completeBaseName() +
                                   QStringLiteral("_resized.") + fmt.toLower();
             QString filter = buildImageSaveFilter(fmt);
             QString selectedPath =
@@ -1263,8 +1442,7 @@ void MainWindow::onProcessRequested()
                 }
                 info.totalFileSize = totalSize;
                 info.resolution = resolution;
-                ResultDialog dialog(info, this);
-                dialog.exec();
+                showProcessResult(info);
             });
         break;
     }
@@ -1297,8 +1475,7 @@ void MainWindow::onProcessRequested()
                     tr("Successfully exported %1 images to PDF").arg(selectedPaths.size());
                 info.files << out;
                 info.totalFileSize = QFileInfo(out).size();
-                ResultDialog dialog(info, this);
-                dialog.exec();
+                showProcessResult(info);
             });
         break;
     }
@@ -1309,13 +1486,15 @@ void MainWindow::onProcessRequested()
         const QString& path = paths.first();
         QFileInfo fi(path);
         QString fmt = fi.suffix();
-        QString defaultPath = fi.absolutePath() + QStringLiteral("/") + fi.completeBaseName() +
+        QString defaultPath =
+            (lastBrowseDirectory().isEmpty() ? fi.absolutePath() : lastBrowseDirectory()) +
+            QStringLiteral("/") + fi.completeBaseName() +
                               QStringLiteral("_edited.") + fmt;
         QString filter = buildImageSaveFilter(fmt);
         QString out = QFileDialog::getSaveFileName(this, tr("Save Image"), defaultPath, filter);
         if (out.isEmpty())
             break;
-        if (ImageLoader::saveImage(img, out)) {
+        if (ImageLoader::saveImage(img, out, QString(), m_propertyPanel->editQuality())) {
             m_statusBar->setMessage(tr("Saved edited image: %1").arg(out));
             ResultInfo info;
             info.title = tr("Edit Saved");
@@ -1323,8 +1502,7 @@ void MainWindow::onProcessRequested()
             info.files << out;
             info.totalFileSize = QFileInfo(out).size();
             info.resolution = img.size();
-            ResultDialog dialog(info, this);
-            dialog.exec();
+            showProcessResult(info);
         }
         break;
     }
@@ -1335,6 +1513,35 @@ void MainWindow::onProcessRequested()
     default:
         break;
     }
+}
+
+void MainWindow::showProcessResult(const ResultInfo& info)
+{
+    m_lastResult = info;
+    if (m_lastResultBtn)
+        m_lastResultBtn->setEnabled(true);
+
+    // 完成反馈走轻提示：不打断操作流。「打开」直达系统查看器，
+    // 「结果」打开结果清单 —— 结果信息一秒可达，不再只是记到日志里。
+    ToastManager::instance().showInfo(
+        info.message,
+        ToastAction{tr("Open"),
+                    [this]() {
+                        if (!m_lastResult.files.isEmpty())
+                            ExportManager::openFile(m_lastResult.files.first());
+                    }},
+        this);
+}
+
+void MainWindow::onShowLastResult()
+{
+    if (m_lastResult.files.isEmpty())
+        return;
+    auto* dialog = new ResultDialog(m_lastResult, this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->show();
+    dialog->raise();
+    dialog->activateWindow();
 }
 
 void MainWindow::onBatchProcess()
@@ -1381,7 +1588,7 @@ void MainWindow::onBatchProcess()
     case ToolType::Convert: {
         runEngineAsync<ConvertEngine>(
             m_propertyPanel->convertSettings(), paths, tr("Batch converting..."),
-            [copyToBatchDir](const QStringList& outs) { copyToBatchDir(outs); }, false);
+            [copyToBatchDir](const QStringList& outs) { copyToBatchDir(outs); }, true);
         break;
     }
     case ToolType::Compress: {
@@ -1395,19 +1602,19 @@ void MainWindow::onBatchProcess()
                 }
                 copyToBatchDir(outs);
             },
-            false);
+            true);
         break;
     }
     case ToolType::Watermark: {
         runEngineAsync<WatermarkEngine>(
             m_propertyPanel->watermarkSettings(), paths, tr("Batch watermarking..."),
-            [copyToBatchDir](const QStringList& outs) { copyToBatchDir(outs); }, false);
+            [copyToBatchDir](const QStringList& outs) { copyToBatchDir(outs); }, true);
         break;
     }
     case ToolType::Resize: {
         runEngineAsync<ResizeEngine>(
             m_propertyPanel->resizeSettings(), paths, tr("Batch resizing..."),
-            [copyToBatchDir](const QStringList& outs) { copyToBatchDir(outs); }, false);
+            [copyToBatchDir](const QStringList& outs) { copyToBatchDir(outs); }, true);
         break;
     }
     default:
@@ -1434,6 +1641,10 @@ void MainWindow::onImageSelected(int row)
     if (row == m_currentImageRow && m_currentTool != ToolType::Stitch)
         return;
     m_currentImageRow = row;
+    // 图片信息面板跟随选中（EXIF 异步读取，PropertyPanel 内部做过期丢弃）。
+    const ImageItem* selItem =
+        row >= 0 && row < m_model->rowCount() ? m_model->itemAt(row) : nullptr;
+    m_propertyPanel->showImageInfo(selItem ? selItem->filePath() : QString());
     if (m_currentTool == ToolType::Stitch) {
         m_previewWidget->setStitchHighlightedInput(row);
         // 拼接预览由 imageSelectionChanged → 200ms 延迟定时器统一触发，
@@ -1470,16 +1681,14 @@ void MainWindow::updatePreview(bool applyToolEffect)
         return;
     }
 
-    // 如果前一个异步任务还在运行，尝试取消并不再等待。
-    // QtConcurrent::run 不支持真正取消 libvips 操作，等待反而会让 UI 被挂起任务阻塞；
-    // 直接启动新任务，旧任务结果会被新 future 覆盖而忽略。
-    if (m_previewWatcher->isRunning())
-        m_previewWatcher->cancel();
-
+    // 预览任务防堆积：连续改动选择会连续投递任务。专用池单线程串行 +
+    // 代数检查 —— 过期任务在开工瞬间即退出，不再排队执行数 GB 的拼接管线。
     m_previewWidget->setComparisonMode(false);
 
     PreviewTaskInput input;
     input.tool = m_currentTool;
+    const qint64 generation = ++m_previewGeneration;
+    input.generation = generation;
     input.currentFilePath = item ? item->filePath() : QString();
     // 拼接预览仅使用选中的图片，其他模式使用全部可见图片。
     input.allFilePaths = showStitch ? m_model->selectedFilePaths() : m_model->filePaths();
@@ -1494,6 +1703,7 @@ void MainWindow::updatePreview(bool applyToolEffect)
             input.previewSize.scaled(kMaxPreviewLongEdge, kMaxPreviewLongEdge, Qt::KeepAspectRatio);
     }
     input.applyToolEffect = applyToolEffect;
+    input.forceOriginal = m_compareOriginal;
     input.stitchSettings = m_propertyPanel->stitchSettings();
     input.compressSettings = m_propertyPanel->compressSettings();
     input.watermarkSettings = m_propertyPanel->watermarkSettings();
@@ -1515,7 +1725,17 @@ void MainWindow::updatePreview(bool applyToolEffect)
         m_statusBar->setMessage(tr("Updating preview..."));
     }
 
-    QFuture<PreviewTaskResult> future = QtConcurrent::run(generatePreview, input);
+    QFuture<PreviewTaskResult> future =
+        QtConcurrent::run(ImageTaskPools::previewPool(), [this, input]() -> PreviewTaskResult {
+            // 代数检查：开工瞬间发现已被更新的请求取代，直接退出。
+            // 空结果带自身代数，onPreviewFinished 据此识别并跳过。
+            if (input.generation != m_previewGeneration.load()) {
+                PreviewTaskResult stale;
+                stale.generation = input.generation;
+                return stale;
+            }
+            return generatePreview(input);
+        });
     m_previewWatcher->setFuture(future);
 }
 
@@ -1623,11 +1843,51 @@ void MainWindow::onThumbnailLoadFinished()
     m_statusBar->setState(StatusBarWidget::State::Ready);
     m_statusBar->setMessage(tr("Ready"));
     m_statusBar->setProgressVisible(false);
+    // 加载会话结束：冲刷挂起的状态栏刷新（防抖定时器可能还没到期），
+    // 保证最后一批尺寸立即反映在输出尺寸上。
+    if (m_statusBarRefreshTimer->isActive()) {
+        m_statusBarRefreshTimer->stop();
+        updateStatusBar();
+    }
+}
+
+void MainWindow::showErrorToastCoalesced(const ImageProError& error)
+{
+    // 错误突发合并：100 个坏文件逐条 Toast 会把屏幕刷满。
+    // 1 秒窗口内的同类错误只弹第一条，其余计数；窗口结束后补一条汇总。
+    const bool burst = m_errorToastClockValid && m_lastToastLevel == error.level() &&
+                       m_errorToastClock.elapsed() < 1000;
+    if (!burst) {
+        flushSuppressedErrors();
+        m_lastToastLevel = error.level();
+        m_errorToastClockValid = true;
+        m_errorToastClock.restart();
+        m_suppressedToasts = 0;
+        ToastManager::instance().show(error.level(), error.message(), this);
+        m_errorBurstTimer->start();
+        return;
+    }
+    ++m_suppressedToasts;
+    m_errorBurstTimer->start(); // 突发还在继续，窗口顺延
+}
+
+void MainWindow::flushSuppressedErrors()
+{
+    if (m_suppressedToasts <= 0)
+        return;
+    ToastManager::instance().showInfo(
+        tr("%1 similar notifications were grouped").arg(m_suppressedToasts), this);
+    m_suppressedToasts = 0;
 }
 
 void MainWindow::onPreviewFinished()
 {
     PreviewTaskResult result = m_previewWatcher->result();
+
+    // 过期结果（更新的请求已接管）：跳过渲染。WaitCursor 由最新任务的
+    // finished 恢复，这里不动光标状态。
+    if (result.generation != 0 && result.generation != m_previewGeneration.load())
+        return;
 
     // 仅在曾经设置过 WaitCursor 时恢复，保证与 updatePreview 中的 set 配对。
     if (m_previewCursorOverridden) {
@@ -1646,7 +1906,7 @@ void MainWindow::onPreviewFinished()
         m_previewWidget->setComparisonMode(false);
         m_previewWidget->setStitchSynthesizedImage(result.image);
         m_previewWidget->setStitchInputRects(result.stitchInputRects);
-        m_propertyPanel->updatePreview(result.image);
+        m_propertyPanel->updatePreview(result.image, result.sourceSize);
         return;
     }
 
@@ -1658,18 +1918,99 @@ void MainWindow::onPreviewFinished()
     }
 
     if (!result.sourcePath.isEmpty()) {
-        m_previewWidget->setSourcePath(result.sourcePath, result.sourceRotation,
+        m_previewWidget->setSourcePath(result.sourcePath, result.sourceSize, result.sourceRotation,
                                        result.sourceFlippedH, result.sourceFlippedV);
     } else {
         m_previewWidget->setImage(result.image);
     }
-    m_propertyPanel->updatePreview(result.image);
+    m_propertyPanel->updatePreview(result.image, result.sourceSize);
 }
 
 void MainWindow::requestDelayedPreview()
 {
     if (m_previewDelayTimer)
         m_previewDelayTimer->start();
+}
+
+void MainWindow::toggleFullScreen()
+{
+    // F11 / Space / Esc 循环：进入全屏记住是否原为最大化，退出时还原。
+    if (isFullScreen()) {
+        if (m_wasMaximizedBeforeFullScreen)
+            showMaximized();
+        else
+            showNormal();
+    } else {
+        m_wasMaximizedBeforeFullScreen = isMaximized();
+        showFullScreen();
+    }
+}
+
+void MainWindow::onNextImage()
+{
+    const int count = m_model->rowCount();
+    if (count == 0)
+        return;
+    const int row = (m_currentImageRow + 1 + count) % count;
+    m_listWidget->selectRow(row);
+    onImageSelected(row);
+}
+
+void MainWindow::onPreviousImage()
+{
+    const int count = m_model->rowCount();
+    if (count == 0)
+        return;
+    const int row = (m_currentImageRow - 1 + count) % count;
+    m_listWidget->selectRow(row);
+    onImageSelected(row);
+}
+
+void MainWindow::keyPressEvent(QKeyEvent* event)
+{
+    // Esc 退出全屏（全屏模式下无论焦点在哪都响应）。
+    if (isFullScreen() && event->key() == Qt::Key_Escape) {
+        toggleFullScreen();
+        return;
+    }
+
+    // 裸键快捷键：文本输入框聚焦时不拦截（面板里有文件名模板/质量等输入框），
+    // 否则 Space/←/→/L/R/H/V 全窗口生效。
+    const QWidget* focused = QApplication::focusWidget();
+    const bool textFocused =
+        focused && (qobject_cast<const QLineEdit*>(focused) ||
+                    qobject_cast<const QTextEdit*>(focused) ||
+                    qobject_cast<const QPlainTextEdit*>(focused) ||
+                    (qobject_cast<const QComboBox*>(focused) &&
+                     qobject_cast<const QComboBox*>(focused)->isEditable()));
+    if (!textFocused) {
+        switch (event->key()) {
+        case Qt::Key_Space:
+            toggleFullScreen();
+            return;
+        case Qt::Key_Right:
+            onNextImage();
+            return;
+        case Qt::Key_Left:
+            onPreviousImage();
+            return;
+        case Qt::Key_L:
+            onPreviewRotateLeft();
+            return;
+        case Qt::Key_R:
+            onPreviewRotateRight();
+            return;
+        case Qt::Key_H:
+            onPreviewFlipHorizontal();
+            return;
+        case Qt::Key_V:
+            onPreviewFlipVertical();
+            return;
+        default:
+            break;
+        }
+    }
+    QMainWindow::keyPressEvent(event);
 }
 
 void MainWindow::onPreviewRotateLeft()

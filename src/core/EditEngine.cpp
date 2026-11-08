@@ -8,7 +8,7 @@ namespace yingtu {
 
 namespace {
 
-QImage applyFilter(const QImage& source, FilterType type)
+QImage applyFilter(const QImage& source, FilterType type, int strength)
 {
     if (source.isNull())
         return source;
@@ -16,20 +16,27 @@ QImage applyFilter(const QImage& source, FilterType type)
     QImage img = source.convertToFormat(QImage::Format_ARGB32);
     const int w = img.width();
     const int h = img.height();
+    // 强度归一：50 为此前的硬编码默认档（各分支按 50=原效果标定）。
+    const double k = qBound(0, strength, 100) / 50.0;
 
     switch (type) {
     case FilterType::Grayscale: {
+        // 强度 = 灰度混合比例：0 原图，50 全灰，100 全灰（>50 保持全灰）
+        const double mix = qMin(1.0, k);
         for (int y = 0; y < h; ++y) {
             QRgb* line = reinterpret_cast<QRgb*>(img.scanLine(y));
             for (int x = 0; x < w; ++x) {
                 QRgb p = line[x];
                 int gray = qRound(0.299 * qRed(p) + 0.587 * qGreen(p) + 0.114 * qBlue(p));
-                line[x] = qRgba(gray, gray, gray, qAlpha(p));
+                line[x] = qRgba(qRound(qRed(p) * (1 - mix) + gray * mix),
+                                qRound(qGreen(p) * (1 - mix) + gray * mix),
+                                qRound(qBlue(p) * (1 - mix) + gray * mix), qAlpha(p));
             }
         }
         break;
     }
     case FilterType::Sepia: {
+        const double mix = qMin(1.0, k);
         for (int y = 0; y < h; ++y) {
             QRgb* line = reinterpret_cast<QRgb*>(img.scanLine(y));
             for (int x = 0; x < w; ++x) {
@@ -38,44 +45,51 @@ QImage applyFilter(const QImage& source, FilterType type)
                 int tr = qMin(255, qRound(0.393 * r + 0.769 * g + 0.189 * b));
                 int tg = qMin(255, qRound(0.349 * r + 0.686 * g + 0.168 * b));
                 int tb = qMin(255, qRound(0.272 * r + 0.534 * g + 0.131 * b));
-                line[x] = qRgba(tr, tg, tb, qAlpha(p));
+                line[x] = qRgba(qRound(r * (1 - mix) + tr * mix),
+                                qRound(g * (1 - mix) + tg * mix),
+                                qRound(b * (1 - mix) + tb * mix), qAlpha(p));
             }
         }
         break;
     }
     case FilterType::Warm: {
+        const int dr = qRound(30 * k);
+        const int db = qRound(20 * k);
         for (int y = 0; y < h; ++y) {
             QRgb* line = reinterpret_cast<QRgb*>(img.scanLine(y));
             for (int x = 0; x < w; ++x) {
                 QRgb p = line[x];
-                int r = qMin(255, qRed(p) + 30);
+                int r = qMin(255, qRed(p) + dr);
                 int g = qGreen(p);
-                int b = qMax(0, qBlue(p) - 20);
+                int b = qMax(0, qBlue(p) - db);
                 line[x] = qRgba(r, g, b, qAlpha(p));
             }
         }
         break;
     }
     case FilterType::Cool: {
+        const int dr = qRound(20 * k);
+        const int db = qRound(30 * k);
         for (int y = 0; y < h; ++y) {
             QRgb* line = reinterpret_cast<QRgb*>(img.scanLine(y));
             for (int x = 0; x < w; ++x) {
                 QRgb p = line[x];
-                int r = qMax(0, qRed(p) - 20);
+                int r = qMax(0, qRed(p) - dr);
                 int g = qGreen(p);
-                int b = qMin(255, qBlue(p) + 30);
+                int b = qMin(255, qBlue(p) + db);
                 line[x] = qRgba(r, g, b, qAlpha(p));
             }
         }
         break;
     }
     case FilterType::HighContrast: {
+        const double factor = 1.0 + 0.5 * k;
         for (int y = 0; y < h; ++y) {
             QRgb* line = reinterpret_cast<QRgb*>(img.scanLine(y));
             for (int x = 0; x < w; ++x) {
                 QRgb p = line[x];
-                auto adjust = [](int v) {
-                    double d = (v - 128) * 1.5 + 128;
+                auto adjust = [factor](int v) {
+                    double d = (v - 128) * factor + 128;
                     return qBound(0, qRound(d), 255);
                 };
                 line[x] = qRgba(adjust(qRed(p)), adjust(qGreen(p)), adjust(qBlue(p)), qAlpha(p));
@@ -85,19 +99,19 @@ QImage applyFilter(const QImage& source, FilterType type)
     }
     case FilterType::Blur: {
         img = source.convertToFormat(QImage::Format_ARGB32);
-        // Use QPainter blur effect via convolution approximation is complex;
-        // fallback to a simple box blur on a copy.
+        // 盒式模糊半径随强度增长：50 → 3×3（原硬编码效果），100 → 9×9。
+        const int radius = qMax(1, qRound(k));
         QImage blurred(w, h, QImage::Format_ARGB32);
         for (int y = 0; y < h; ++y) {
             QRgb* out = reinterpret_cast<QRgb*>(blurred.scanLine(y));
             for (int x = 0; x < w; ++x) {
                 int r = 0, g = 0, b = 0, a = 0, count = 0;
-                for (int dy = -1; dy <= 1; ++dy) {
+                for (int dy = -radius; dy <= radius; ++dy) {
                     int yy = y + dy;
                     if (yy < 0 || yy >= h)
                         continue;
                     const QRgb* in = reinterpret_cast<const QRgb*>(img.constScanLine(yy));
-                    for (int dx = -1; dx <= 1; ++dx) {
+                    for (int dx = -radius; dx <= radius; ++dx) {
                         int xx = x + dx;
                         if (xx < 0 || xx >= w)
                             continue;
@@ -118,6 +132,8 @@ QImage applyFilter(const QImage& source, FilterType type)
     case FilterType::Sharpen: {
         QImage base = source.convertToFormat(QImage::Format_ARGB32);
         img = base.copy();
+        // 锐化结果与原图按强度混合：k=0 无效果，k=1（强度 50）全锐化，
+        // k=2（强度 100）过冲一倍 —— 卷积核不动，用混合系数调强度。
         for (int y = 1; y < h - 1; ++y) {
             QRgb* out = reinterpret_cast<QRgb*>(img.scanLine(y));
             for (int x = 1; x < w - 1; ++x) {
@@ -140,9 +156,12 @@ QImage applyFilter(const QImage& source, FilterType type)
                     return qBound(0, v, 255);
                 };
                 QRgb src = pixel(x, y);
-                int r = conv([](QRgb c) { return qRed(c); }, x, y);
-                int g = conv([](QRgb c) { return qGreen(c); }, x, y);
-                int b = conv([](QRgb c) { return qBlue(c); }, x, y);
+                auto mix = [k](int orig, int sharp) {
+                    return qBound(0, qRound(orig + (sharp - orig) * qMin(2.0, k)), 255);
+                };
+                int r = mix(qRed(src), conv([](QRgb c) { return qRed(c); }, x, y));
+                int g = mix(qGreen(src), conv([](QRgb c) { return qGreen(c); }, x, y));
+                int b = mix(qBlue(src), conv([](QRgb c) { return qBlue(c); }, x, y));
                 out[x] = qRgba(r, g, b, qAlpha(src));
             }
         }
@@ -234,9 +253,23 @@ QImage EditEngine::renderWithSelection(const QString& selectedId) const
 
     // Apply filter and mosaic actions to the base image before drawing annotations
     for (const auto& action : m_actions) {
-        if (action.isFilter())
-            result = applyFilter(result, action.filterType);
-        else if (action.toolType == EditToolType::Mosaic)
+        if (action.isFilter()) {
+            // 区域滤镜：bounds 有实际尺寸时只对框选区域应用（拖拽框选功能 +
+            // 大图上小区域的渲染加速）；点击（零尺寸 bounds）仍作用于全图。
+            const QRectF bf = action.bounds;
+            if (bf.width() > 2 && bf.height() > 2) {
+                QRect region = bf.toRect().intersected(result.rect());
+                if (!region.isEmpty()) {
+                    QImage regionImg =
+                        applyFilter(result.copy(region), action.filterType, action.filterStrength);
+                    QPainter regionPainter(&result);
+                    regionPainter.drawImage(region.topLeft(), regionImg);
+                    regionPainter.end();
+                    continue;
+                }
+            }
+            result = applyFilter(result, action.filterType, action.filterStrength);
+        } else if (action.toolType == EditToolType::Mosaic)
             result = applyMosaic(result, action);
     }
 
@@ -334,6 +367,15 @@ void EditEngine::drawAction(QPainter* painter, const EditAction& action) const
         painter->setFont(font);
         painter->setPen(QPen(c));
         painter->setBrush(Qt::NoBrush);
+        if (action.textBackground) {
+            // 半透明底框：浅色底图上的白字/浅色字从此可读。
+            QFontMetrics fm(font);
+            const QRectF textRect =
+                fm.boundingRect(action.bounds.toRect(),
+                                Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap, action.text);
+            QColor bg(0, 0, 0, 110);
+            painter->fillRect(textRect.adjusted(-4, -2, 4, 2), bg);
+        }
         painter->drawText(action.bounds, Qt::AlignLeft | Qt::AlignTop, action.text);
         break;
     }

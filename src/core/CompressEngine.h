@@ -4,6 +4,8 @@
 #include <QObject>
 #include <QStringList>
 
+#include <atomic>
+
 namespace yingtu {
 
 enum class CompressMode {
@@ -41,9 +43,18 @@ public:
 
     void setSettings(const CompressSettings& settings) { m_settings = settings; }
 
+    /** 取消标志（可选）：置位后剩余文件跳过，已完成部分正常返回。 */
+    void setCancelFlag(std::atomic<bool>* flag) { m_cancelFlag = flag; }
+
     QList<CompressResult> process(const QStringList& filePaths);
     static QImage preview(const QImage& source, const CompressSettings& settings);
     static qint64 estimateSize(const QImage& image, const CompressSettings& settings);
+    /**
+     * 实际生效的编码质量：
+     * Quality 模式下 Strength 是主控（quality = 100 − strength），
+     * Size/Smart 模式下 Quality 滑块作为二分/编码质量参数。
+     */
+    static int effectiveQuality(const CompressSettings& settings);
 
 signals:
     void progress(int percent);
@@ -51,8 +62,10 @@ signals:
 
 private:
     CompressResult compressSingle(const QString& filePath);
+    bool cancelRequested() const { return m_cancelFlag && m_cancelFlag->load(); }
 
     CompressSettings m_settings;
+    std::atomic<bool>* m_cancelFlag = nullptr;
 };
 
 } // namespace yingtu

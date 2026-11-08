@@ -1,6 +1,7 @@
 #include "PdfEngine.h"
 #include "utils/ErrorHandler.h"
 #include "utils/ImageLoader.h"
+#include <QFile>
 #include <QFileInfo>
 #include <QPageSize>
 #include <QPainter>
@@ -123,6 +124,8 @@ QString PdfEngine::process(const QStringList& filePaths, bool* ok)
         int perPage = cols * rows;
 
         for (int i = 0; i < filePaths.size(); ++i) {
+            if (cancelRequested())
+                break; // 已取消：保留已绘制的页，正常走完成流程
             int slot = i % perPage;
             if (i > 0 && slot == 0)
                 writer.newPage();
@@ -150,6 +153,8 @@ QString PdfEngine::process(const QStringList& filePaths, bool* ok)
         }
     } else {
         for (int i = 0; i < filePaths.size(); ++i) {
+            if (cancelRequested())
+                break;
             if (i > 0)
                 writer.newPage();
             QImage img = ImageLoader::loadImage(filePaths.at(i));
@@ -159,6 +164,17 @@ QString PdfEngine::process(const QStringList& filePaths, bool* ok)
     }
 
     painter.end();
+
+    // 取消时若还有未处理的输入：残缺 PDF 对用户是误导（看起来成功但内容不全）。
+    // PDF 是单文件产物无法部分交付 —— 删除输出并报失败，与列表类引擎
+    // 「取消返回已完成部分」的语义刻意不同。
+    if (cancelRequested() && drawnCount < filePaths.size()) {
+        QFile::remove(outputPath);
+        if (ok)
+            *ok = false;
+        emit error(tr("Export cancelled"));
+        return QString();
+    }
 
     // 确认真的写出了内容：路径不可写、磁盘满、或所有图片都读取失败时，
     // 之前也会无条件报成功并返回一个指向缺失/空 PDF 的路径。

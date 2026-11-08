@@ -113,6 +113,10 @@ function(_collect_deps file)
         endif()
 
         file(COPY "${_src}" DESTINATION "${TARGET_DIR}")
+        # 记录新拷入的 DLL 名：列表在函数作用域里追加，再写回父作用域。
+        # 此前这里只做了 `set(_collected "${_collected}" PARENT_SCOPE)`，
+        # 从不 append，统计恒为 0。
+        list(APPEND _collected "${_dll}")
         set(_collected "${_collected}" PARENT_SCOPE)
 
         # 新拷入的 DLL 可能还有依赖，继续递归。

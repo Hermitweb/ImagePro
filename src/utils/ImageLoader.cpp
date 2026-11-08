@@ -70,6 +70,13 @@ public:
 private:
     VipsInitHelper()
     {
+        // 拼接以 RANDOM 访问打开输入图：解码结果低于该阈值的进内存，
+        // 超过的落 .v 临时文件。默认 100MB 对多图拼接太宽松——
+        // 100 张 12MP 输入会全量驻留 RAM（约 4GB）。收紧到 64MB：
+        // 大图改走磁盘随机访问，内存峰值可控，速度换稳定。
+        // 必须在 VIPS_INIT 之前设置（libvips 在初始化时读取）。
+        qputenv("VIPS_DISC_THRESHOLD", "64m");
+
         if (VIPS_INIT("ImagePro")) {
             m_ok = false;
         } else {
@@ -93,6 +100,23 @@ private:
     }
     bool m_ok = false;
 };
+
+// 加载后应用 EXIF 方向：手机竖拍照片自动转正。
+// 不能用 new_from_file 的 "autorotate" 选项 —— 该选项只有部分 loader
+// （jpegload 等）支持，不支持的 loader 收到未知选项会导致 varargs 解析
+// 错位直接崩溃。vips_autorot 对无方向元数据的图零成本透传。
+static VipsImage* autorotateImage(VipsImage* in)
+{
+    if (!in)
+        return nullptr;
+    VipsImage* out = nullptr;
+    if (vips_autorot(in, &out, nullptr) == 0 && out) {
+        g_object_unref(in);
+        return out;
+    }
+    vips_error_clear();
+    return in;
+}
 
 static void ensureVipsInitialized()
 {
@@ -135,17 +159,18 @@ QImage ImageLoader::vipsImageToQImage(VipsImage* image)
         // libvips 输出是 RGBA，需要转成 Qt 的 ARGB。
         // 注意必须用 Format_ARGB32：Format_RGB32 会把 alpha 字节强制成 0xff，
         // 导致透明图加载后全部变成不透明。
+        // 单次分配：字节交换直接写进 QImage 的位。此前的「包装 → copy()」
+        // 会多复制一份大缓冲——拼接预览物化整图时峰值直接翻倍。
         // 也不能用 convertToFormat(ARGB32)——同格式转换返回的是共享 mem 的浅拷贝，
-        // g_free(mem) 之后会悬空；必须 copy() 深拷贝。
-        QImage tmp(static_cast<uchar*>(mem), width, height, width * 4, QImage::Format_ARGB32);
-        result = tmp.copy();
-        // Qt 的 Format_ARGB32 是 0xAARRGGBB，libvips RGBA 是 R G B A 字节序
-        // 在大端/小端上需要手动调整；x86 是 little-endian，简单交换即可
+        // g_free(mem) 之后会悬空。
+        result = QImage(width, height, QImage::Format_ARGB32);
+        const uchar* src = static_cast<const uchar*>(mem);
         for (int y = 0; y < height; ++y) {
             QRgb* line = reinterpret_cast<QRgb*>(result.scanLine(y));
+            const uchar* srow = src + static_cast<size_t>(y) * static_cast<size_t>(width) * 4;
             for (int x = 0; x < width; ++x) {
-                QRgb p = line[x];
-                line[x] = qRgba(qBlue(p), qGreen(p), qRed(p), qAlpha(p));
+                line[x] = qRgba(srow[x * 4 + 0], srow[x * 4 + 1], srow[x * 4 + 2],
+                                srow[x * 4 + 3]);
             }
         }
     } else if (bands == 3) {
@@ -275,6 +300,49 @@ VipsImage* ImageLoader::qImageToVipsImage(const QImage& image)
     return copied;
 }
 
+ExifSummary ImageLoader::readExifSummary(const QString& filePath)
+{
+    ExifSummary summary;
+    if (filePath.isEmpty())
+        return summary;
+
+    ensureVipsInitialized();
+    VipsImage* image = autorotateImage(vips_image_new_from_file(filePath.toUtf8().constData(), "access",
+                                                VIPS_ACCESS_SEQUENTIAL, nullptr));
+    if (!image) {
+        vips_error_clear();
+        return summary;
+    }
+
+    // libvips 会把 EXIF 平铺成 exif-ifdN-Tag 形式的字段，按候选 tag 逐一读取。
+    const struct
+    {
+        const char* field;
+        QString* out;
+    } candidates[] = {
+        { "exif-ifd0-Model", &summary.camera },
+        { "exif-ifd2-DateTimeOriginal", &summary.dateTime },
+        { "exif-ifd0-DateTime", &summary.dateTime },
+        { "exif-ifd2-ISOSpeedRatings", &summary.iso },
+        { "exif-ifd2-ExposureTime", &summary.exposure },
+        { "exif-ifd2-FNumber", &summary.aperture },
+        { "exif-ifd2-FocalLength", &summary.focalLength },
+    };
+
+    for (const auto& c : candidates) {
+        const char* value = nullptr;
+        if (vips_image_get_string(image, c.field, &value) == 0 && value && *value) {
+            // 同一字段多个候选（如 DateTime）取第一个非空值
+            if (c.out->isEmpty())
+                *c.out = QString::fromUtf8(value);
+            summary.valid = true;
+        }
+    }
+
+    g_object_unref(image);
+    return summary;
+}
+
 ImageInfo ImageLoader::loadInfo(const QString& filePath)
 {
     return loadInfoImpl(filePath, true);
@@ -283,6 +351,21 @@ ImageInfo ImageLoader::loadInfo(const QString& filePath)
 ImageInfo ImageLoader::loadInfoQuiet(const QString& filePath)
 {
     return loadInfoImpl(filePath, false);
+}
+
+// libvips 处不了的格式回退到 Qt 图像插件。
+// 本构建的 libvips（MSYS2）未编入 BMP 等格式，而 saveImage 失败时会回退
+// QImage::save 写出——如果加载路径不回退，应用就打不开自己保存的文件。
+// autoTransform 现已开启：EXIF 方向全局转正（见 VipsInitHelper 的说明）。
+static QImage loadViaQtPlugins(const QString& filePath)
+{
+    QFileInfo fi(filePath);
+    if (!fi.isFile() || !fi.isReadable())
+        return QImage();
+    QImageReader reader(filePath);
+    // EXIF 方向：手机竖拍照片自动转正（与 vips 路径的 autorotate 对齐）。
+    reader.setAutoTransform(true);
+    return reader.read();
 }
 
 ImageInfo ImageLoader::loadInfoImpl(const QString& filePath, bool reportErrors)
@@ -302,11 +385,22 @@ ImageInfo ImageLoader::loadInfoImpl(const QString& filePath, bool reportErrors)
     info.fileSize = fi.size();
 
     // SEQUENTIAL：单遍读取；全局 operation/memory/file cache 已禁用，避免 tile cache 累积。
-    VipsImage* image = vips_image_new_from_file(filePath.toUtf8().constData(), "access",
-                                                VIPS_ACCESS_SEQUENTIAL, nullptr);
+    VipsImage* image = autorotateImage(vips_image_new_from_file(filePath.toUtf8().constData(), "access",
+                                                VIPS_ACCESS_SEQUENTIAL, nullptr));
     if (!image) {
-        info.errorString = QString::fromUtf8(vips_error_buffer());
+        const QString err = QString::fromUtf8(vips_error_buffer());
         vips_error_clear();
+        // Qt 插件回退：libvips 未编译进来的格式（如 BMP）读头即可，无需完整解码
+        QImageReader reader(filePath);
+        const QSize qtSize = reader.size();
+        if (qtSize.isValid()) {
+            info.width = qtSize.width();
+            info.height = qtSize.height();
+            info.format = QFileInfo(filePath).suffix().toLower();
+            info.valid = true;
+            return info;
+        }
+        info.errorString = err;
         reportReadFailure(filePath, info.errorString, reportErrors);
         return info;
     }
@@ -324,11 +418,16 @@ QImage ImageLoader::loadImage(const QString& filePath)
     ensureVipsInitialized();
 
     // SEQUENTIAL：单遍读取；全局 operation/memory/file cache 已禁用。
-    VipsImage* image = vips_image_new_from_file(filePath.toUtf8().constData(), "access",
-                                                VIPS_ACCESS_SEQUENTIAL, nullptr);
+    VipsImage* image = autorotateImage(vips_image_new_from_file(filePath.toUtf8().constData(), "access",
+                                                VIPS_ACCESS_SEQUENTIAL, nullptr));
     if (!image) {
         const QString err = QString::fromUtf8(vips_error_buffer());
         vips_error_clear();
+        // 与 saveImage 的 QImage 回退对称：libvips 不支持的格式交给 Qt 插件，
+        // 保证「应用能保存的格式自己也能打开」。
+        const QImage viaQt = loadViaQtPlugins(filePath);
+        if (!viaQt.isNull())
+            return viaQt;
         reportReadFailure(filePath, err);
         return QImage();
     }
@@ -350,7 +449,13 @@ QImage ImageLoader::loadPreview(const QString& filePath, const QSize& maxSize)
     if (vips_thumbnail(filePath.toUtf8().constData(), &thumb, maxSize.width(), "height",
                        maxSize.height(), "size", VIPS_SIZE_DOWN, nullptr)) {
         vips_error_clear();
-        return QImage();
+        // Qt 插件回退：只有 libvips 不支持的格式会走到这里，整图解码的代价可接受
+        QImage full = loadViaQtPlugins(filePath);
+        if (full.isNull())
+            return QImage();
+        if (full.width() > maxSize.width() || full.height() > maxSize.height())
+            full = full.scaled(maxSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        return full;
     }
 
     QImage img = vipsImageToQImage(thumb);
@@ -427,8 +532,8 @@ bool ImageLoader::convertFile(const QString& inputPath, const QString& outputPat
     ensureVipsInitialized();
 
     // SEQUENTIAL：单遍读取；全局 operation/memory/file cache 已禁用。
-    VipsImage* image = vips_image_new_from_file(inputPath.toUtf8().constData(), "access",
-                                                VIPS_ACCESS_SEQUENTIAL, nullptr);
+    VipsImage* image = autorotateImage(vips_image_new_from_file(inputPath.toUtf8().constData(), "access",
+                                                VIPS_ACCESS_SEQUENTIAL, nullptr));
     if (!image)
         return false;
 
@@ -447,8 +552,8 @@ bool ImageLoader::resizeFile(const QString& inputPath, const QString& outputPath
         return convertFile(inputPath, outputPath, format, quality);
 
     // SEQUENTIAL：单遍读取；全局 operation/memory/file cache 已禁用。
-    VipsImage* image = vips_image_new_from_file(inputPath.toUtf8().constData(), "access",
-                                                VIPS_ACCESS_SEQUENTIAL, nullptr);
+    VipsImage* image = autorotateImage(vips_image_new_from_file(inputPath.toUtf8().constData(), "access",
+                                                VIPS_ACCESS_SEQUENTIAL, nullptr));
     if (!image)
         return false;
 
@@ -505,8 +610,8 @@ bool ImageLoader::convertToSRgbFile(const QString& inputPath, const QString& out
     ensureVipsInitialized();
 
     // SEQUENTIAL：单遍读取；全局 operation/memory/file cache 已禁用。
-    VipsImage* image = vips_image_new_from_file(inputPath.toUtf8().constData(), "access",
-                                                VIPS_ACCESS_SEQUENTIAL, nullptr);
+    VipsImage* image = autorotateImage(vips_image_new_from_file(inputPath.toUtf8().constData(), "access",
+                                                VIPS_ACCESS_SEQUENTIAL, nullptr));
     if (!image)
         return false;
 
@@ -539,8 +644,8 @@ bool ImageLoader::compressToTargetSize(const QString& inputPath, const QString& 
         }
     } else {
         // SEQUENTIAL：单遍读取；全局 operation/memory/file cache 已禁用。
-        image = vips_image_new_from_file(inputPath.toUtf8().constData(), "access",
-                                         VIPS_ACCESS_SEQUENTIAL, nullptr);
+        image = autorotateImage(vips_image_new_from_file(inputPath.toUtf8().constData(), "access",
+                                         VIPS_ACCESS_SEQUENTIAL, nullptr));
         if (!image)
             return false;
     }

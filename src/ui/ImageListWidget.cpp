@@ -236,6 +236,7 @@ signals:
     // Delete 键移除请求。ImageListView 是私有 Q_OBJECT 类，无法直接发出外层
     // ImageListWidget 的信号，因此由外层在构造函数中做信号→信号桥接。
     void removeRequested(const QModelIndexList& indexes);
+    void pasteRequested();
 
 protected:
     QItemSelectionModel::SelectionFlags selectionCommand(const QModelIndex& index,
@@ -272,6 +273,12 @@ protected:
                 event->accept();
                 return;
             }
+        }
+        if (event->matches(QKeySequence::Paste)) {
+            // Ctrl+V：粘贴剪贴板里的截图/图片（设计文档 5.4.2 的第四种加图方式）。
+            emit pasteRequested();
+            event->accept();
+            return;
         }
         QListView::keyPressEvent(event);
     }
@@ -429,6 +436,12 @@ ImageListWidget::ImageListWidget(ImageListModel* model, QWidget* parent)
     m_emptyLabel->setStyleSheet(QStringLiteral("color: #909399;"));
     m_emptyLabel->setVisible(false);
 
+    // 拼接模式的语义提示条：列表顶部常驻，单击=勾选参与拼接。
+    m_stitchHintLabel = new QLabel(this);
+    m_stitchHintLabel->setObjectName(QStringLiteral("stitchHint"));
+    m_stitchHintLabel->setWordWrap(true);
+    m_stitchHintLabel->setVisible(false);
+
     m_view = new ImageListView(this, this);
     m_view->setModel(m_model);
     m_view->setItemDelegate(new ImageItemDelegate(this, m_view));
@@ -465,6 +478,8 @@ ImageListWidget::ImageListWidget(ImageListModel* model, QWidget* parent)
     // 头文件不可见），因此这里需要显式向下转型才能取出其信号指针。
     connect(static_cast<ImageListView*>(m_view), &ImageListView::removeRequested, this,
             &ImageListWidget::removeRequested);
+    connect(static_cast<ImageListView*>(m_view), &ImageListView::pasteRequested, this,
+            &ImageListWidget::pasteRequested);
 
     if (m_model) {
         connect(m_model, &ImageListModel::countChanged, this,
@@ -472,12 +487,16 @@ ImageListWidget::ImageListWidget(ImageListModel* model, QWidget* parent)
         connect(m_model, &ImageListModel::modelReset, this, &ImageListWidget::loadVisibleRange);
         connect(m_model, &ImageListModel::rowsInserted, this, &ImageListWidget::loadVisibleRange);
         connect(m_model, &ImageListModel::rowsMoved, this, &ImageListWidget::loadVisibleRange);
+        // 加载动画定时器按需启停：有任务才转，空闲即停（见 onLoadingTick）。
+        connect(m_model, &ImageListModel::thumbnailLoadStarted, this,
+                &ImageListWidget::ensureLoadingTimerRunning);
     }
 
     m_loadingTimer = new QTimer(this);
+    m_loadingTimer->setInterval(LoadingIntervalMs);
     connect(m_loadingTimer, &QTimer::timeout, this, &ImageListWidget::onLoadingTick);
-    m_loadingTimer->start(LoadingIntervalMs);
 
+    layout->addWidget(m_stitchHintLabel);
     layout->addWidget(m_view);
     layout->addWidget(m_emptyLabel);
     setLayout(layout);
@@ -496,9 +515,19 @@ void ImageListWidget::setEmptyHint(const QString& hint)
 
 QModelIndexList ImageListWidget::selectedIndexes() const
 {
-    if (!m_view)
+    if (!m_view || !m_view->selectionModel())
         return QModelIndexList();
     return m_view->selectionModel()->selectedIndexes();
+}
+
+void ImageListWidget::selectRow(int row)
+{
+    if (!m_view || !m_view->model() || row < 0 || row >= m_view->model()->rowCount())
+        return;
+    const QModelIndex idx = m_view->model()->index(row, 0);
+    m_view->selectionModel()->select(idx, QItemSelectionModel::ClearAndSelect |
+                                              QItemSelectionModel::Rows);
+    m_view->scrollTo(idx, QAbstractItemView::EnsureVisible);
 }
 
 void ImageListWidget::setStitchSelectionMode(bool enabled)
@@ -507,6 +536,8 @@ void ImageListWidget::setStitchSelectionMode(bool enabled)
     auto* view = qobject_cast<ImageListView*>(m_view);
     if (view)
         view->setStitchToggleMode(enabled);
+    // 拼接模式的选择语义与普通模式不同（单击=勾选参与拼接），必须显式告诉用户。
+    updateStitchHint();
 }
 
 void ImageListWidget::selectAllForStitch()
@@ -562,11 +593,10 @@ void ImageListWidget::dropEvent(QDropEvent* event)
         return;
 
     QStringList paths;
-    for (const QUrl& url : mime->urls()) {
-        QString path = url.toLocalFile();
-        if (FileUtils::isSupportedImage(path))
-            paths.append(path);
-    }
+    for (const QUrl& url : mime->urls())
+        paths.append(url.toLocalFile());
+    // 目录递归展开 + 扩展名过滤（此前拖入文件夹会被静默丢弃）
+    paths = FileUtils::expandToImageFiles(paths);
     if (!paths.isEmpty() && m_model)
         m_model->addImages(paths);
     event->acceptProposedAction();
@@ -591,6 +621,7 @@ void ImageListWidget::retranslateUi()
     // 委托里的文字同样在绘制时翻译。这里只需处理常驻的空白提示。
     if (m_emptyLabel)
         m_emptyLabel->setText(tr("Drag images here or click Add Images"));
+    updateStitchHint();
 }
 
 void ImageListWidget::showEvent(QShowEvent* event)
@@ -685,9 +716,21 @@ void ImageListWidget::onModelCountChanged(int count)
 
 void ImageListWidget::onLoadingTick()
 {
+    // 空闲时彻底停止：此前这个定时器无条件 20fps 重绘全部可见单元格，
+    // 即使没有任何加载任务也常驻烧 CPU。
+    if (!m_model || !m_model->hasPendingLoads()) {
+        m_loadingTimer->stop();
+        return;
+    }
     m_loadingAngle = (m_loadingAngle + 30) % 360;
     if (m_view && m_view->viewport())
         m_view->viewport()->update();
+}
+
+void ImageListWidget::ensureLoadingTimerRunning()
+{
+    if (m_model && m_model->hasPendingLoads() && !m_loadingTimer->isActive())
+        m_loadingTimer->start(LoadingIntervalMs);
 }
 
 void ImageListWidget::showContextMenu(const QPoint& pos)
@@ -736,22 +779,44 @@ void ImageListWidget::buildMenu(QMenu& menu, const QModelIndex& index)
                        [this, selected]() { m_model->moveToBack(selected); });
         menu.addSeparator();
 
-        if (single) {
-            // 旋转/翻转/上下移只作用于单张图片，统一发信号交给 MainWindow 处理。
-            // 此前这些信号在 MainWindow 里已连接，但菜单里没有对应项、也从未 emit，
-            // 导致功能完全不可达。
-            const int row = selected.first().row();
+        // 旋转/翻转支持多选批量：逐行发信号，MainWindow 统一走模型修正当前行。
+        for (const QModelIndex& idx : selected) {
+            const int row = idx.row();
             menu.addAction(tr("Rotate Left 90°"), this,
                            [this, row]() { emit rotateRequested(row); });
             menu.addAction(tr("Flip Horizontal"), this,
                            [this, row]() { emit flipHorizontalRequested(row); });
             menu.addAction(tr("Flip Vertical"), this,
                            [this, row]() { emit flipVerticalRequested(row); });
-            menu.addSeparator();
+            if (idx != selected.last())
+                menu.addSeparator();
+        }
+        menu.addSeparator();
+
+        if (single) {
+            const int row = selected.first().row();
             menu.addAction(tr("Move Up"), this, [this, row]() { emit moveUpRequested(row); });
             menu.addAction(tr("Move Down"), this, [this, row]() { emit moveDownRequested(row); });
             menu.addSeparator();
         }
+
+        // 排序（设计文档 5.4.4）：对全部条目重排，与选中无关。
+        QMenu* sortMenu = menu.addMenu(tr("Sort"));
+        auto addSort = [this, sortMenu](const QString& text, ImageListModel::SortField field,
+                                        bool ascending) {
+            sortMenu->addAction(text, this, [this, field, ascending]() {
+                m_model->sortByField(field, ascending ? Qt::AscendingOrder : Qt::DescendingOrder);
+            });
+        };
+        addSort(tr("Name (A→Z)"), ImageListModel::SortField::Name, true);
+        addSort(tr("Name (Z→A)"), ImageListModel::SortField::Name, false);
+        addSort(tr("Size (largest first)"), ImageListModel::SortField::FileSize, false);
+        addSort(tr("Size (smallest first)"), ImageListModel::SortField::FileSize, true);
+        addSort(tr("Date (newest first)"), ImageListModel::SortField::Date, false);
+        addSort(tr("Date (oldest first)"), ImageListModel::SortField::Date, true);
+        addSort(tr("Dimensions (largest first)"), ImageListModel::SortField::Dimensions, false);
+        addSort(tr("Dimensions (smallest first)"), ImageListModel::SortField::Dimensions, true);
+        menu.addSeparator();
 
         if (single) {
             QString filePath = selected.first().data(ImageListModel::FilePathRole).toString();
@@ -795,6 +860,16 @@ void ImageListWidget::updateEmptyState()
     bool empty = m_model->rowCount() == 0;
     m_view->setVisible(!empty);
     m_emptyLabel->setVisible(empty);
+    updateStitchHint();
+}
+
+void ImageListWidget::updateStitchHint()
+{
+    if (!m_stitchHintLabel)
+        return;
+    // 只在有图片可勾选时显示；文案在 retranslate 时重建。
+    m_stitchHintLabel->setText(tr("Click images to include them in the stitch"));
+    m_stitchHintLabel->setVisible(m_stitchSelectionMode && m_model && m_model->rowCount() > 0);
 }
 
 } // namespace yingtu

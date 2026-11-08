@@ -6,21 +6,45 @@
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPropertyAnimation>
+#include <QPushButton>
 #include <QScreen>
 #include <QTimer>
 
 namespace yingtu {
 
-ToastWidget::ToastWidget(ErrorLevel level, const QString& message, int timeoutMs, QWidget* parent)
+ToastWidget::ToastWidget(ErrorLevel level, const QString& message, int timeoutMs, QWidget* parent,
+                         const ToastAction& action)
     : QWidget(parent, Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Tool),
-      m_level(level), m_message(message), m_timeoutMs(timeoutMs)
+      m_level(level), m_message(message), m_timeoutMs(timeoutMs), m_action(action)
 {
     setupUI();
 
     if (m_timeoutMs > 0) {
-        QTimer::singleShot(m_timeoutMs, this, &ToastWidget::closed);
-        QTimer::singleShot(m_timeoutMs, this, &ToastWidget::close);
+        // 超时用成员定时器：悬停暂停（用户正在读/准备点动作按钮时不消失）。
+        m_timeoutTimer = new QTimer(this);
+        m_timeoutTimer->setSingleShot(true);
+        m_timeoutTimer->setInterval(m_timeoutMs);
+        connect(m_timeoutTimer, &QTimer::timeout, this, &ToastWidget::closed);
+        connect(m_timeoutTimer, &QTimer::timeout, this, &ToastWidget::close);
+        m_timeoutTimer->start();
     }
+}
+
+void ToastWidget::enterEvent(QEvent* event)
+{
+    // Qt5 签名：enterEvent(QEvent*)。悬停暂停超时。
+    if (m_timeoutTimer && m_timeoutTimer->isActive())
+        m_timeoutTimer->stop();
+    QWidget::enterEvent(event);
+}
+
+void ToastWidget::leaveEvent(QEvent* event)
+{
+    // 离开后按剩余时长的一半继续计时，避免长驻。
+    if (m_timeoutTimer && m_timeoutMs > 0) {
+        m_timeoutTimer->start(qMax(1500, m_timeoutMs / 2));
+    }
+    QWidget::leaveEvent(event);
 }
 
 void ToastWidget::setupUI()
@@ -69,6 +93,25 @@ void ToastWidget::setupUI()
     messageLabel->setWordWrap(true);
     messageLabel->setStyleSheet(QStringLiteral("border: none; font-size: 13px;"));
     layout->addWidget(messageLabel, 1);
+
+    // 可选动作按钮（如「打开文件夹」）：任务完成后用户不用再去翻状态栏。
+    if (!m_action.text.isEmpty()) {
+        QPushButton* actionBtn = new QPushButton(m_action.text, container);
+        actionBtn->setFlat(true);
+        actionBtn->setCursor(Qt::PointingHandCursor);
+        actionBtn->setStyleSheet(
+            QStringLiteral("QPushButton { border: none; color: %1; font-size: 13px; "
+                           "padding: 2px 4px; }"
+                           "QPushButton:hover { text-decoration: underline; }")
+                .arg(borderColor.name()));
+        connect(actionBtn, &QPushButton::clicked, this, [this]() {
+            if (m_action.triggered)
+                m_action.triggered();
+            emit closed();
+            close();
+        });
+        layout->addWidget(actionBtn);
+    }
 }
 
 void ToastWidget::mousePressEvent(QMouseEvent* event)
@@ -88,6 +131,12 @@ ToastManager::ToastManager(QObject* parent) : QObject(parent) {}
 
 void ToastManager::show(ErrorLevel level, const QString& message, QWidget* parent)
 {
+    show(level, message, ToastAction{}, parent);
+}
+
+void ToastManager::show(ErrorLevel level, const QString& message, const ToastAction& action,
+                        QWidget* parent)
+{
     if (m_toasts.size() >= MAX_VISIBLE_TOASTS) {
         ToastWidget* oldest = m_toasts.takeFirst();
         oldest->close();
@@ -99,7 +148,7 @@ void ToastManager::show(ErrorLevel level, const QString& message, QWidget* paren
     if (level == ErrorLevel::Error || level == ErrorLevel::Fatal)
         timeoutMs = 0;
 
-    ToastWidget* toast = new ToastWidget(level, message, timeoutMs, hostWindow);
+    ToastWidget* toast = new ToastWidget(level, message, timeoutMs, hostWindow, action);
     m_toasts.append(toast);
 
     connect(toast, &ToastWidget::closed, this, [this, toast]() { removeToast(toast); });
@@ -117,7 +166,12 @@ void ToastManager::show(ErrorLevel level, const QString& message, QWidget* paren
 
 void ToastManager::showInfo(const QString& message, QWidget* parent)
 {
-    show(ErrorLevel::Info, message, parent);
+    show(ErrorLevel::Info, message, ToastAction{}, parent);
+}
+
+void ToastManager::showInfo(const QString& message, const ToastAction& action, QWidget* parent)
+{
+    show(ErrorLevel::Info, message, action, parent);
 }
 
 void ToastManager::showWarning(const QString& message, QWidget* parent)

@@ -43,9 +43,11 @@ protected:
 private:
     void createButton(ToolType tool, const QString& translatedText, const QString& shortcut);
     void retranslateUi();
+    /** 主题切换后重刷所有按钮图标（SVG 按新主题前景色重新渲染）。 */
+    void updateToolIcons();
 
-    // 工具按钮的图标字形（按语言给出：中文用汉字，英文用首字母）。
-    QString toolGlyph(ToolType tool) const;
+    // 工具按钮的图标名（resources/icons/tools/ 下不含扩展名）。
+    static QString toolIconName(ToolType tool);
     // 工具按钮的图标。
     QIcon toolIcon(ToolType tool) const;
     // 工具按钮的源串（英文）。语言切换时按源串重新取译文。

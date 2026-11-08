@@ -12,6 +12,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMenu>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QScrollArea>
 #include <QScrollBar>
@@ -28,6 +29,8 @@ PreviewWidget::PreviewWidget(QWidget* parent) : QWidget(parent)
     m_scrollArea->setWidgetResizable(true);
     m_scrollArea->setAlignment(Qt::AlignCenter);
     m_scrollArea->setFrameShape(QFrame::NoFrame);
+    // 视口事件过滤：左键/中键拖拽平移 + 双击适应窗口。
+    m_scrollArea->viewport()->installEventFilter(this);
 
     m_imageLabel = new QLabel(tr("No image to preview"), this);
     m_imageLabel->setAlignment(Qt::AlignCenter);
@@ -72,6 +75,12 @@ void PreviewWidget::setImage(const QImage& image)
 void PreviewWidget::setSourcePath(const QString& path, int rotation, bool flippedHorizontal,
                                   bool flippedVertical)
 {
+    setSourcePath(path, QSize(), rotation, flippedHorizontal, flippedVertical);
+}
+
+void PreviewWidget::setSourcePath(const QString& path, const QSize& knownSize, int rotation,
+                                  bool flippedHorizontal, bool flippedVertical)
+{
     m_sourcePath = path;
     m_sourceRotation = rotation;
     m_sourceFlippedH = flippedHorizontal;
@@ -79,8 +88,13 @@ void PreviewWidget::setSourcePath(const QString& path, int rotation, bool flippe
     m_image = QImage();
     invalidateSourcePreviewCache();
     if (!path.isEmpty()) {
-        ImageInfo info = ImageLoader::loadInfo(path);
-        m_sourceSize = info.valid ? QSize(info.width, info.height) : QSize();
+        if (knownSize.isValid()) {
+            // 调用方已从模型拿到尺寸（异步加载过），免去 GUI 线程读文件头。
+            m_sourceSize = knownSize;
+        } else {
+            ImageInfo info = ImageLoader::loadInfo(path);
+            m_sourceSize = info.valid ? QSize(info.width, info.height) : QSize();
+        }
     } else {
         m_sourceSize = QSize();
     }
@@ -299,6 +313,60 @@ QSize PreviewWidget::viewportSize() const
     return m_scrollArea->viewport()->size();
 }
 
+bool PreviewWidget::eventFilter(QObject* watched, QEvent* event)
+{
+    if (watched == m_scrollArea->viewport() && !m_stitchMode) {
+        switch (event->type()) {
+        case QEvent::MouseButtonPress: {
+            auto* e = static_cast<QMouseEvent*>(event);
+            // 图片未撑出滚动条时没有可平移的内容，交给默认处理。
+            const bool scrollable = m_scrollArea->horizontalScrollBar()->maximum() > 0 ||
+                                    m_scrollArea->verticalScrollBar()->maximum() > 0;
+            if (scrollable &&
+                (e->button() == Qt::MiddleButton || e->button() == Qt::LeftButton)) {
+                m_panning = true;
+                m_panStartPos = e->globalPos();
+                m_panStartH = m_scrollArea->horizontalScrollBar()->value();
+                m_panStartV = m_scrollArea->verticalScrollBar()->value();
+                m_scrollArea->viewport()->setCursor(Qt::ClosedHandCursor);
+                return true;
+            }
+            break;
+        }
+        case QEvent::MouseMove: {
+            if (m_panning) {
+                auto* e = static_cast<QMouseEvent*>(event);
+                const QPoint delta = e->globalPos() - m_panStartPos;
+                m_scrollArea->horizontalScrollBar()->setValue(m_panStartH - delta.x());
+                m_scrollArea->verticalScrollBar()->setValue(m_panStartV - delta.y());
+                return true;
+            }
+            break;
+        }
+        case QEvent::MouseButtonRelease: {
+            auto* e = static_cast<QMouseEvent*>(event);
+            if (m_panning &&
+                (e->button() == Qt::MiddleButton || e->button() == Qt::LeftButton)) {
+                m_panning = false;
+                m_scrollArea->viewport()->unsetCursor();
+                return true;
+            }
+            break;
+        }
+        case QEvent::MouseButtonDblClick: {
+            if (static_cast<QMouseEvent*>(event)->button() == Qt::LeftButton) {
+                fitToWindow();
+                return true;
+            }
+            break;
+        }
+        default:
+            break;
+        }
+    }
+    return QWidget::eventFilter(watched, event);
+}
+
 void PreviewWidget::wheelEvent(QWheelEvent* event)
 {
     if (m_stitchMode && m_stitchCanvas) {
@@ -475,8 +543,9 @@ void PreviewWidget::contextMenuEvent(QContextMenuEvent* event)
 
     menu.addAction(tr("Original Size"), this, &PreviewWidget::resetZoom,
                    QKeySequence(QStringLiteral("Ctrl+0")));
+    // Ctrl+1 = 适应窗口：修正此前 Ctrl+F 与 View 菜单 Ctrl+0/1 语义颠倒的问题。
     menu.addAction(tr("Fit to Window"), this, &PreviewWidget::fitToWindow,
-                   QKeySequence(QStringLiteral("Ctrl+F")));
+                   QKeySequence(QStringLiteral("Ctrl+1")));
     menu.addSeparator();
     menu.addAction(tr("Rotate Left"), this, &PreviewWidget::rotateLeft);
     menu.addAction(tr("Rotate Right"), this, &PreviewWidget::rotateRight);

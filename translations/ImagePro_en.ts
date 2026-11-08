@@ -134,6 +134,50 @@
         <source>Clear List</source>
         <translation>Clear List</translation>
     </message>
+    <message>
+        <source>Click images to include them in the stitch</source>
+        <translation>Click images to include them in the stitch</translation>
+    </message>
+    <message>
+        <source>Sort</source>
+        <translation>Sort</translation>
+    </message>
+    <message>
+        <source>Name (A→Z)</source>
+        <translation>Name (A→Z)</translation>
+    </message>
+    <message>
+        <source>Name (Z→A)</source>
+        <translation>Name (Z→A)</translation>
+    </message>
+    <message>
+        <source>Size (largest first)</source>
+        <translation>Size (largest first)</translation>
+    </message>
+    <message>
+        <source>Size (smallest first)</source>
+        <translation>Size (smallest first)</translation>
+    </message>
+    <message>
+        <source>Date (newest first)</source>
+        <translation>Date (newest first)</translation>
+    </message>
+    <message>
+        <source>Date (oldest first)</source>
+        <translation>Date (oldest first)</translation>
+    </message>
+    <message>
+        <source>Dimensions (largest first)</source>
+        <translation>Dimensions (largest first)</translation>
+    </message>
+    <message>
+        <source>Dimensions (smallest first)</source>
+        <translation>Dimensions (smallest first)</translation>
+    </message>
+    <message>
+        <source>Add Folder</source>
+        <translation>Add Folder</translation>
+    </message>
 </context>
 <context>
     <name>yingtu::ImageProApp</name>
@@ -265,10 +309,6 @@ Please verify the application was deployed correctly.</translation>
     <message>
         <source>Delete Current Image</source>
         <translation>Delete Current Image</translation>
-    </message>
-    <message>
-        <source>Select Images</source>
-        <translation>Select Images</translation>
     </message>
     <message>
         <source>Warning</source>
@@ -560,6 +600,145 @@ Size: %2x%3</translation>
         <source>About ImagePro</source>
         <translation>About ImagePro</translation>
     </message>
+    <message>
+        <source>Results</source>
+        <translation>Results</translation>
+    </message>
+    <message>
+        <source>Show the result of the last operation</source>
+        <translation>Show the result of the last operation</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation>Cancel</translation>
+    </message>
+    <message>
+        <source>%1 similar notifications were grouped</source>
+        <translation>%1 similar notifications were grouped</translation>
+    </message>
+    <message>
+        <source>Add Fol&amp;der...</source>
+        <translation>Add Fol&amp;der...</translation>
+    </message>
+    <message>
+        <source>Recent &amp;Files</source>
+        <translation>Recent &amp;Files</translation>
+    </message>
+    <message>
+        <source>Zoom &amp;In</source>
+        <translation>Zoom &amp;In</translation>
+    </message>
+    <message>
+        <source>Zoom &amp;Out</source>
+        <translation>Zoom &amp;Out</translation>
+    </message>
+    <message>
+        <source>&amp;Actual Size</source>
+        <translation>&amp;Actual Size</translation>
+    </message>
+    <message>
+        <source>&amp;Fit to Window</source>
+        <translation>&amp;Fit to Window</translation>
+    </message>
+    <message>
+        <source>&amp;Full Screen</source>
+        <translation>&amp;Full Screen</translation>
+    </message>
+    <message>
+        <source>Rotate &amp;Left</source>
+        <translation>Rotate &amp;Left</translation>
+    </message>
+    <message>
+        <source>Rotate &amp;Right</source>
+        <translation>Rotate &amp;Right</translation>
+    </message>
+    <message>
+        <source>Flip &amp;Horizontal</source>
+        <translation>Flip &amp;Horizontal</translation>
+    </message>
+    <message>
+        <source>Flip &amp;Vertical</source>
+        <translation>Flip &amp;Vertical</translation>
+    </message>
+    <message>
+        <source>&amp;Previous Image</source>
+        <translation>&amp;Previous Image</translation>
+    </message>
+    <message>
+        <source>&amp;Next Image</source>
+        <translation>&amp;Next Image</translation>
+    </message>
+    <message>
+        <source>Add Images</source>
+        <translation>Add Images</translation>
+    </message>
+    <message>
+        <source>Add Folder</source>
+        <translation>Add Folder</translation>
+    </message>
+    <message>
+        <source>No supported images found in the folder</source>
+        <translation>No supported images found in the folder</translation>
+    </message>
+    <message>
+        <source>(empty)</source>
+        <translation>(empty)</translation>
+    </message>
+    <message>
+        <source>Compare</source>
+        <translation>Compare</translation>
+    </message>
+    <message>
+        <source>Show the original image side by side</source>
+        <translation>Show the original image side by side</translation>
+    </message>
+    <message>
+        <source>Open</source>
+        <translation>Open</translation>
+    </message>
+    <message>
+        <source>View Results</source>
+        <translation>View Results</translation>
+    </message>
+    <message>
+        <source>Add Folder...</source>
+        <translation>Add Folder...</translation>
+    </message>
+</context>
+<context>
+    <name>yingtu::OutputSettingsSection</name>
+    <message>
+        <source>e.g. {name}_{index}</source>
+        <translation>e.g. {name}_{index}</translation>
+    </message>
+    <message>
+        <source>File Name:</source>
+        <translation>File Name:</translation>
+    </message>
+    <message>
+        <source>Output Dir:</source>
+        <translation>Output Dir:</translation>
+    </message>
+    <message>
+        <source>Browse...</source>
+        <translation>Browse...</translation>
+    </message>
+    <message>
+        <source>Select Output Directory</source>
+        <translation>Select Output Directory</translation>
+    </message>
+    <message>
+        <source>Create</source>
+        <translation>Create</translation>
+    </message>
+    <message>
+        <source>Error</source>
+        <translation>Error</translation>
+    </message>
+    <message>
+        <source>Failed to create output directory.</source>
+        <translation>Failed to create output directory.</translation>
+    </message>
 </context>
 <context>
     <name>yingtu::PdfEngine</name>
@@ -570,6 +749,10 @@ Size: %2x%3</translation>
     <message>
         <source>Failed to write PDF: %1</source>
         <translation>Failed to write PDF: %1</translation>
+    </message>
+    <message>
+        <source>Export cancelled</source>
+        <translation>Export cancelled</translation>
     </message>
 </context>
 <context>
@@ -633,10 +816,6 @@ Size: %2x%3</translation>
 </context>
 <context>
     <name>yingtu::PropertyPanel</name>
-    <message>
-        <source>Save</source>
-        <translation>Save</translation>
-    </message>
     <message>
         <source>Vertical</source>
         <translation>Vertical</translation>
@@ -702,10 +881,6 @@ Size: %2x%3</translation>
         <translation>Quality:</translation>
     </message>
     <message>
-        <source>&lt;b&gt;Convert Settings&lt;/b&gt;</source>
-        <translation>&lt;b&gt;Convert Settings&lt;/b&gt;</translation>
-    </message>
-    <message>
         <source>Target Format:</source>
         <translation>Target Format:</translation>
     </message>
@@ -716,10 +891,6 @@ Size: %2x%3</translation>
     <message>
         <source>Convert to sRGB</source>
         <translation>Convert to sRGB</translation>
-    </message>
-    <message>
-        <source>&lt;b&gt;Compress Settings&lt;/b&gt;</source>
-        <translation>&lt;b&gt;Compress Settings&lt;/b&gt;</translation>
     </message>
     <message>
         <source>Quality</source>
@@ -760,10 +931,6 @@ Size: %2x%3</translation>
     <message>
         <source>Show Original</source>
         <translation>Show Original</translation>
-    </message>
-    <message>
-        <source>&lt;b&gt;Watermark Settings&lt;/b&gt;</source>
-        <translation>&lt;b&gt;Watermark Settings&lt;/b&gt;</translation>
     </message>
     <message>
         <source>Text</source>
@@ -872,18 +1039,6 @@ Size: %2x%3</translation>
     <message>
         <source>Output Format:</source>
         <translation>Output Format:</translation>
-    </message>
-    <message>
-        <source>Output Dir:</source>
-        <translation>Output Dir:</translation>
-    </message>
-    <message>
-        <source>Select Output Directory</source>
-        <translation>Select Output Directory</translation>
-    </message>
-    <message>
-        <source>&lt;b&gt;Edit Tools&lt;/b&gt;</source>
-        <translation>&lt;b&gt;Edit Tools&lt;/b&gt;</translation>
     </message>
     <message>
         <source>Rectangle</source>
@@ -998,10 +1153,6 @@ Size: %2x%3</translation>
         <translation>Clear</translation>
     </message>
     <message>
-        <source>&lt;b&gt;Resize Settings&lt;/b&gt;</source>
-        <translation>&lt;b&gt;Resize Settings&lt;/b&gt;</translation>
-    </message>
-    <message>
         <source>Percentage</source>
         <translation>Percentage</translation>
     </message>
@@ -1102,10 +1253,6 @@ Size: %2x%3</translation>
         <translation>Estimated size: %1</translation>
     </message>
     <message>
-        <source>&lt;b&gt;Batch Processing&lt;/b&gt;</source>
-        <translation>&lt;b&gt;Batch Processing&lt;/b&gt;</translation>
-    </message>
-    <message>
         <source>Convert</source>
         <translation>Convert</translation>
     </message>
@@ -1150,14 +1297,6 @@ Size: %2x%3</translation>
         <translation>Output Settings</translation>
     </message>
     <message>
-        <source>Create</source>
-        <translation>Create</translation>
-    </message>
-    <message>
-        <source>File Name:</source>
-        <translation>File Name:</translation>
-    </message>
-    <message>
         <source>Filter</source>
         <translation>Filter</translation>
     </message>
@@ -1188,10 +1327,6 @@ Size: %2x%3</translation>
     <message>
         <source>Filter:</source>
         <translation>Filter:</translation>
-    </message>
-    <message>
-        <source>&lt;b&gt;PDF Export&lt;/b&gt;</source>
-        <translation>&lt;b&gt;PDF Export&lt;/b&gt;</translation>
     </message>
     <message>
         <source>A4</source>
@@ -1254,14 +1389,6 @@ Size: %2x%3</translation>
         <translation> [needs %1]</translation>
     </message>
     <message>
-        <source>Error</source>
-        <translation>Error</translation>
-    </message>
-    <message>
-        <source>Failed to create output directory.</source>
-        <translation>Failed to create output directory.</translation>
-    </message>
-    <message>
         <source>Preview: %1</source>
         <translation>Preview: %1</translation>
     </message>
@@ -1300,10 +1427,6 @@ Size: %2x%3</translation>
     <message>
         <source>Ready</source>
         <translation>Ready</translation>
-    </message>
-    <message>
-        <source>e.g. {name}_{index}</source>
-        <translation>e.g. {name}_{index}</translation>
     </message>
     <message>
         <source>Bold</source>
@@ -1369,6 +1492,166 @@ Size: %2x%3</translation>
         <source>Invert Selection</source>
         <translation>Invert Selection</translation>
     </message>
+    <message>
+        <source>Start Stitching</source>
+        <translation>Start Stitching</translation>
+    </message>
+    <message>
+        <source>Start Conversion</source>
+        <translation>Start Conversion</translation>
+    </message>
+    <message>
+        <source>Start Compression</source>
+        <translation>Start Compression</translation>
+    </message>
+    <message>
+        <source>Add Watermark</source>
+        <translation>Add Watermark</translation>
+    </message>
+    <message>
+        <source>Save Edits</source>
+        <translation>Save Edits</translation>
+    </message>
+    <message>
+        <source>Start Resizing</source>
+        <translation>Start Resizing</translation>
+    </message>
+    <message>
+        <source>Start Batch</source>
+        <translation>Start Batch</translation>
+    </message>
+    <message>
+        <source>Export PDF</source>
+        <translation>Export PDF</translation>
+    </message>
+    <message>
+        <source>Start</source>
+        <translation>Start</translation>
+    </message>
+    <message>
+        <source>Convert Settings</source>
+        <translation>Convert Settings</translation>
+    </message>
+    <message>
+        <source>Advanced</source>
+        <translation>Advanced</translation>
+    </message>
+    <message>
+        <source>Compress Settings</source>
+        <translation>Compress Settings</translation>
+    </message>
+    <message>
+        <source>Watermark Settings</source>
+        <translation>Watermark Settings</translation>
+    </message>
+    <message>
+        <source>Edit Tools</source>
+        <translation>Edit Tools</translation>
+    </message>
+    <message>
+        <source>History</source>
+        <translation>History</translation>
+    </message>
+    <message>
+        <source>Resize Settings</source>
+        <translation>Resize Settings</translation>
+    </message>
+    <message>
+        <source>Resize Presets</source>
+        <translation>Resize Presets</translation>
+    </message>
+    <message>
+        <source>Batch Processing</source>
+        <translation>Batch Processing</translation>
+    </message>
+    <message>
+        <source>PDF Export</source>
+        <translation>PDF Export</translation>
+    </message>
+    <message>
+        <source>Convert to %1, quality %2</source>
+        <translation>Convert to %1, quality %2</translation>
+    </message>
+    <message>
+        <source>Compress (%1), target %2 KB</source>
+        <translation>Compress (%1), target %2 KB</translation>
+    </message>
+    <message>
+        <source>Watermark: %1</source>
+        <translation>Watermark: %1</translation>
+    </message>
+    <message>
+        <source>image watermark</source>
+        <translation>image watermark</translation>
+    </message>
+    <message>
+        <source>Resize to %1%</source>
+        <translation>Resize to %1%</translation>
+    </message>
+    <message>
+        <source>Resize to %1x%2</source>
+        <translation>Resize to %1x%2</translation>
+    </message>
+    <message>
+        <source>Parameters follow the corresponding tool panel</source>
+        <translation>Parameters follow the corresponding tool panel</translation>
+    </message>
+    <message>
+        <source>Delete Preset</source>
+        <translation>Delete Preset</translation>
+    </message>
+    <message>
+        <source>Watermark Size:</source>
+        <translation>Watermark Size:</translation>
+    </message>
+    <message>
+        <source>Save Quality:</source>
+        <translation>Save Quality:</translation>
+    </message>
+    <message>
+        <source>Size (mm):</source>
+        <translation>Size (mm):</translation>
+    </message>
+    <message>
+        <source>Error</source>
+        <translation>Error</translation>
+    </message>
+    <message>
+        <source>Built-in presets cannot be deleted.</source>
+        <translation>Built-in presets cannot be deleted.</translation>
+    </message>
+    <message>
+        <source>Image Info</source>
+        <translation>Image Info</translation>
+    </message>
+    <message>
+        <source>No camera information (EXIF) in this image</source>
+        <translation>No camera information (EXIF) in this image</translation>
+    </message>
+    <message>
+        <source>Camera: %1</source>
+        <translation>Camera: %1</translation>
+    </message>
+    <message>
+        <source>Taken: %1</source>
+        <translation>Taken: %1</translation>
+    </message>
+    <message>
+        <source>Exposure: %1 s  ·  f/%2  ·  ISO %3</source>
+        <translation>Exposure: %1 s  ·  f/%2  ·  ISO %3</translation>
+    </message>
+    <message>
+        <source>Focal length: %1 mm</source>
+        <translation>Focal length: %1 mm</translation>
+    </message>
+    <message>
+        <source>Text Background</source>
+        <translation>Text Background</translation>
+    </message>
+    <message>
+        <source>Lock Crop Aspect</source>
+        <translation>Lock Crop Aspect</translation>
+    </message>
 </context>
 <context>
     <name>yingtu::ResizeEngine</name>
@@ -1398,6 +1681,10 @@ Size: %2x%3</translation>
     <message>
         <source>Close</source>
         <translation>Close</translation>
+    </message>
+    <message>
+        <source>Open File</source>
+        <translation>Open File</translation>
     </message>
 </context>
 <context>
@@ -1528,38 +1815,6 @@ Size: %2x%3</translation>
         <translation>Clear</translation>
     </message>
     <message>
-        <source>Icon: Stitch</source>
-        <translation>S</translation>
-    </message>
-    <message>
-        <source>Icon: Convert</source>
-        <translation>V</translation>
-    </message>
-    <message>
-        <source>Icon: Compress</source>
-        <translation>Z</translation>
-    </message>
-    <message>
-        <source>Icon: Watermark</source>
-        <translation>W</translation>
-    </message>
-    <message>
-        <source>Icon: Edit</source>
-        <translation>E</translation>
-    </message>
-    <message>
-        <source>Icon: Resize</source>
-        <translation>R</translation>
-    </message>
-    <message>
-        <source>Icon: Batch</source>
-        <translation>B</translation>
-    </message>
-    <message>
-        <source>Icon: PDF</source>
-        <translation>P</translation>
-    </message>
-    <message>
         <source>Stitch</source>
         <translation>Stitch</translation>
     </message>
@@ -1590,6 +1845,38 @@ Size: %2x%3</translation>
     <message>
         <source>PDF</source>
         <translation>PDF</translation>
+    </message>
+    <message>
+        <source>Icon: Stitch</source>
+        <translation>S</translation>
+    </message>
+    <message>
+        <source>Icon: Convert</source>
+        <translation>V</translation>
+    </message>
+    <message>
+        <source>Icon: Compress</source>
+        <translation>Z</translation>
+    </message>
+    <message>
+        <source>Icon: Watermark</source>
+        <translation>W</translation>
+    </message>
+    <message>
+        <source>Icon: Edit</source>
+        <translation>E</translation>
+    </message>
+    <message>
+        <source>Icon: Resize</source>
+        <translation>R</translation>
+    </message>
+    <message>
+        <source>Icon: Batch</source>
+        <translation>B</translation>
+    </message>
+    <message>
+        <source>Icon: PDF</source>
+        <translation>P</translation>
     </message>
 </context>
 <context>

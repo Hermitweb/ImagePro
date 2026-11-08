@@ -8,6 +8,8 @@
 #include <QStringList>
 #include <QVector>
 
+#include <atomic>
+
 namespace yingtu {
 
 struct StitchSettings {
@@ -43,10 +45,17 @@ public:
     void setSettings(const StitchSettings& settings) { m_settings = settings; }
     StitchSettings settings() const { return m_settings; }
 
+    /**
+     * 取消标志（可选）：process 在开始加载输入前检查。
+     * 拼接管线一旦构建无法中断，只能在阶段间退出。
+     */
+    void setCancelFlag(std::atomic<bool>* flag) { m_cancelFlag = flag; }
+
     // 执行拼接，返回输出文件路径
     QString process(const QStringList& filePaths, bool* ok = nullptr);
 
-    // maxLongEdge 限制预览时长边的最大像素，避免加载完整大图导致内存爆炸。
+    // maxLongEdge 限制**每张输入图**加载时长边的最大像素（目的是限制解码内存，
+    // 而不是整张预览的尺寸：例如两张 100x800 纵拼、限 400，得到的是 50x800）。
     // 传 0 表示不限制（仅用于最终输出流程）。
     // inputRects（可选）返回每张输入图在最终拼接图中的实际矩形，用于精确高亮定位。
     static QImage preview(const QStringList& filePaths, const StitchSettings& settings,
@@ -70,6 +79,8 @@ signals:
 
 private:
     StitchSettings m_settings;
+    std::atomic<bool>* m_cancelFlag = nullptr;
+    bool cancelRequested() const { return m_cancelFlag && m_cancelFlag->load(); }
 };
 
 } // namespace yingtu

@@ -80,7 +80,9 @@ if(WIN32)
         # 不会用 find_program 的结果 —— 在没把 NSIS 目录加进 PATH 的环境里
         # （例如 MSVC 开发者命令行）会在打包阶段才报
         # "Cannot find NSIS compiler makensis"。
-        set(CPACK_NSIS_MAKE_NSIS "${IMAGEPRO_MAKENSIS}")
+        # 变量名必须是 CPACK_NSIS_EXECUTABLE（CMake ≥3.21）：
+        # 此前写成 CPACK_NSIS_MAKE_NSIS，那是个不存在的变量，等于没设置。
+        set(CPACK_NSIS_EXECUTABLE "${IMAGEPRO_MAKENSIS}")
         message(STATUS "ImagePro: makensis = ${IMAGEPRO_MAKENSIS}（启用 NSIS 安装程序）")
 
         # 「控制面板 → 程序和功能」里显示的名称与版本。
@@ -100,8 +102,10 @@ if(WIN32)
         set(CPACK_NSIS_PACKAGE_VENDOR "${CPACK_PACKAGE_VENDOR}")
         set(CPACK_NSIS_PACKAGE_VERSION "${PROJECT_VERSION}")
 
-        # 安装向导的界面：中文 + 经典大图标向导。
-        set(CPACK_NSIS_ENABLE_LANGUAGES "SimpChinese")
+        # 安装向导语言：CPack 没有可选语言的变量（CPACK_NSIS_ENABLE_LANGUAGES
+        # 不存在，此前那行是自创的）。默认语言由 NSIS 模板硬编码为 English，
+        # 想改成中文需要 CPACK_MODULE_PATH + 自定义 NSIS.template.in，
+        # 属于破坏打包输出的改动，未实施——安装向导界面当前为英文。
         set(CPACK_PACKAGE_INSTALL_DIRECTORY "ImagePro")
         set(CPACK_NSIS_PACKAGE_INSTALL_DIRECTORY "ImagePro")
 

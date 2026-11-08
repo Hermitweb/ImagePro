@@ -309,27 +309,28 @@ if(MSVC)
     endforeach()
 
     if(_msvc_redist)
-        # 目录结构：VC/Redist/MSVC/<版本>/<架构>/Microsoft.VC143.CRT/*.dll
-        # （<版本> 下还有 v143/、onecore/ 等目录，只取与目标架构对应的那一支。）
-        set(_crt_arch_dirs
-            "${_msvc_redist}/${IMAGEPRO_TARGET_ARCH}"
-            "${_msvc_redist}/v143/Microsoft.VC143.CRT/${IMAGEPRO_TARGET_ARCH}"
-        )
+        # 目录结构：VC/Redist/MSVC/<版本>/<架构>/Microsoft.VC<NNN>.CRT/*.dll。
+        # VCToolsRedistDir 止于 .../VC/Redist/MSVC（不含版本层），且 <版本> 与
+        # VC<NNN> 由 VS 版本决定 —— 一律 GLOB，不写死版本号或机器专属盘符。
+        file(GLOB _crt_dirs
+            "${_msvc_redist}/*/${IMAGEPRO_TARGET_ARCH}/Microsoft.VC*.CRT")
 
         set(_crt_copied 0)
-        foreach(_crt_dir IN LISTS _crt_arch_dirs)
-            if(NOT IS_DIRECTORY "${_crt_dir}")
-                continue()
-            endif()
-            file(GLOB _crt_dlls
-                "${_crt_dir}/*.dll"
-                "${_crt_dir}/Microsoft.VC143.CRT/*.dll")
+        foreach(_crt_dir IN LISTS _crt_dirs)
+            file(GLOB _crt_dlls "${_crt_dir}/*.dll")
             foreach(_dll IN LISTS _crt_dlls)
                 file(COPY "${_dll}" DESTINATION "${IMAGEPRO_RUNTIME_DIR}")
                 math(EXPR _crt_copied "${_crt_copied} + 1")
             endforeach()
         endforeach()
         message(STATUS "ImagePro: MSVC 运行库已拷贝 ${_crt_copied} 个 DLL（${_msvc_redist}）")
+        if(_crt_copied EQUAL 0)
+            # 拷到 0 个必须报警而不是静默通过：干净的 Windows 机器上没有
+            # vcruntime140.dll，这种包在用户机器上直接起不来。
+            message(WARNING "ImagePro: redist 目录存在但未拷到任何 CRT DLL，"
+                            "安装包在干净机器上可能缺 vcruntime140.dll。"
+                            "请检查 ${_msvc_redist} 下的目录布局。")
+        endif()
     else()
         message(WARNING "ImagePro: 未找到 MSVC redist 目录，安装包可能缺少 vcruntime140.dll。")
     endif()

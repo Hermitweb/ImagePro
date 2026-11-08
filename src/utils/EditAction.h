@@ -55,6 +55,8 @@ struct EditAction {
     int opacity = 80; // 0~100
     int fontSize = 16;
     int mosaicSize = 20; // 马赛克块大小
+    int filterStrength = 50; // 滤镜强度 0~100：此前 7 种滤镜全部硬编码零参数
+    bool textBackground = false; // 文字水印式半透明底框，浅色底图可读性
     QString fontFamily;
     bool fontBold = false;
     EditFillStyle fillStyle = EditFillStyle::SemiFill;

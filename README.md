@@ -2,7 +2,7 @@
 
 基于 Qt 5 + libvips 的跨平台桌面图像处理工具。
 
-![版本](https://img.shields.io/badge/version-1.5.0-blue)
+![版本](https://img.shields.io/badge/version-1.6.0-blue)
 ![平台](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
 ![许可](https://img.shields.io/badge/license-proprietary-orange)
 

@@ -1,8 +1,10 @@
 #include "PropertyPanel.h"
+#include "OutputSettingsSection.h"
 #include "app/ImageProApp.h"
 #include "core/ImageListModel.h"
 #include "utils/AppPaths.h"
 #include "utils/FileUtils.h"
+#include "utils/ImageTaskPools.h"
 #include "utils/ResizePresetManager.h"
 #include "utils/StitchPresetManager.h"
 #include "utils/WidgetState.h"
@@ -40,6 +42,7 @@
 #include <QStackedWidget>
 #include <QTimer>
 #include <QToolButton>
+#include <QtConcurrent/QtConcurrentRun>
 #include <QUuid>
 #include <QVBoxLayout>
 
@@ -53,6 +56,22 @@ PropertyPanel::PropertyPanel(QWidget* parent) : QWidget(parent)
     QVBoxLayout* mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(6, 6, 6, 6);
     mainLayout->setSpacing(6);
+
+    // 图片信息段（所有工具共用，默认收起）：EXIF 拍摄参数异步读取。
+    m_infoSection = new CollapsibleSection(tr("Image Info"), this);
+    m_infoSection->setExpanded(false);
+    QWidget* infoContent = new QWidget(m_infoSection);
+    QVBoxLayout* infoLayout = new QVBoxLayout(infoContent);
+    infoLayout->setContentsMargins(0, 0, 0, 0);
+    infoLayout->setSpacing(4);
+    m_infoText = new QLabel(infoContent);
+    m_infoText->setStyleSheet(QStringLiteral("color: gray; font-size: 12px;"));
+    m_infoText->setWordWrap(true);
+    m_infoText->setMinimumWidth(0);
+    m_infoText->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    infoLayout->addWidget(m_infoText);
+    m_infoSection->setContent(infoContent);
+    mainLayout->addWidget(m_infoSection);
 
     m_stack = new QStackedWidget(this);
     buildStitchPanel();
@@ -80,7 +99,9 @@ PropertyPanel::PropertyPanel(QWidget* parent) : QWidget(parent)
 
     QHBoxLayout* btnLayout = new QHBoxLayout();
     btnLayout->setSpacing(6);
-    m_processBtn = new QPushButton(tr("Save"), this);
+    // 主按钮文案随工具变化（开始拼接/开始转换/…）：动作是什么一目了然，
+    // 不再是一个所有工具共用的「Save」。
+    m_processBtn = new QPushButton(actionButtonText(ToolType::Stitch), this);
     m_processBtn->setDefault(true);
     m_processBtn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     btnLayout->addWidget(m_processBtn);
@@ -105,10 +126,23 @@ PropertyPanel::PropertyPanel(QWidget* parent) : QWidget(parent)
     for (QLineEdit* le : findChildren<QLineEdit*>())
         connect(le, &QLineEdit::textChanged, this, &PropertyPanel::onSettingsChanged);
 
-    // 输出路径的可编辑文本也需要实时响应
-    if (m_stitchOutputDir && m_stitchOutputDir->lineEdit())
-        connect(m_stitchOutputDir->lineEdit(), &QLineEdit::textChanged, this,
+    // 输出目录变化：拼接目录触发校验；其余工具的目录参与 settings 参数。
+    if (m_stitchOutputSection) {
+        connect(m_stitchOutputSection, &OutputSettingsSection::directoryEdited, this,
                 &PropertyPanel::onStitchOutputDirChanged);
+        connect(m_stitchOutputSection, &OutputSettingsSection::fileNameTemplateEdited, this,
+                &PropertyPanel::onStitchFileNameTemplateChanged);
+    }
+    for (OutputSettingsSection* section : m_outputSections) {
+        // 目录「提交」（浏览/新建/编辑完成）时记入跨工具共享的历史。
+        connect(section, &OutputSettingsSection::directoryCommitted, this, [this, section]() {
+            addOutputHistory(section->directory());
+        });
+        if (section != m_stitchOutputSection) {
+            connect(section, &OutputSettingsSection::directoryEdited, this,
+                    &PropertyPanel::onSettingsChanged);
+        }
+    }
 
     loadUiState();
     loadStitchPresets();
@@ -190,7 +224,118 @@ void PropertyPanel::rebuildPanels()
 void PropertyPanel::setToolType(ToolType tool)
 {
     m_stack->setCurrentIndex(static_cast<int>(tool));
+    // 主按钮文案跟随工具：动作是什么一目了然。
+    if (m_processBtn)
+        m_processBtn->setText(actionButtonText(tool));
     validateAndUpdateUI();
+}
+
+QString PropertyPanel::recentOutputDirectory() const
+{
+    return m_outputHistory.isEmpty() ? QString() : m_outputHistory.first();
+}
+
+void PropertyPanel::showImageInfo(const QString& filePath)
+{
+    if (!m_infoText)
+        return;
+    m_infoPath = filePath;
+    const int generation = ++m_infoGeneration;
+    if (filePath.isEmpty()) {
+        m_infoText->setText(QString());
+        return;
+    }
+
+    // EXIF 读取放预览池（与预览共享串行化，避免并发读盘）；过期请求丢弃。
+    QtConcurrent::run(ImageTaskPools::previewPool(), [this, filePath, generation]() {
+        const ExifSummary sum = ImageLoader::readExifSummary(filePath);
+        QMetaObject::invokeMethod(
+            this,
+            [this, sum, generation, filePath]() {
+                if (generation != m_infoGeneration.load() || filePath != m_infoPath)
+                    return;
+                if (!sum.valid) {
+                    m_infoText->setText(tr("No camera information (EXIF) in this image"));
+                    return;
+                }
+                QStringList lines;
+                if (!sum.camera.isEmpty())
+                    lines << tr("Camera: %1").arg(sum.camera);
+                if (!sum.dateTime.isEmpty())
+                    lines << tr("Taken: %1").arg(sum.dateTime);
+                if (!sum.exposure.isEmpty() || !sum.aperture.isEmpty() || !sum.iso.isEmpty())
+                    lines << tr("Exposure: %1 s  ·  f/%2  ·  ISO %3")
+                                 .arg(sum.exposure.isEmpty() ? QStringLiteral("-") : sum.exposure,
+                                      sum.aperture.isEmpty() ? QStringLiteral("-") : sum.aperture,
+                                      sum.iso.isEmpty() ? QStringLiteral("-") : sum.iso);
+                if (!sum.focalLength.isEmpty())
+                    lines << tr("Focal length: %1 mm").arg(sum.focalLength);
+                m_infoText->setText(lines.join(QLatin1Char('\n')));
+            },
+            Qt::QueuedConnection);
+    });
+}
+
+void PropertyPanel::updateBatchSummary()
+{
+    if (!m_batchSummary)
+        return;
+    const auto tool = static_cast<ToolType>(m_batchTargetTool->currentData().toInt());
+    QString text;
+    switch (tool) {
+    case ToolType::Convert:
+        text = tr("Convert to %1, quality %2")
+                   .arg(m_convertFormat->currentText())
+                   .arg(m_convertQuality->value());
+        break;
+    case ToolType::Compress:
+        text = tr("Compress (%1), target %2 KB")
+                   .arg(m_compressMode->currentText())
+                   .arg(m_compressTargetSize->value(), 0, 'f', 2);
+        break;
+    case ToolType::Watermark:
+        text = tr("Watermark: %1")
+                   .arg(m_watermarkType->currentIndex() == 0 && !m_watermarkText->text().isEmpty()
+                            ? m_watermarkText->text()
+                            : tr("image watermark"));
+        break;
+    case ToolType::Resize:
+        if (m_resizeMode->currentIndex() == 0)
+            text = tr("Resize to %1%").arg(m_resizePercentage->value());
+        else
+            text = tr("Resize to %1x%2").arg(m_resizeWidth->value()).arg(m_resizeHeight->value());
+        break;
+    default:
+        text = tr("Parameters follow the corresponding tool panel");
+        break;
+    }
+    m_batchSummary->setText(text);
+}
+
+QString PropertyPanel::actionButtonText(ToolType tool) const
+{
+    // 每个工具一个动词短语：按钮本身就是「下一步做什么」的答案。
+    switch (tool) {
+    case ToolType::Stitch:
+        return tr("Start Stitching");
+    case ToolType::Convert:
+        return tr("Start Conversion");
+    case ToolType::Compress:
+        return tr("Start Compression");
+    case ToolType::Watermark:
+        return tr("Add Watermark");
+    case ToolType::Edit:
+        return tr("Save Edits");
+    case ToolType::Resize:
+        return tr("Start Resizing");
+    case ToolType::Batch:
+        return tr("Start Batch");
+    case ToolType::Pdf:
+        return tr("Export PDF");
+    case ToolType::None:
+        break;
+    }
+    return tr("Start");
 }
 
 void PropertyPanel::setImageModel(ImageListModel* model)
@@ -315,7 +460,8 @@ void PropertyPanel::buildStitchPanel()
     m_stitchOutputFormat = new QComboBox(settingsContent);
     m_stitchOutputFormat->addItems(QStringList()
                                    << QStringLiteral("PNG") << QStringLiteral("JPG")
-                                   << QStringLiteral("WebP") << QStringLiteral("BMP"));
+                                   << QStringLiteral("WebP") << QStringLiteral("TIFF")
+                                   << QStringLiteral("BMP"));
     settingsLayout->addWidget(createFormRow(tr("Format:"), m_stitchOutputFormat));
 
     m_stitchQuality = new QSlider(Qt::Horizontal, settingsContent);
@@ -348,6 +494,14 @@ void PropertyPanel::buildStitchPanel()
     connect(addPresetBtn, &QPushButton::clicked, this, &PropertyPanel::onStitchAddPreset);
     presetsLayout->addWidget(addPresetBtn);
 
+    // 删除当前选中预设：内置预设不可删（引擎按稳定 id 拒绝），自定义预设此前
+    // 只能加不能删，列表会越积越多。
+    m_stitchPresetDeleteBtn = new QPushButton(tr("Delete Preset"), presetsContent);
+    m_stitchPresetDeleteBtn->setEnabled(false);
+    connect(m_stitchPresetDeleteBtn, &QPushButton::clicked, this,
+            &PropertyPanel::onStitchDeletePreset);
+    presetsLayout->addWidget(m_stitchPresetDeleteBtn);
+
     m_stitchSectionPresets->setContent(presetsContent);
     panelLayout->addWidget(m_stitchSectionPresets);
 
@@ -361,75 +515,14 @@ void PropertyPanel::buildStitchPanel()
     connect(m_stitchBackground, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
             &PropertyPanel::onStitchBackgroundChanged);
 
-    // 输出设置
+    // 输出设置：统一式样 —— 目录（历史/浏览/创建）+ 文件名模板 + 校验标签。
+    // 式样与其余七个工具面板完全一致，用户只需要学一次。
     m_stitchSectionOutput = new CollapsibleSection(tr("Output Settings"), panel);
-    QWidget* outputContent = new QWidget(m_stitchSectionOutput);
-    QVBoxLayout* outputLayout = new QVBoxLayout(outputContent);
-    outputLayout->setContentsMargins(0, 0, 0, 0);
-    outputLayout->setSpacing(8);
-
-    QWidget* dirRow = new QWidget(outputContent);
-    QHBoxLayout* dirLayout = new QHBoxLayout(dirRow);
-    dirLayout->setContentsMargins(0, 0, 0, 0);
-    dirLayout->setSpacing(6);
-    dirLayout->addWidget(new QLabel(tr("Output Dir:"), dirRow));
-    m_stitchOutputDir = new QComboBox(dirRow);
-    m_stitchOutputDir->setEditable(true);
-    m_stitchOutputDir->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    if (m_stitchOutputDir->lineEdit()) {
-        connect(m_stitchOutputDir->lineEdit(), &QLineEdit::editingFinished, this, [this]() {
-            QString path = m_stitchOutputDir->currentText();
-            if (!path.isEmpty() && QFileInfo::exists(path) && canWriteToPath(path))
-                addOutputHistory(path);
-        });
-    }
-    dirLayout->addWidget(m_stitchOutputDir, 1);
-    m_stitchOutputBrowseBtn = new QPushButton(tr("Browse..."), dirRow);
-    connect(m_stitchOutputBrowseBtn, &QPushButton::clicked, this, [this]() {
-        QString dir = QFileDialog::getExistingDirectory(this, tr("Select Output Directory"),
-                                                        m_stitchOutputDir->currentText());
-        if (!dir.isEmpty()) {
-            m_stitchOutputDir->setCurrentText(dir);
-            addOutputHistory(dir);
-            onStitchOutputDirChanged();
-        }
-    });
-    dirLayout->addWidget(m_stitchOutputBrowseBtn);
-    m_stitchOutputCreateBtn = new QPushButton(tr("Create"), dirRow);
-    connect(m_stitchOutputCreateBtn, &QPushButton::clicked, this,
-            &PropertyPanel::onStitchCreateOutputDir);
-    m_stitchOutputCreateBtn->setVisible(false);
-    dirLayout->addWidget(m_stitchOutputCreateBtn);
-    outputLayout->addWidget(dirRow);
-
-    m_stitchFileNameTemplate = new QLineEdit(outputContent);
-    m_stitchFileNameTemplate->setText(QStringLiteral("{name}_stitched_{time}"));
-    m_stitchFileNameTemplate->setPlaceholderText(tr("e.g. {name}_{index}"));
-    connect(m_stitchFileNameTemplate, &QLineEdit::textChanged, this,
-            &PropertyPanel::onStitchFileNameTemplateChanged);
-    outputLayout->addWidget(createFormRow(tr("File Name:"), m_stitchFileNameTemplate));
-
-    m_stitchFileNamePreview = new QLabel(outputContent);
-    m_stitchFileNamePreview->setStyleSheet(QStringLiteral("color: gray; font-size: 12px;"));
-    m_stitchFileNamePreview->setWordWrap(true);
-    // 预览的文件名通常是一整段没有空格的路径（如
-    // wechat_screenshot_001_stitched_20261023.png）。QLabel 即使开了 wordWrap，
-    // 其 minimumSizeHint 仍按「最长的一个词」计算 —— 也就是整个文件名，
-    // 于是这个标签会把面板撑得远宽于 200~260px，内容被裁掉且无法看到。
-    // 用 Ignored 策略允许它被压缩到视口宽度，配合 wordWrap 正常折行。
-    m_stitchFileNamePreview->setMinimumWidth(0);
-    m_stitchFileNamePreview->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    outputLayout->addWidget(m_stitchFileNamePreview);
-
-    m_stitchValidationLabel = new QLabel(outputContent);
-    m_stitchValidationLabel->setWordWrap(true);
-    m_stitchValidationLabel->setMinimumWidth(0);
-    m_stitchValidationLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    m_stitchValidationLabel->setMinimumHeight(32);
-    outputLayout->addWidget(m_stitchValidationLabel);
-
-    m_stitchSectionOutput->setContent(outputContent);
+    m_stitchOutputSection = new OutputSettingsSection(true, m_stitchSectionOutput);
+    m_stitchOutputSection->setFileNameTemplate(QStringLiteral("{name}_stitched_{time}"));
+    m_stitchSectionOutput->setContent(m_stitchOutputSection);
     panelLayout->addWidget(m_stitchSectionOutput);
+    m_outputSections.append(m_stitchOutputSection);
 
     panelLayout->addStretch();
     m_stack->addWidget(panel);
@@ -445,35 +538,59 @@ void PropertyPanel::buildConvertPanel()
     QWidget* panel = new QWidget(this);
     QVBoxLayout* layout = new QVBoxLayout(panel);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(8);
+    layout->setSpacing(10);
 
-    layout->addWidget(new QLabel(tr("<b>Convert Settings</b>"), panel));
+    // 参数设置
+    CollapsibleSection* settings = new CollapsibleSection(tr("Convert Settings"), panel);
+    QWidget* settingsContent = new QWidget(settings);
+    QVBoxLayout* settingsLayout = new QVBoxLayout(settingsContent);
+    settingsLayout->setContentsMargins(0, 0, 0, 0);
+    settingsLayout->setSpacing(8);
 
-    m_convertFormat = new QComboBox(panel);
+    m_convertFormat = new QComboBox(settingsContent);
     m_convertFormat->addItems(QStringList() << QStringLiteral("PNG") << QStringLiteral("JPG")
                                             << QStringLiteral("WebP") << QStringLiteral("GIF")
                                             << QStringLiteral("BMP") << QStringLiteral("TIFF"));
-    layout->addWidget(createFormRow(tr("Target Format:"), m_convertFormat));
+    settingsLayout->addWidget(createFormRow(tr("Target Format:"), m_convertFormat));
 
-    m_convertQuality = new QSlider(Qt::Horizontal, panel);
+    m_convertQuality = new QSlider(Qt::Horizontal, settingsContent);
     m_convertQuality->setRange(1, 100);
     m_convertQuality->setValue(90);
-    layout->addWidget(createFormRow(tr("Quality:"), m_convertQuality));
+    settingsLayout->addWidget(createFormRow(tr("Quality:"), m_convertQuality));
 
-    m_convertKeepExif = new QCheckBox(tr("Keep EXIF"), panel);
-    m_convertKeepExif->setChecked(true);
-    layout->addWidget(m_convertKeepExif);
-
-    m_convertToSRgb = new QCheckBox(tr("Convert to sRGB"), panel);
-    layout->addWidget(m_convertToSRgb);
-
-    m_convertEstimateLabel = new QLabel(panel);
+    m_convertEstimateLabel = new QLabel(settingsContent);
     m_convertEstimateLabel->setStyleSheet(QStringLiteral("color: gray; font-size: 12px;"));
     // 估算文本可能较长（如 Estimated size: 1.2 MB），允许被压缩到面板宽度内，
     // 避免把整个面板撑宽导致内容被裁切。
     m_convertEstimateLabel->setMinimumWidth(0);
     m_convertEstimateLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    layout->addWidget(m_convertEstimateLabel);
+    settingsLayout->addWidget(m_convertEstimateLabel);
+
+    settings->setContent(settingsContent);
+    layout->addWidget(settings);
+
+    // 高级选项（低频项，默认收起）
+    CollapsibleSection* advanced = new CollapsibleSection(tr("Advanced"), panel);
+    advanced->setExpanded(false);
+    QWidget* advancedContent = new QWidget(advanced);
+    QVBoxLayout* advancedLayout = new QVBoxLayout(advancedContent);
+    advancedLayout->setContentsMargins(0, 0, 0, 0);
+    advancedLayout->setSpacing(8);
+
+    m_convertKeepExif = new QCheckBox(tr("Keep EXIF"), advancedContent);
+    m_convertKeepExif->setChecked(true);
+    advancedLayout->addWidget(m_convertKeepExif);
+
+    m_convertToSRgb = new QCheckBox(tr("Convert to sRGB"), advancedContent);
+    advancedLayout->addWidget(m_convertToSRgb);
+
+    advanced->setContent(advancedContent);
+    layout->addWidget(advanced);
+
+    // 输出设置（批量时作为默认输出目录；单张仍走「另存为」对话框）
+    m_convertOutputSection = new OutputSettingsSection(false, panel);
+    layout->addWidget(m_convertOutputSection);
+    m_outputSections.append(m_convertOutputSection);
 
     m_convertEstimateTimer = new QTimer(this);
     m_convertEstimateTimer->setSingleShot(true);
@@ -494,33 +611,38 @@ void PropertyPanel::buildCompressPanel()
     QWidget* panel = new QWidget(this);
     QVBoxLayout* layout = new QVBoxLayout(panel);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(8);
+    layout->setSpacing(10);
 
-    layout->addWidget(new QLabel(tr("<b>Compress Settings</b>"), panel));
+    // 参数设置
+    CollapsibleSection* settings = new CollapsibleSection(tr("Compress Settings"), panel);
+    QWidget* settingsContent = new QWidget(settings);
+    QVBoxLayout* settingsLayout = new QVBoxLayout(settingsContent);
+    settingsLayout->setContentsMargins(0, 0, 0, 0);
+    settingsLayout->setSpacing(8);
 
-    m_compressMode = new QComboBox(panel);
+    m_compressMode = new QComboBox(settingsContent);
     m_compressMode->addItem(tr("Quality"), static_cast<int>(CompressMode::Quality));
     m_compressMode->addItem(tr("Size"), static_cast<int>(CompressMode::Size));
     m_compressMode->addItem(tr("Smart"), static_cast<int>(CompressMode::Smart));
-    layout->addWidget(createFormRow(tr("Mode:"), m_compressMode));
+    settingsLayout->addWidget(createFormRow(tr("Mode:"), m_compressMode));
 
-    m_compressStrength = new QSlider(Qt::Horizontal, panel);
+    m_compressStrength = new QSlider(Qt::Horizontal, settingsContent);
     m_compressStrength->setRange(0, 100);
     m_compressStrength->setValue(50);
-    layout->addWidget(createFormRow(tr("Strength:"), m_compressStrength));
+    settingsLayout->addWidget(createFormRow(tr("Strength:"), m_compressStrength));
 
-    m_compressQuality = new QSlider(Qt::Horizontal, panel);
+    m_compressQuality = new QSlider(Qt::Horizontal, settingsContent);
     m_compressQuality->setRange(1, 100);
     m_compressQuality->setValue(80);
-    layout->addWidget(createFormRow(tr("Quality:"), m_compressQuality));
+    settingsLayout->addWidget(createFormRow(tr("Quality:"), m_compressQuality));
 
-    m_compressScale = new QSpinBox(panel);
+    m_compressScale = new QSpinBox(settingsContent);
     m_compressScale->setRange(10, 100);
     m_compressScale->setSuffix(QStringLiteral("%"));
     m_compressScale->setValue(100);
-    layout->addWidget(createFormRow(tr("Scale:"), m_compressScale));
+    settingsLayout->addWidget(createFormRow(tr("Scale:"), m_compressScale));
 
-    QWidget* targetSizeRow = new QWidget(panel);
+    QWidget* targetSizeRow = new QWidget(settingsContent);
     QHBoxLayout* targetSizeLayout = new QHBoxLayout(targetSizeRow);
     targetSizeLayout->setContentsMargins(0, 2, 0, 2);
     targetSizeLayout->setSpacing(6);
@@ -535,23 +657,57 @@ void PropertyPanel::buildCompressPanel()
     m_compressTargetUnit->addItem(tr("MB"), QStringLiteral("MB"));
     m_compressTargetUnit->addItem(tr("KB"), QStringLiteral("KB"));
     targetSizeLayout->addWidget(m_compressTargetUnit);
-    layout->addWidget(targetSizeRow);
+    settingsLayout->addWidget(targetSizeRow);
 
-    m_compressShowOriginal = new QCheckBox(tr("Show Original"), panel);
-    layout->addWidget(m_compressShowOriginal);
-
-    m_compressEstimateLabel = new QLabel(panel);
+    m_compressEstimateLabel = new QLabel(settingsContent);
     m_compressEstimateLabel->setStyleSheet(QStringLiteral("color: gray; font-size: 12px;"));
     // 估算文本可能较长（如 Estimated size: 1.2 MB），允许被压缩到面板宽度内，
     // 避免把整个面板撑宽导致内容被裁切。
     m_compressEstimateLabel->setMinimumWidth(0);
     m_compressEstimateLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    layout->addWidget(m_compressEstimateLabel);
+    settingsLayout->addWidget(m_compressEstimateLabel);
+
+    settings->setContent(settingsContent);
+    layout->addWidget(settings);
+
+    // 高级选项（低频项，默认收起）
+    CollapsibleSection* advanced = new CollapsibleSection(tr("Advanced"), panel);
+    advanced->setExpanded(false);
+    QWidget* advancedContent = new QWidget(advanced);
+    QVBoxLayout* advancedLayout = new QVBoxLayout(advancedContent);
+    advancedLayout->setContentsMargins(0, 0, 0, 0);
+    advancedLayout->setSpacing(8);
+
+    m_compressShowOriginal = new QCheckBox(tr("Show Original"), advancedContent);
+    advancedLayout->addWidget(m_compressShowOriginal);
+
+    advanced->setContent(advancedContent);
+    layout->addWidget(advanced);
+
+    // 输出设置：目录 + 输出格式。「压缩时顺带转格式」是高频需求——
+    // 引擎的 outputFormat 字段一直存在，此前只是没有控件。
+    CollapsibleSection* output = new CollapsibleSection(tr("Output Settings"), panel);
+    QWidget* outputContent = new QWidget(output);
+    QVBoxLayout* outputLayout = new QVBoxLayout(outputContent);
+    outputLayout->setContentsMargins(0, 0, 0, 0);
+    outputLayout->setSpacing(8);
+
+    m_compressOutputSection = new OutputSettingsSection(false, outputContent);
+    outputLayout->addWidget(m_compressOutputSection);
+
+    m_compressOutputFormat = new QComboBox(outputContent);
+    m_compressOutputFormat->addItem(tr("Original"), QStringLiteral("original"));
+    m_compressOutputFormat->addItem(QStringLiteral("PNG"), QStringLiteral("png"));
+    m_compressOutputFormat->addItem(QStringLiteral("JPG"), QStringLiteral("jpg"));
+    m_compressOutputFormat->addItem(QStringLiteral("WebP"), QStringLiteral("webp"));
+    outputLayout->addWidget(createFormRow(tr("Output Format:"), m_compressOutputFormat));
+
+    output->setContent(outputContent);
+    layout->addWidget(output);
+    m_outputSections.append(m_compressOutputSection);
 
     connect(m_compressMode, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
             &PropertyPanel::onCompressModeChanged);
-    connect(m_compressShowOriginal, &QCheckBox::stateChanged, this,
-            &PropertyPanel::onSettingsChanged);
     onCompressModeChanged(0);
 
     layout->addStretch();
@@ -563,22 +719,27 @@ void PropertyPanel::buildWatermarkPanel()
     QWidget* panel = new QWidget(this);
     QVBoxLayout* layout = new QVBoxLayout(panel);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(8);
+    layout->setSpacing(10);
 
-    layout->addWidget(new QLabel(tr("<b>Watermark Settings</b>"), panel));
+    // 参数设置
+    CollapsibleSection* settings = new CollapsibleSection(tr("Watermark Settings"), panel);
+    QWidget* settingsContent = new QWidget(settings);
+    QVBoxLayout* settingsLayout = new QVBoxLayout(settingsContent);
+    settingsLayout->setContentsMargins(0, 0, 0, 0);
+    settingsLayout->setSpacing(8);
 
-    m_watermarkType = new QComboBox(panel);
+    m_watermarkType = new QComboBox(settingsContent);
     m_watermarkType->addItem(tr("Text"), static_cast<int>(WatermarkType::Text));
     m_watermarkType->addItem(tr("Image"), static_cast<int>(WatermarkType::Image));
-    layout->addWidget(createFormRow(tr("Type:"), m_watermarkType));
+    settingsLayout->addWidget(createFormRow(tr("Type:"), m_watermarkType));
     connect(m_watermarkType, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
             &PropertyPanel::onWatermarkTypeChanged);
 
-    m_watermarkText = new QLineEdit(panel);
+    m_watermarkText = new QLineEdit(settingsContent);
     m_watermarkText->setText(QStringLiteral("影图"));
-    layout->addWidget(createFormRow(tr("Text:"), m_watermarkText));
+    settingsLayout->addWidget(createFormRow(tr("Text:"), m_watermarkText));
 
-    QWidget* wmImageRow = new QWidget(panel);
+    QWidget* wmImageRow = new QWidget(settingsContent);
     QHBoxLayout* wmImageLayout = new QHBoxLayout(wmImageRow);
     wmImageLayout->setContentsMargins(0, 2, 0, 2);
     wmImageLayout->setSpacing(6);
@@ -594,9 +755,16 @@ void PropertyPanel::buildWatermarkPanel()
             m_watermarkImagePath->setText(path);
     });
     wmImageLayout->addWidget(wmBrowseBtn);
-    layout->addWidget(wmImageRow);
+    settingsLayout->addWidget(wmImageRow);
 
-    m_watermarkFontFamily = new QComboBox(panel);
+    // 图片水印缩放（主图宽度百分比）：此前引擎硬编码 1/4 且不可调。
+    m_watermarkImageScale = new QSpinBox(settingsContent);
+    m_watermarkImageScale->setRange(1, 100);
+    m_watermarkImageScale->setSuffix(QStringLiteral("%"));
+    m_watermarkImageScale->setValue(25);
+    settingsLayout->addWidget(createFormRow(tr("Watermark Size:"), m_watermarkImageScale));
+
+    m_watermarkFontFamily = new QComboBox(settingsContent);
     for (const QString& family : QFontDatabase().families()) {
         if (!family.startsWith(QStringLiteral(".")) && !family.isEmpty())
             m_watermarkFontFamily->addItem(family);
@@ -605,14 +773,14 @@ void PropertyPanel::buildWatermarkPanel()
     if (defaultFontIdx < 0)
         defaultFontIdx = m_watermarkFontFamily->findText(QFont().defaultFamily());
     m_watermarkFontFamily->setCurrentIndex(qMax(0, defaultFontIdx));
-    layout->addWidget(createFormRow(tr("Font Family:"), m_watermarkFontFamily));
+    settingsLayout->addWidget(createFormRow(tr("Font Family:"), m_watermarkFontFamily));
 
-    m_watermarkFontSize = new QSpinBox(panel);
+    m_watermarkFontSize = new QSpinBox(settingsContent);
     m_watermarkFontSize->setRange(8, 200);
     m_watermarkFontSize->setValue(24);
-    layout->addWidget(createFormRow(tr("Font Size:"), m_watermarkFontSize));
+    settingsLayout->addWidget(createFormRow(tr("Font Size:"), m_watermarkFontSize));
 
-    QWidget* colorRow = new QWidget(panel);
+    QWidget* colorRow = new QWidget(settingsContent);
     QHBoxLayout* colorLayout = new QHBoxLayout(colorRow);
     colorLayout->setContentsMargins(0, 2, 0, 2);
     colorLayout->setSpacing(6);
@@ -625,19 +793,19 @@ void PropertyPanel::buildWatermarkPanel()
             &PropertyPanel::onWatermarkColorClicked);
     colorLayout->addWidget(m_watermarkColorBtn);
     colorLayout->addStretch();
-    layout->addWidget(colorRow);
+    settingsLayout->addWidget(colorRow);
 
-    m_watermarkOpacity = new QSlider(Qt::Horizontal, panel);
+    m_watermarkOpacity = new QSlider(Qt::Horizontal, settingsContent);
     m_watermarkOpacity->setRange(0, 100);
     m_watermarkOpacity->setValue(50);
-    layout->addWidget(createFormRow(tr("Opacity:"), m_watermarkOpacity));
+    settingsLayout->addWidget(createFormRow(tr("Opacity:"), m_watermarkOpacity));
 
-    m_watermarkRotation = new QSpinBox(panel);
+    m_watermarkRotation = new QSpinBox(settingsContent);
     m_watermarkRotation->setRange(0, 360);
     m_watermarkRotation->setSuffix(QStringLiteral("°"));
-    layout->addWidget(createFormRow(tr("Rotation:"), m_watermarkRotation));
+    settingsLayout->addWidget(createFormRow(tr("Rotation:"), m_watermarkRotation));
 
-    m_watermarkPosition = new QComboBox(panel);
+    m_watermarkPosition = new QComboBox(settingsContent);
     m_watermarkPosition->addItem(tr("Top Left"));
     m_watermarkPosition->addItem(tr("Top Center"));
     m_watermarkPosition->addItem(tr("Top Right"));
@@ -648,51 +816,52 @@ void PropertyPanel::buildWatermarkPanel()
     m_watermarkPosition->addItem(tr("Bottom Center"));
     m_watermarkPosition->addItem(tr("Bottom Right"));
     m_watermarkPosition->setCurrentIndex(4);
-    layout->addWidget(createFormRow(tr("Position:"), m_watermarkPosition));
+    settingsLayout->addWidget(createFormRow(tr("Position:"), m_watermarkPosition));
 
-    m_watermarkTile = new QCheckBox(tr("Tile"), panel);
-    layout->addWidget(m_watermarkTile);
+    m_watermarkTile = new QCheckBox(tr("Tile"), settingsContent);
+    settingsLayout->addWidget(m_watermarkTile);
 
-    m_watermarkTileSpacing = new QSpinBox(panel);
+    m_watermarkTileSpacing = new QSpinBox(settingsContent);
     m_watermarkTileSpacing->setRange(0, 500);
     m_watermarkTileSpacing->setSuffix(QStringLiteral(" px"));
     m_watermarkTileSpacing->setValue(100);
-    layout->addWidget(createFormRow(tr("Tile Spacing:"), m_watermarkTileSpacing));
+    settingsLayout->addWidget(createFormRow(tr("Tile Spacing:"), m_watermarkTileSpacing));
 
-    m_watermarkMargin = new QSpinBox(panel);
+    m_watermarkMargin = new QSpinBox(settingsContent);
     m_watermarkMargin->setRange(0, 500);
     m_watermarkMargin->setSuffix(QStringLiteral(" px"));
     m_watermarkMargin->setValue(20);
-    layout->addWidget(createFormRow(tr("Margin:"), m_watermarkMargin));
+    settingsLayout->addWidget(createFormRow(tr("Margin:"), m_watermarkMargin));
 
-    m_watermarkOutputFormat = new QComboBox(panel);
+    settings->setContent(settingsContent);
+    layout->addWidget(settings);
+
+    // 输出设置：目录 + 格式 + 质量归为一组 —— 「输出到哪、什么格式」本就是
+    // 同一件事，之前散在参数列表末尾。
+    CollapsibleSection* output = new CollapsibleSection(tr("Output Settings"), panel);
+    QWidget* outputContent = new QWidget(output);
+    QVBoxLayout* outputLayout = new QVBoxLayout(outputContent);
+    outputLayout->setContentsMargins(0, 0, 0, 0);
+    outputLayout->setSpacing(8);
+
+    m_watermarkOutputSection = new OutputSettingsSection(false, outputContent);
+    outputLayout->addWidget(m_watermarkOutputSection);
+
+    m_watermarkOutputFormat = new QComboBox(outputContent);
     m_watermarkOutputFormat->addItem(tr("Original"), QStringLiteral("original"));
     m_watermarkOutputFormat->addItem(QStringLiteral("PNG"), QStringLiteral("png"));
     m_watermarkOutputFormat->addItem(QStringLiteral("JPG"), QStringLiteral("jpg"));
     m_watermarkOutputFormat->addItem(QStringLiteral("WebP"), QStringLiteral("webp"));
-    layout->addWidget(createFormRow(tr("Output Format:"), m_watermarkOutputFormat));
+    outputLayout->addWidget(createFormRow(tr("Output Format:"), m_watermarkOutputFormat));
 
-    m_watermarkQuality = new QSlider(Qt::Horizontal, panel);
+    m_watermarkQuality = new QSlider(Qt::Horizontal, outputContent);
     m_watermarkQuality->setRange(1, 100);
     m_watermarkQuality->setValue(90);
-    layout->addWidget(createFormRow(tr("Quality:"), m_watermarkQuality));
+    outputLayout->addWidget(createFormRow(tr("Quality:"), m_watermarkQuality));
 
-    QWidget* wmOutDirRow = new QWidget(panel);
-    QHBoxLayout* wmOutDirLayout = new QHBoxLayout(wmOutDirRow);
-    wmOutDirLayout->setContentsMargins(0, 2, 0, 2);
-    wmOutDirLayout->setSpacing(6);
-    wmOutDirLayout->addWidget(new QLabel(tr("Output Dir:"), wmOutDirRow));
-    m_watermarkOutputDir = new QLineEdit(wmOutDirRow);
-    wmOutDirLayout->addWidget(m_watermarkOutputDir, 1);
-    QPushButton* wmOutBrowseBtn = new QPushButton(tr("Browse..."), wmOutDirRow);
-    connect(wmOutBrowseBtn, &QPushButton::clicked, this, [this]() {
-        QString dir = QFileDialog::getExistingDirectory(this, tr("Select Output Directory"),
-                                                        m_watermarkOutputDir->text());
-        if (!dir.isEmpty())
-            m_watermarkOutputDir->setText(dir);
-    });
-    wmOutDirLayout->addWidget(wmOutBrowseBtn);
-    layout->addWidget(wmOutDirRow);
+    output->setContent(outputContent);
+    layout->addWidget(output);
+    m_outputSections.append(m_watermarkOutputSection);
 
     onWatermarkTypeChanged(0);
 
@@ -705,11 +874,16 @@ void PropertyPanel::buildEditPanel()
     QWidget* panel = new QWidget(this);
     QVBoxLayout* layout = new QVBoxLayout(panel);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(8);
+    layout->setSpacing(10);
 
-    layout->addWidget(new QLabel(tr("<b>Edit Tools</b>"), panel));
+    // 编辑工具
+    CollapsibleSection* tools = new CollapsibleSection(tr("Edit Tools"), panel);
+    QWidget* toolsContent = new QWidget(tools);
+    QVBoxLayout* toolsLayout = new QVBoxLayout(toolsContent);
+    toolsLayout->setContentsMargins(0, 0, 0, 0);
+    toolsLayout->setSpacing(8);
 
-    m_editTool = new QComboBox(panel);
+    m_editTool = new QComboBox(toolsContent);
     m_editTool->addItem(tr("Rectangle"), static_cast<int>(EditToolType::Rectangle));
     m_editTool->addItem(tr("Ellipse"), static_cast<int>(EditToolType::Ellipse));
     m_editTool->addItem(tr("Arrow"), static_cast<int>(EditToolType::Arrow));
@@ -718,9 +892,9 @@ void PropertyPanel::buildEditPanel()
     m_editTool->addItem(tr("Text"), static_cast<int>(EditToolType::Text));
     m_editTool->addItem(tr("Crop"), static_cast<int>(EditToolType::Crop));
     m_editTool->addItem(tr("Filter"), static_cast<int>(EditToolType::Filter));
-    layout->addWidget(createFormRow(tr("Tool:"), m_editTool));
+    toolsLayout->addWidget(createFormRow(tr("Tool:"), m_editTool));
 
-    m_editFilterType = new QComboBox(panel);
+    m_editFilterType = new QComboBox(toolsContent);
     m_editFilterType->addItem(tr("Grayscale"), static_cast<int>(FilterType::Grayscale));
     m_editFilterType->addItem(tr("Sepia"), static_cast<int>(FilterType::Sepia));
     m_editFilterType->addItem(tr("Warm"), static_cast<int>(FilterType::Warm));
@@ -728,24 +902,30 @@ void PropertyPanel::buildEditPanel()
     m_editFilterType->addItem(tr("High Contrast"), static_cast<int>(FilterType::HighContrast));
     m_editFilterType->addItem(tr("Blur"), static_cast<int>(FilterType::Blur));
     m_editFilterType->addItem(tr("Sharpen"), static_cast<int>(FilterType::Sharpen));
-    layout->addWidget(createFormRow(tr("Filter:"), m_editFilterType));
+    toolsLayout->addWidget(createFormRow(tr("Filter:"), m_editFilterType));
 
-    m_editMosaicStyle = new QComboBox(panel);
+    // 滤镜强度：此前 7 种滤镜全部硬编码零参数，用户没有任何可调项。
+    m_editFilterStrength = new QSlider(Qt::Horizontal, toolsContent);
+    m_editFilterStrength->setRange(0, 100);
+    m_editFilterStrength->setValue(50);
+    toolsLayout->addWidget(createFormRow(tr("Strength:"), m_editFilterStrength));
+
+    m_editMosaicStyle = new QComboBox(toolsContent);
     m_editMosaicStyle->addItem(tr("Square"), static_cast<int>(MosaicStyle::Square));
     m_editMosaicStyle->addItem(tr("Hexagon"), static_cast<int>(MosaicStyle::Hexagon));
     m_editMosaicStyle->addItem(tr("Circle"), static_cast<int>(MosaicStyle::Circle));
     m_editMosaicStyle->addItem(tr("Blur"), static_cast<int>(MosaicStyle::Blur));
     m_editMosaicStyle->addItem(tr("Mezzotint"), static_cast<int>(MosaicStyle::Mezzotint));
     m_editMosaicStyle->addItem(tr("Color Halftone"), static_cast<int>(MosaicStyle::ColorHalftone));
-    layout->addWidget(createFormRow(tr("Mosaic Style:"), m_editMosaicStyle));
+    toolsLayout->addWidget(createFormRow(tr("Mosaic Style:"), m_editMosaicStyle));
 
-    m_editMosaicSize = new QSpinBox(panel);
+    m_editMosaicSize = new QSpinBox(toolsContent);
     m_editMosaicSize->setRange(4, 200);
     m_editMosaicSize->setValue(20);
     m_editMosaicSize->setSuffix(QStringLiteral(" px"));
-    layout->addWidget(createFormRow(tr("Mosaic Size:"), m_editMosaicSize));
+    toolsLayout->addWidget(createFormRow(tr("Mosaic Size:"), m_editMosaicSize));
 
-    m_editColor = new QComboBox(panel);
+    m_editColor = new QComboBox(toolsContent);
     m_editColor->addItem(tr("Red"), QColor(Qt::red));
     m_editColor->addItem(tr("Blue"), QColor(Qt::blue));
     m_editColor->addItem(tr("Green"), QColor(Qt::green));
@@ -753,26 +933,26 @@ void PropertyPanel::buildEditPanel()
     m_editColor->addItem(tr("Black"), QColor(Qt::black));
     m_editColor->addItem(tr("White"), QColor(Qt::white));
     m_editColor->setCurrentIndex(0);
-    layout->addWidget(createFormRow(tr("Color:"), m_editColor));
+    toolsLayout->addWidget(createFormRow(tr("Color:"), m_editColor));
 
-    m_editLineWidth = new QSpinBox(panel);
+    m_editLineWidth = new QSpinBox(toolsContent);
     m_editLineWidth->setRange(1, 20);
     m_editLineWidth->setValue(3);
-    layout->addWidget(createFormRow(tr("Line Width:"), m_editLineWidth));
+    toolsLayout->addWidget(createFormRow(tr("Line Width:"), m_editLineWidth));
 
-    m_editOpacity = new QSlider(Qt::Horizontal, panel);
+    m_editOpacity = new QSlider(Qt::Horizontal, toolsContent);
     m_editOpacity->setRange(0, 100);
     m_editOpacity->setValue(80);
-    layout->addWidget(createFormRow(tr("Opacity:"), m_editOpacity));
+    toolsLayout->addWidget(createFormRow(tr("Opacity:"), m_editOpacity));
 
-    m_editFillStyle = new QComboBox(panel);
+    m_editFillStyle = new QComboBox(toolsContent);
     m_editFillStyle->addItem(tr("No Fill"), static_cast<int>(EditFillStyle::NoFill));
     m_editFillStyle->addItem(tr("Semi Fill"), static_cast<int>(EditFillStyle::SemiFill));
     m_editFillStyle->addItem(tr("Solid Fill"), static_cast<int>(EditFillStyle::SolidFill));
     m_editFillStyle->setCurrentIndex(1);
-    layout->addWidget(createFormRow(tr("Fill Style:"), m_editFillStyle));
+    toolsLayout->addWidget(createFormRow(tr("Fill Style:"), m_editFillStyle));
 
-    m_editFontFamily = new QComboBox(panel);
+    m_editFontFamily = new QComboBox(toolsContent);
     for (const QString& family : QFontDatabase().families()) {
         if (!family.startsWith(QStringLiteral(".")) && !family.isEmpty())
             m_editFontFamily->addItem(family);
@@ -781,17 +961,27 @@ void PropertyPanel::buildEditPanel()
     if (defaultEditFontIdx < 0)
         defaultEditFontIdx = m_editFontFamily->findText(QFont().defaultFamily());
     m_editFontFamily->setCurrentIndex(qMax(0, defaultEditFontIdx));
-    layout->addWidget(createFormRow(tr("Font Family:"), m_editFontFamily));
+    toolsLayout->addWidget(createFormRow(tr("Font Family:"), m_editFontFamily));
 
-    m_editFontSize = new QSpinBox(panel);
+    m_editFontSize = new QSpinBox(toolsContent);
     m_editFontSize->setRange(8, 200);
     m_editFontSize->setValue(16);
-    layout->addWidget(createFormRow(tr("Font Size:"), m_editFontSize));
+    toolsLayout->addWidget(createFormRow(tr("Font Size:"), m_editFontSize));
 
-    m_editFontBold = new QCheckBox(tr("Bold"), panel);
-    layout->addWidget(m_editFontBold);
+    m_editFontBold = new QCheckBox(tr("Bold"), toolsContent);
+    toolsLayout->addWidget(m_editFontBold);
 
-    QWidget* textColorRow = new QWidget(panel);
+    // 文字背景框：浅色底图上白字可读。
+    m_editTextBackground = new QCheckBox(tr("Text Background"), toolsContent);
+    toolsLayout->addWidget(m_editTextBackground);
+
+    // 裁剪比例锁：拖拽角部手柄时保持宽高比（经信号同步到编辑器）。
+    m_editCropAspectLock = new QCheckBox(tr("Lock Crop Aspect"), toolsContent);
+    connect(m_editCropAspectLock, &QCheckBox::toggled, this,
+            &PropertyPanel::cropAspectLockChanged);
+    toolsLayout->addWidget(m_editCropAspectLock);
+
+    QWidget* textColorRow = new QWidget(toolsContent);
     QHBoxLayout* textColorLayout = new QHBoxLayout(textColorRow);
     textColorLayout->setContentsMargins(0, 2, 0, 2);
     textColorLayout->setSpacing(6);
@@ -805,21 +995,40 @@ void PropertyPanel::buildEditPanel()
             &PropertyPanel::onEditFontColorClicked);
     textColorLayout->addWidget(m_editTextColorBtn);
     textColorLayout->addStretch();
-    layout->addWidget(textColorRow);
+    toolsLayout->addWidget(textColorRow);
+
+    // 保存质量：此前保存编辑图固定 quality=90 且不可调。
+    m_editQuality = new QSpinBox(toolsContent);
+    m_editQuality->setRange(1, 100);
+    m_editQuality->setValue(92);
+    toolsLayout->addWidget(createFormRow(tr("Save Quality:"), m_editQuality));
+
+    tools->setContent(toolsContent);
+    layout->addWidget(tools);
+
+    // 编辑历史
+    CollapsibleSection* history = new CollapsibleSection(tr("History"), panel);
+    QWidget* historyContent = new QWidget(history);
+    QVBoxLayout* historyLayout = new QVBoxLayout(historyContent);
+    historyLayout->setContentsMargins(0, 0, 0, 0);
+    historyLayout->setSpacing(8);
 
     QHBoxLayout* historyBtnLayout = new QHBoxLayout();
     historyBtnLayout->setSpacing(6);
-    m_editUndoBtn = new QPushButton(tr("Undo"), panel);
-    m_editRedoBtn = new QPushButton(tr("Redo"), panel);
-    m_editClearBtn = new QPushButton(tr("Clear"), panel);
+    m_editUndoBtn = new QPushButton(tr("Undo"), historyContent);
+    m_editRedoBtn = new QPushButton(tr("Redo"), historyContent);
+    m_editClearBtn = new QPushButton(tr("Clear"), historyContent);
     historyBtnLayout->addWidget(m_editUndoBtn);
     historyBtnLayout->addWidget(m_editRedoBtn);
     historyBtnLayout->addWidget(m_editClearBtn);
-    layout->addLayout(historyBtnLayout);
+    historyLayout->addLayout(historyBtnLayout);
 
-    m_editHistoryList = new QListWidget(panel);
+    m_editHistoryList = new QListWidget(historyContent);
     m_editHistoryList->setMaximumHeight(160);
-    layout->addWidget(m_editHistoryList);
+    historyLayout->addWidget(m_editHistoryList);
+
+    history->setContent(historyContent);
+    layout->addWidget(history);
 
     connect(m_editUndoBtn, &QPushButton::clicked, this, &PropertyPanel::onEditUndo);
     connect(m_editRedoBtn, &QPushButton::clicked, this, &PropertyPanel::onEditRedo);
@@ -840,30 +1049,35 @@ void PropertyPanel::buildResizePanel()
     QWidget* panel = new QWidget(this);
     QVBoxLayout* layout = new QVBoxLayout(panel);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(8);
+    layout->setSpacing(10);
 
-    layout->addWidget(new QLabel(tr("<b>Resize Settings</b>"), panel));
+    // 参数设置
+    CollapsibleSection* settings = new CollapsibleSection(tr("Resize Settings"), panel);
+    QWidget* settingsContent = new QWidget(settings);
+    QVBoxLayout* settingsLayout = new QVBoxLayout(settingsContent);
+    settingsLayout->setContentsMargins(0, 0, 0, 0);
+    settingsLayout->setSpacing(8);
 
-    m_resizeMode = new QComboBox(panel);
+    m_resizeMode = new QComboBox(settingsContent);
     m_resizeMode->addItem(tr("Percentage"), static_cast<int>(ResizeMode::Percentage));
     m_resizeMode->addItem(tr("Pixel"), static_cast<int>(ResizeMode::Pixel));
     m_resizeMode->addItem(tr("Preset"), static_cast<int>(ResizeMode::Preset));
-    layout->addWidget(createFormRow(tr("Mode:"), m_resizeMode));
+    settingsLayout->addWidget(createFormRow(tr("Mode:"), m_resizeMode));
 
-    m_resizePercentage = new QSpinBox(panel);
+    m_resizePercentage = new QSpinBox(settingsContent);
     m_resizePercentage->setRange(10, 500);
     m_resizePercentage->setSuffix(QStringLiteral("%"));
     m_resizePercentage->setValue(100);
-    layout->addWidget(createFormRow(tr("Percentage:"), m_resizePercentage));
+    settingsLayout->addWidget(createFormRow(tr("Percentage:"), m_resizePercentage));
 
-    m_resizeWidth = new QSpinBox(panel);
+    m_resizeWidth = new QSpinBox(settingsContent);
     m_resizeWidth->setRange(1, 10000);
     m_resizeWidth->setValue(800);
-    m_resizeHeight = new QSpinBox(panel);
+    m_resizeHeight = new QSpinBox(settingsContent);
     m_resizeHeight->setRange(1, 10000);
     m_resizeHeight->setValue(600);
 
-    m_resizeLockAspect = new QToolButton(panel);
+    m_resizeLockAspect = new QToolButton(settingsContent);
     m_resizeLockAspect->setCheckable(true);
     m_resizeLockAspect->setChecked(true);
     m_resizeLockAspect->setText(QStringLiteral("🔒"));
@@ -871,78 +1085,99 @@ void PropertyPanel::buildResizePanel()
 
     QHBoxLayout* sizeLayout = new QHBoxLayout();
     sizeLayout->setSpacing(6);
-    sizeLayout->addWidget(new QLabel(tr("Size:"), panel));
+    sizeLayout->addWidget(new QLabel(tr("Size:"), settingsContent));
     sizeLayout->addWidget(m_resizeWidth);
-    sizeLayout->addWidget(new QLabel(tr("x"), panel));
+    sizeLayout->addWidget(new QLabel(tr("x"), settingsContent));
     sizeLayout->addWidget(m_resizeHeight);
     sizeLayout->addWidget(m_resizeLockAspect);
-    layout->addLayout(sizeLayout);
+    settingsLayout->addLayout(sizeLayout);
 
-    m_resizeAspectLabel = new QLabel(panel);
+    m_resizeAspectLabel = new QLabel(settingsContent);
     m_resizeAspectLabel->setStyleSheet(QStringLiteral("color: gray; font-size: 12px;"));
     // 估算文本可能较长（如 Estimated size: 1.2 MB），允许被压缩到面板宽度内，
     // 避免把整个面板撑宽导致内容被裁切。
     m_resizeAspectLabel->setMinimumWidth(0);
     m_resizeAspectLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    layout->addWidget(m_resizeAspectLabel);
+    settingsLayout->addWidget(m_resizeAspectLabel);
 
-    m_resizeInterpolation = new QComboBox(panel);
+    settings->setContent(settingsContent);
+    layout->addWidget(settings);
+
+    // 预设（与拼接面板的 Grid Presets 同款式样）
+    CollapsibleSection* presets = new CollapsibleSection(tr("Resize Presets"), panel);
+    QWidget* presetsContent = new QWidget(presets);
+    QVBoxLayout* presetsLayout = new QVBoxLayout(presetsContent);
+    presetsLayout->setContentsMargins(0, 0, 0, 0);
+    presetsLayout->setSpacing(8);
+
+    m_resizeCategory = new QComboBox(presetsContent);
+    m_resizeCategory->setEnabled(false);
+    presetsLayout->addWidget(createFormRow(tr("Category:"), m_resizeCategory));
+
+    m_resizePreset = new QComboBox(presetsContent);
+    m_resizePreset->setEnabled(false);
+    presetsLayout->addWidget(createFormRow(tr("Preset:"), m_resizePreset));
+
+    QHBoxLayout* presetBtnLayout = new QHBoxLayout();
+    presetBtnLayout->setSpacing(6);
+    m_resizeAddPresetBtn = new QPushButton(tr("Add"), presetsContent);
+    m_resizeDeletePresetBtn = new QPushButton(tr("Delete"), presetsContent);
+    m_resizeAddPresetBtn->setEnabled(false);
+    m_resizeDeletePresetBtn->setEnabled(false);
+    presetBtnLayout->addWidget(m_resizeAddPresetBtn);
+    presetBtnLayout->addWidget(m_resizeDeletePresetBtn);
+    presetsLayout->addLayout(presetBtnLayout);
+
+    presets->setContent(presetsContent);
+    layout->addWidget(presets);
+
+    // 输出设置：目录 + 格式 + 质量
+    CollapsibleSection* output = new CollapsibleSection(tr("Output Settings"), panel);
+    QWidget* outputContent = new QWidget(output);
+    QVBoxLayout* outputLayout = new QVBoxLayout(outputContent);
+    outputLayout->setContentsMargins(0, 0, 0, 0);
+    outputLayout->setSpacing(8);
+
+    m_resizeOutputSection = new OutputSettingsSection(false, outputContent);
+    outputLayout->addWidget(m_resizeOutputSection);
+
+    m_resizeOutputFormat = new QComboBox(outputContent);
+    m_resizeOutputFormat->addItem(tr("Original"), QStringLiteral("original"));
+    m_resizeOutputFormat->addItem(QStringLiteral("PNG"), QStringLiteral("png"));
+    m_resizeOutputFormat->addItem(QStringLiteral("JPG"), QStringLiteral("jpg"));
+    m_resizeOutputFormat->addItem(QStringLiteral("WebP"), QStringLiteral("webp"));
+    outputLayout->addWidget(createFormRow(tr("Output Format:"), m_resizeOutputFormat));
+
+    m_resizeQuality = new QSlider(Qt::Horizontal, outputContent);
+    m_resizeQuality->setRange(1, 100);
+    m_resizeQuality->setValue(90);
+    outputLayout->addWidget(createFormRow(tr("Quality:"), m_resizeQuality));
+
+    output->setContent(outputContent);
+    layout->addWidget(output);
+    m_outputSections.append(m_resizeOutputSection);
+
+    // 高级选项（低频项，默认收起）
+    CollapsibleSection* advanced = new CollapsibleSection(tr("Advanced"), panel);
+    advanced->setExpanded(false);
+    QWidget* advancedContent = new QWidget(advanced);
+    QVBoxLayout* advancedLayout = new QVBoxLayout(advancedContent);
+    advancedLayout->setContentsMargins(0, 0, 0, 0);
+    advancedLayout->setSpacing(8);
+
+    m_resizeInterpolation = new QComboBox(advancedContent);
     m_resizeInterpolation->addItem(tr("Nearest"), static_cast<int>(Interpolation::Nearest));
     m_resizeInterpolation->addItem(tr("Bilinear"), static_cast<int>(Interpolation::Bilinear));
     m_resizeInterpolation->addItem(tr("Bicubic"), static_cast<int>(Interpolation::Bicubic));
     m_resizeInterpolation->addItem(tr("Lanczos"), static_cast<int>(Interpolation::Lanczos));
     m_resizeInterpolation->setCurrentIndex(1);
-    layout->addWidget(createFormRow(tr("Interpolation:"), m_resizeInterpolation));
+    advancedLayout->addWidget(createFormRow(tr("Interpolation:"), m_resizeInterpolation));
 
-    m_resizeFitWithinOriginal = new QCheckBox(tr("Do not exceed original size"), panel);
-    layout->addWidget(m_resizeFitWithinOriginal);
+    m_resizeFitWithinOriginal = new QCheckBox(tr("Do not exceed original size"), advancedContent);
+    advancedLayout->addWidget(m_resizeFitWithinOriginal);
 
-    m_resizeCategory = new QComboBox(panel);
-    m_resizeCategory->setEnabled(false);
-    layout->addWidget(createFormRow(tr("Category:"), m_resizeCategory));
-
-    m_resizePreset = new QComboBox(panel);
-    m_resizePreset->setEnabled(false);
-    layout->addWidget(createFormRow(tr("Preset:"), m_resizePreset));
-
-    QHBoxLayout* presetBtnLayout = new QHBoxLayout();
-    presetBtnLayout->setSpacing(6);
-    m_resizeAddPresetBtn = new QPushButton(tr("Add"), panel);
-    m_resizeDeletePresetBtn = new QPushButton(tr("Delete"), panel);
-    m_resizeAddPresetBtn->setEnabled(false);
-    m_resizeDeletePresetBtn->setEnabled(false);
-    presetBtnLayout->addWidget(m_resizeAddPresetBtn);
-    presetBtnLayout->addWidget(m_resizeDeletePresetBtn);
-    layout->addLayout(presetBtnLayout);
-
-    m_resizeOutputFormat = new QComboBox(panel);
-    m_resizeOutputFormat->addItem(tr("Original"), QStringLiteral("original"));
-    m_resizeOutputFormat->addItem(QStringLiteral("PNG"), QStringLiteral("png"));
-    m_resizeOutputFormat->addItem(QStringLiteral("JPG"), QStringLiteral("jpg"));
-    m_resizeOutputFormat->addItem(QStringLiteral("WebP"), QStringLiteral("webp"));
-    layout->addWidget(createFormRow(tr("Output Format:"), m_resizeOutputFormat));
-
-    m_resizeQuality = new QSlider(Qt::Horizontal, panel);
-    m_resizeQuality->setRange(1, 100);
-    m_resizeQuality->setValue(90);
-    layout->addWidget(createFormRow(tr("Quality:"), m_resizeQuality));
-
-    QWidget* resizeOutDirRow = new QWidget(panel);
-    QHBoxLayout* resizeOutDirLayout = new QHBoxLayout(resizeOutDirRow);
-    resizeOutDirLayout->setContentsMargins(0, 2, 0, 2);
-    resizeOutDirLayout->setSpacing(6);
-    resizeOutDirLayout->addWidget(new QLabel(tr("Output Dir:"), resizeOutDirRow));
-    m_resizeOutputDir = new QLineEdit(resizeOutDirRow);
-    resizeOutDirLayout->addWidget(m_resizeOutputDir, 1);
-    QPushButton* resizeOutBrowseBtn = new QPushButton(tr("Browse..."), resizeOutDirRow);
-    connect(resizeOutBrowseBtn, &QPushButton::clicked, this, [this]() {
-        QString dir = QFileDialog::getExistingDirectory(this, tr("Select Output Directory"),
-                                                        m_resizeOutputDir->text());
-        if (!dir.isEmpty())
-            m_resizeOutputDir->setText(dir);
-    });
-    resizeOutDirLayout->addWidget(resizeOutBrowseBtn);
-    layout->addWidget(resizeOutDirRow);
+    advanced->setContent(advancedContent);
+    layout->addWidget(advanced);
 
     m_resizeDelayTimer = new QTimer(this);
     m_resizeDelayTimer->setSingleShot(true);
@@ -976,32 +1211,44 @@ void PropertyPanel::buildBatchPanel()
     QWidget* panel = new QWidget(this);
     QVBoxLayout* layout = new QVBoxLayout(panel);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(8);
+    layout->setSpacing(10);
 
-    layout->addWidget(new QLabel(tr("<b>Batch Processing</b>"), panel));
+    // 参数设置
+    CollapsibleSection* settings = new CollapsibleSection(tr("Batch Processing"), panel);
+    QWidget* settingsContent = new QWidget(settings);
+    QVBoxLayout* settingsLayout = new QVBoxLayout(settingsContent);
+    settingsLayout->setContentsMargins(0, 0, 0, 0);
+    settingsLayout->setSpacing(8);
 
-    m_batchTargetTool = new QComboBox(panel);
+    m_batchTargetTool = new QComboBox(settingsContent);
     m_batchTargetTool->addItem(tr("Convert"), static_cast<int>(ToolType::Convert));
     m_batchTargetTool->addItem(tr("Compress"), static_cast<int>(ToolType::Compress));
     m_batchTargetTool->addItem(tr("Watermark"), static_cast<int>(ToolType::Watermark));
     m_batchTargetTool->addItem(tr("Resize"), static_cast<int>(ToolType::Resize));
-    layout->addWidget(createFormRow(tr("Target Tool:"), m_batchTargetTool));
+    settingsLayout->addWidget(createFormRow(tr("Target Tool:"), m_batchTargetTool));
 
-    m_batchOutputDir = new QLineEdit(panel);
-    QPushButton* browseBtn = new QPushButton(tr("Browse..."), panel);
-    connect(browseBtn, &QPushButton::clicked, this, [this]() {
-        QString dir = QFileDialog::getExistingDirectory(this, tr("Select Output Directory"),
-                                                        m_batchOutputDir->text());
-        if (!dir.isEmpty())
-            m_batchOutputDir->setText(dir);
-    });
+    // 参数摘要：批处理直接套用对应工具面板的参数，这里实时显示将应用什么，
+    // 用户不必来回切换面板确认。
+    m_batchSummary = new QLabel(settingsContent);
+    m_batchSummary->setStyleSheet(QStringLiteral("color: gray; font-size: 12px;"));
+    m_batchSummary->setWordWrap(true);
+    m_batchSummary->setMinimumWidth(0);
+    m_batchSummary->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    settingsLayout->addWidget(m_batchSummary);
+    // 任一面板参数变化都刷新摘要（settingsChanged 由全部设置控件触发）。
+    connect(this, &PropertyPanel::settingsChanged, this,
+            &PropertyPanel::updateBatchSummary);
+    connect(m_batchTargetTool, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            &PropertyPanel::updateBatchSummary);
+    updateBatchSummary();
 
-    QHBoxLayout* dirLayout = new QHBoxLayout();
-    dirLayout->setSpacing(6);
-    dirLayout->addWidget(new QLabel(tr("Output Dir:"), panel));
-    dirLayout->addWidget(m_batchOutputDir, 1);
-    dirLayout->addWidget(browseBtn);
-    layout->addLayout(dirLayout);
+    settings->setContent(settingsContent);
+    layout->addWidget(settings);
+
+    // 输出设置
+    m_batchOutputSection = new OutputSettingsSection(false, panel);
+    layout->addWidget(m_batchOutputSection);
+    m_outputSections.append(m_batchOutputSection);
 
     layout->addStretch();
     m_stack->addWidget(panel);
@@ -1012,30 +1259,63 @@ void PropertyPanel::buildPdfPanel()
     QWidget* panel = new QWidget(this);
     QVBoxLayout* layout = new QVBoxLayout(panel);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(8);
+    layout->setSpacing(10);
 
-    layout->addWidget(new QLabel(tr("<b>PDF Export</b>"), panel));
+    // 参数设置
+    CollapsibleSection* settings = new CollapsibleSection(tr("PDF Export"), panel);
+    QWidget* settingsContent = new QWidget(settings);
+    QVBoxLayout* settingsLayout = new QVBoxLayout(settingsContent);
+    settingsLayout->setContentsMargins(0, 0, 0, 0);
+    settingsLayout->setSpacing(8);
 
-    m_pdfPageSize = new QComboBox(panel);
+    m_pdfPageSize = new QComboBox(settingsContent);
     m_pdfPageSize->addItem(tr("A4"), static_cast<int>(PdfSettings::A4));
     m_pdfPageSize->addItem(tr("A5"), static_cast<int>(PdfSettings::A5));
     m_pdfPageSize->addItem(tr("Letter"), static_cast<int>(PdfSettings::Letter));
-    layout->addWidget(createFormRow(tr("Page Size:"), m_pdfPageSize));
+    m_pdfPageSize->addItem(tr("Custom"), static_cast<int>(PdfSettings::Custom));
+    settingsLayout->addWidget(createFormRow(tr("Page Size:"), m_pdfPageSize));
 
-    m_pdfLayout = new QComboBox(panel);
+    // 自定义页面尺寸（mm）：引擎与 settings 字段一直存在，此前没有控件。
+    m_pdfCustomSizeRow = new QWidget(settingsContent);
+    QHBoxLayout* customSizeLayout = new QHBoxLayout(m_pdfCustomSizeRow);
+    customSizeLayout->setContentsMargins(0, 2, 0, 2);
+    customSizeLayout->setSpacing(6);
+    customSizeLayout->addWidget(new QLabel(tr("Size (mm):"), m_pdfCustomSizeRow));
+    m_pdfCustomWidth = new QDoubleSpinBox(m_pdfCustomSizeRow);
+    m_pdfCustomWidth->setRange(10.0, 2000.0);
+    m_pdfCustomWidth->setValue(210.0);
+    m_pdfCustomWidth->setSuffix(QStringLiteral(" ×"));
+    m_pdfCustomHeight = new QDoubleSpinBox(m_pdfCustomSizeRow);
+    m_pdfCustomHeight->setRange(10.0, 2000.0);
+    m_pdfCustomHeight->setValue(297.0);
+    m_pdfCustomHeight->setSuffix(QStringLiteral(" mm"));
+    customSizeLayout->addWidget(m_pdfCustomWidth);
+    customSizeLayout->addWidget(m_pdfCustomHeight);
+    customSizeLayout->addStretch();
+    m_pdfCustomSizeRow->setVisible(false);
+    settingsLayout->addWidget(m_pdfCustomSizeRow);
+    connect(m_pdfPageSize, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            [this](int) {
+                const bool custom = static_cast<PdfSettings::PageSize>(
+                                        m_pdfPageSize->currentData().toInt()) ==
+                                    PdfSettings::Custom;
+                m_pdfCustomSizeRow->setVisible(custom);
+            });
+
+    m_pdfLayout = new QComboBox(settingsContent);
     m_pdfLayout->addItem(tr("Single Per Page"), static_cast<int>(PdfSettings::SinglePerPage));
     m_pdfLayout->addItem(tr("Fit to Page"), static_cast<int>(PdfSettings::FitToPage));
     m_pdfLayout->addItem(tr("Grid 2x2"), static_cast<int>(PdfSettings::Grid2x2));
     m_pdfLayout->addItem(tr("Grid 3x3"), static_cast<int>(PdfSettings::Grid3x3));
-    layout->addWidget(createFormRow(tr("Layout:"), m_pdfLayout));
+    settingsLayout->addWidget(createFormRow(tr("Layout:"), m_pdfLayout));
 
-    m_pdfDpi = new QSpinBox(panel);
+    m_pdfDpi = new QSpinBox(settingsContent);
     m_pdfDpi->setRange(72, 600);
     m_pdfDpi->setValue(150);
     m_pdfDpi->setSuffix(QStringLiteral(" dpi"));
-    layout->addWidget(createFormRow(tr("Resolution:"), m_pdfDpi));
+    settingsLayout->addWidget(createFormRow(tr("Resolution:"), m_pdfDpi));
 
-    QWidget* marginRow = new QWidget(panel);
+    QWidget* marginRow = new QWidget(settingsContent);
     QHBoxLayout* marginLayout = new QHBoxLayout(marginRow);
     marginLayout->setContentsMargins(0, 2, 0, 2);
     marginLayout->setSpacing(6);
@@ -1051,9 +1331,19 @@ void PropertyPanel::buildPdfPanel()
         sb->setSuffix(QStringLiteral(" mm"));
         marginLayout->addWidget(sb);
     }
-    layout->addWidget(marginRow);
+    settingsLayout->addWidget(marginRow);
 
-    QWidget* outRow = new QWidget(panel);
+    settings->setContent(settingsContent);
+    layout->addWidget(settings);
+
+    // 输出设置：PDF 是单文件导出，走「保存文件」而不是目录。
+    CollapsibleSection* output = new CollapsibleSection(tr("Output Settings"), panel);
+    QWidget* outputContent = new QWidget(output);
+    QVBoxLayout* outputLayout = new QVBoxLayout(outputContent);
+    outputLayout->setContentsMargins(0, 0, 0, 0);
+    outputLayout->setSpacing(8);
+
+    QWidget* outRow = new QWidget(outputContent);
     QHBoxLayout* outLayout = new QHBoxLayout(outRow);
     outLayout->setContentsMargins(0, 2, 0, 2);
     outLayout->setSpacing(6);
@@ -1068,7 +1358,10 @@ void PropertyPanel::buildPdfPanel()
             m_pdfOutputPath->setText(path);
     });
     outLayout->addWidget(browseBtn);
-    layout->addWidget(outRow);
+    outputLayout->addWidget(outRow);
+
+    output->setContent(outputContent);
+    layout->addWidget(output);
 
     layout->addStretch();
     m_stack->addWidget(panel);
@@ -1093,7 +1386,7 @@ StitchSettings PropertyPanel::stitchSettings() const
     s.gridColumns = m_stitchGridColumns->value();
     s.outputFormat = m_stitchOutputFormat->currentText().toLower();
     s.quality = m_stitchQuality->value();
-    s.outputDir = m_stitchOutputDir ? m_stitchOutputDir->currentText() : QString();
+    s.outputDir = m_stitchOutputSection ? m_stitchOutputSection->directory() : QString();
     return s;
 }
 
@@ -1104,6 +1397,7 @@ ConvertSettings PropertyPanel::convertSettings() const
     s.quality = m_convertQuality->value();
     s.keepExif = m_convertKeepExif->isChecked();
     s.convertToSRgb = m_convertToSRgb->isChecked();
+    s.outputDir = m_convertOutputSection ? m_convertOutputSection->directory() : QString();
     return s;
 }
 
@@ -1122,6 +1416,9 @@ CompressSettings PropertyPanel::compressSettings() const
     else
         s.targetSize = qRound64(value * 1024 * 1024);
     s.showOriginal = m_compressShowOriginal->isChecked();
+    s.outputFormat = m_compressOutputFormat ? m_compressOutputFormat->currentData().toString()
+                                            : QStringLiteral("original");
+    s.outputDir = m_compressOutputSection ? m_compressOutputSection->directory() : QString();
     return s;
 }
 
@@ -1131,6 +1428,7 @@ WatermarkSettings PropertyPanel::watermarkSettings() const
     s.type = static_cast<WatermarkType>(m_watermarkType->currentData().toInt());
     s.text = m_watermarkText->text();
     s.imagePath = m_watermarkImagePath->text();
+    s.imageScalePercent = m_watermarkImageScale ? m_watermarkImageScale->value() : 25;
     s.fontFamily = m_watermarkFontFamily->currentText();
     s.fontSize = m_watermarkFontSize->value();
     s.color = m_watermarkColor;
@@ -1142,7 +1440,7 @@ WatermarkSettings PropertyPanel::watermarkSettings() const
     s.margin = m_watermarkMargin->value();
     s.outputFormat = m_watermarkOutputFormat->currentData().toString();
     s.quality = m_watermarkQuality->value();
-    s.outputDir = m_watermarkOutputDir->text();
+    s.outputDir = m_watermarkOutputSection ? m_watermarkOutputSection->directory() : QString();
     return s;
 }
 
@@ -1151,6 +1449,7 @@ EditAction PropertyPanel::currentEditAction() const
     EditAction a;
     a.toolType = static_cast<EditToolType>(m_editTool->currentData().toInt());
     a.filterType = static_cast<FilterType>(m_editFilterType->currentData().toInt());
+    a.filterStrength = m_editFilterStrength ? m_editFilterStrength->value() : 50;
     a.mosaicStyle = static_cast<MosaicStyle>(m_editMosaicStyle->currentData().toInt());
     a.mosaicSize = m_editMosaicSize->value();
     a.lineWidth = m_editLineWidth->value();
@@ -1158,6 +1457,7 @@ EditAction PropertyPanel::currentEditAction() const
     a.fontFamily = m_editFontFamily->currentText();
     a.fontSize = m_editFontSize->value();
     a.fontBold = m_editFontBold->isChecked();
+    a.textBackground = m_editTextBackground ? m_editTextBackground->isChecked() : false;
     if (a.toolType == EditToolType::Text)
         a.color = m_editTextColor;
     else
@@ -1166,10 +1466,19 @@ EditAction PropertyPanel::currentEditAction() const
     return a;
 }
 
+int PropertyPanel::editQuality() const
+{
+    return m_editQuality ? m_editQuality->value() : 92;
+}
+
 PdfSettings PropertyPanel::pdfSettings() const
 {
     PdfSettings s;
     s.pageSize = static_cast<PdfSettings::PageSize>(m_pdfPageSize->currentData().toInt());
+    if (s.pageSize == PdfSettings::Custom && m_pdfCustomWidth && m_pdfCustomHeight) {
+        // PageSizeMm 对 Custom 有默认兜底，但显式带上用户输入的尺寸。
+        s.customPageSize = QSizeF(m_pdfCustomWidth->value(), m_pdfCustomHeight->value());
+    }
     s.layout = static_cast<PdfSettings::Layout>(m_pdfLayout->currentData().toInt());
     s.dpi = m_pdfDpi->value();
     s.marginLeft = m_pdfMarginLeft->value();
@@ -1192,7 +1501,7 @@ ResizeSettings PropertyPanel::resizeSettings() const
     s.interpolation = static_cast<Interpolation>(m_resizeInterpolation->currentData().toInt());
     s.outputFormat = m_resizeOutputFormat->currentData().toString();
     s.quality = m_resizeQuality->value();
-    s.outputDir = m_resizeOutputDir->text();
+    s.outputDir = m_resizeOutputSection ? m_resizeOutputSection->directory() : QString();
 
     if (s.mode == ResizeMode::Preset && m_resizePreset->currentIndex() >= 0) {
         QString presetId = m_resizePreset->currentData().toString();
@@ -1209,20 +1518,24 @@ ResizeSettings PropertyPanel::resizeSettings() const
 
 QString PropertyPanel::outputFileNameTemplate() const
 {
-    return m_stitchFileNameTemplate ? m_stitchFileNameTemplate->text() : QString();
+    return m_stitchOutputSection ? m_stitchOutputSection->fileNameTemplate() : QString();
 }
 
 PropertyPanel::BatchSettings PropertyPanel::batchSettings() const
 {
     BatchSettings settings;
     settings.targetTool = static_cast<ToolType>(m_batchTargetTool->currentData().toInt());
-    settings.outputDir = m_batchOutputDir->text();
+    settings.outputDir = m_batchOutputSection ? m_batchOutputSection->directory() : QString();
     return settings;
 }
 
-void PropertyPanel::updatePreview(const QImage& image)
+void PropertyPanel::updatePreview(const QImage& image, const QSize& sourceSize)
 {
     m_lastImage = image;
+    // 原图尺寸随预览一并传来：体积估算此前基于预览图尺寸（≤3840 长边），
+    // 对大图会严重低估。按像素数比例放大估算值。
+    if (sourceSize.isValid())
+        m_lastSourceSize = sourceSize;
 
     // 刷新压缩体积预估。此前 onCompressEstimateRequested 已实现，却没有任何
     // 地方连接它，导致 m_compressEstimateLabel 始终为空。
@@ -1389,10 +1702,11 @@ void PropertyPanel::selectStitchPresetById(const QString& presetId)
     for (int i = 0; i < m_stitchPreset->count(); ++i) {
         if (m_stitchPreset->itemData(i).toString() == presetId) {
             m_stitchPreset->setCurrentIndex(i);
-            return;
+            break;
         }
     }
     m_stitchPreset->setCurrentIndex(0);
+    updateStitchPresetButtons();
 }
 
 void PropertyPanel::clearStitchPresetSelection()
@@ -1400,6 +1714,21 @@ void PropertyPanel::clearStitchPresetSelection()
     m_currentStitchPresetId.clear();
     if (m_stitchPreset && m_stitchPreset->currentIndex() != 0)
         m_stitchPreset->setCurrentIndex(0);
+    updateStitchPresetButtons();
+}
+
+void PropertyPanel::updateStitchPresetButtons()
+{
+    // 仅自定义预设可删除（内置项由引擎按稳定 id 保护）。
+    bool deletable = false;
+    for (const StitchPreset& p : m_stitchPresets) {
+        if (p.id == m_currentStitchPresetId) {
+            deletable = !p.isBuiltIn;
+            break;
+        }
+    }
+    if (m_stitchPresetDeleteBtn)
+        m_stitchPresetDeleteBtn->setEnabled(deletable);
 }
 
 void PropertyPanel::refreshStitchPresetAvailability()
@@ -1468,6 +1797,20 @@ void PropertyPanel::onStitchAddPreset()
     }
 }
 
+void PropertyPanel::onStitchDeletePreset()
+{
+    if (m_currentStitchPresetId.isEmpty())
+        return;
+    if (!StitchPresetManager::instance().deletePreset(m_currentStitchPresetId)) {
+        QMessageBox::warning(this, tr("Error"), tr("Built-in presets cannot be deleted."));
+        return;
+    }
+    m_currentStitchPresetId.clear();
+    loadStitchPresets();
+    clearStitchPresetSelection();
+    emit settingsChanged();
+}
+
 void PropertyPanel::onStitchBgColorClicked()
 {
     QColor c = QColorDialog::getColor(QColor(m_stitchBgColorLabel->text()), this,
@@ -1482,25 +1825,8 @@ void PropertyPanel::onStitchBgColorClicked()
 
 void PropertyPanel::onStitchOutputDirChanged()
 {
-    if (!m_stitchOutputDir || !m_stitchOutputCreateBtn)
-        return;
-    QString path = m_stitchOutputDir->currentText();
-    bool exists = QFileInfo::exists(path);
-    m_stitchOutputCreateBtn->setVisible(!exists && !path.isEmpty());
+    // 目录变化只需重新校验；「创建目录」按钮的显隐由 OutputSettingsSection 自理。
     validateAndUpdateUI();
-}
-
-void PropertyPanel::onStitchCreateOutputDir()
-{
-    QString path = m_stitchOutputDir->currentText();
-    if (path.isEmpty())
-        return;
-    if (QDir().mkpath(path)) {
-        addOutputHistory(path);
-        onStitchOutputDirChanged();
-    } else {
-        QMessageBox::warning(this, tr("Error"), tr("Failed to create output directory."));
-    }
 }
 
 void PropertyPanel::onStitchFileNameTemplateChanged()
@@ -1511,21 +1837,13 @@ void PropertyPanel::onStitchFileNameTemplateChanged()
 
 void PropertyPanel::updateStitchFileNamePreview()
 {
-    if (!m_stitchFileNamePreview)
+    if (!m_stitchOutputSection)
         return;
 
-    const QString full = previewFileNameFromTemplate(m_stitchFileNameTemplate->text());
-    m_stitchFileNamePreviewFull = full;
-    // 完整文本放进 tooltip，标签本身按可用宽度省略。
-    m_stitchFileNamePreview->setToolTip(full);
-
-    // 文件名通常是一整段没有空格的字符串，QLabel 的 wordWrap 无法在词内断行，
-    // 结果就是整行超出面板宽度被裁掉。这里显式做中间省略，保证任何宽度下都完整可见，
-    // 且不会把面板撑宽。
-    const int available =
-        m_stitchFileNamePreview->width() > 0 ? m_stitchFileNamePreview->width() : 200;
-    m_stitchFileNamePreview->setText(
-        m_stitchFileNamePreview->fontMetrics().elidedText(full, Qt::ElideMiddle, available));
+    const QString full = previewFileNameFromTemplate(m_stitchOutputSection->fileNameTemplate());
+    // 完整文本放进 tooltip，标签本身按可用宽度做中间省略（OutputSettingsSection
+    // 内部处理），保证任何宽度下都完整可见，且不会把面板撑宽。
+    m_stitchOutputSection->setTemplatePreview(full);
 }
 
 void PropertyPanel::onStitchOutputFormatChanged(int index)
@@ -1594,26 +1912,12 @@ void PropertyPanel::updateStitchControlVisibility()
 
 QString PropertyPanel::previewFileNameFromTemplate(const QString& templ) const
 {
-    QString result = templ;
-    QDateTime now = QDateTime::currentDateTime();
-    result.replace(QStringLiteral("{name}"), QStringLiteral("wechat_screenshot_001"));
-    result.replace(QStringLiteral("{ext}"), QStringLiteral("png"));
-    result.replace(QStringLiteral("{time}"), now.toString(QStringLiteral("yyyyMMdd_HHmmss")));
-    result.replace(QStringLiteral("{date}"), now.toString(QStringLiteral("yyyy-MM-dd")));
-    result.replace(QStringLiteral("{index}"), QStringLiteral("001"));
-    result.replace(QStringLiteral("{size}"), QStringLiteral("1920x1080"));
-    // 兼容旧版中文占位符
-    result.replace(QStringLiteral("{原名}"), QStringLiteral("wechat_screenshot_001"));
-    result.replace(QStringLiteral("{扩展}"), QStringLiteral("png"));
-    result.replace(QStringLiteral("{时间}"), now.toString(QStringLiteral("yyyyMMdd_HHmmss")));
-    result.replace(QStringLiteral("{日期}"), now.toString(QStringLiteral("yyyy-MM-dd")));
-    result.replace(QStringLiteral("{序号}"), QStringLiteral("001"));
-    result.replace(QStringLiteral("{尺寸}"), QStringLiteral("1920x1080"));
-    if (result.isEmpty())
-        result = QStringLiteral("wechat_screenshot_001.png");
-    else if (!result.endsWith(QStringLiteral(".png"), Qt::CaseInsensitive))
-        result += QStringLiteral(".png");
-    return tr("Preview: %1").arg(result);
+    // 占位符展开逻辑与 FileUtils::applyFileNameTemplate 共用一套语义，
+    // 预览里看到的名字就是实际输出名。
+    const QString expanded = FileUtils::applyFileNameTemplate(
+        templ, QStringLiteral("wechat_screenshot_001.png"), 1, QSize(1920, 1080),
+        QStringLiteral("stitched"));
+    return tr("Preview: %1").arg(expanded + QStringLiteral(".png"));
 }
 
 void PropertyPanel::addOutputHistory(const QString& path)
@@ -1625,14 +1929,9 @@ void PropertyPanel::addOutputHistory(const QString& path)
     while (m_outputHistory.size() > 5)
         m_outputHistory.removeLast();
 
-    if (m_stitchOutputDir) {
-        m_stitchOutputDir->blockSignals(true);
-        QString current = m_stitchOutputDir->currentText();
-        m_stitchOutputDir->clear();
-        m_stitchOutputDir->addItems(m_outputHistory);
-        m_stitchOutputDir->setCurrentText(current);
-        m_stitchOutputDir->blockSignals(false);
-    }
+    // 跨工具共享：任一工具里选过的输出目录，其余工具的下拉框里都能看到。
+    for (OutputSettingsSection* section : m_outputSections)
+        section->setHistory(m_outputHistory);
 }
 
 QString PropertyPanel::uiStateFilePath() const
@@ -1693,12 +1992,10 @@ void PropertyPanel::loadUiState()
     while (m_outputHistory.size() > 5)
         m_outputHistory.removeLast();
 
-    if (m_stitchOutputDir) {
-        m_stitchOutputDir->blockSignals(true);
-        m_stitchOutputDir->addItems(m_outputHistory);
+    for (OutputSettingsSection* section : m_outputSections) {
+        section->setHistory(m_outputHistory);
         if (!m_outputHistory.isEmpty())
-            m_stitchOutputDir->setCurrentText(m_outputHistory.first());
-        m_stitchOutputDir->blockSignals(false);
+            section->setDirectory(m_outputHistory.first());
     }
 }
 
@@ -1734,7 +2031,7 @@ bool PropertyPanel::validateStitchSettings(QString* errorMessage, QString* warni
         ok = false;
     }
 
-    QString outputDir = m_stitchOutputDir ? m_stitchOutputDir->currentText() : QString();
+    QString outputDir = m_stitchOutputSection ? m_stitchOutputSection->directory() : QString();
     if (outputDir.isEmpty()) {
         errors.append(tr("Output directory is empty"));
         ok = false;
@@ -1750,7 +2047,8 @@ bool PropertyPanel::validateStitchSettings(QString* errorMessage, QString* warni
         }
     }
 
-    QString templ = m_stitchFileNameTemplate ? m_stitchFileNameTemplate->text() : QString();
+    QString templ =
+        m_stitchOutputSection ? m_stitchOutputSection->fileNameTemplate() : QString();
     if (templ.isEmpty()) {
         errors.append(tr("File name template is empty"));
         ok = false;
@@ -1841,38 +2139,33 @@ void PropertyPanel::validateAndUpdateUI()
     QString error, warning;
     bool ok = validateStitchSettings(&error, &warning);
 
-    if (m_stitchOutputDir) {
-        QString path = m_stitchOutputDir->currentText();
+    if (m_stitchOutputSection) {
+        QString path = m_stitchOutputSection->directory();
         bool pathError = !path.isEmpty() && (!QFileInfo::exists(path) || !canWriteToPath(path));
-        setInputError(m_stitchOutputDir, pathError);
+        setInputError(m_stitchOutputSection->dirCombo(), pathError);
         if (!pathError && path.length() > 260)
-            setInputWarning(m_stitchOutputDir, true);
+            setInputWarning(m_stitchOutputSection->dirCombo(), true);
         else if (!pathError)
-            setInputWarning(m_stitchOutputDir, false);
+            setInputWarning(m_stitchOutputSection->dirCombo(), false);
     }
 
-    if (m_stitchFileNameTemplate)
-        setInputError(m_stitchFileNameTemplate, m_stitchFileNameTemplate->text().isEmpty());
+    if (m_stitchOutputSection && m_stitchOutputSection->fileNameTemplateEdit())
+        setInputError(m_stitchOutputSection->fileNameTemplateEdit(),
+                      m_stitchOutputSection->fileNameTemplate().isEmpty());
 
     if (m_stitchSpacing) {
         int spacing = m_stitchSpacing->value();
         setInputError(m_stitchSpacing, spacing < 0 || spacing > 200);
     }
 
-    if (m_stitchValidationLabel) {
-        if (!error.isEmpty()) {
-            m_stitchValidationLabel->setText(QStringLiteral("🔴 ") + error);
-            m_stitchValidationLabel->setStyleSheet(
-                QStringLiteral("color: #E81123; font-size: 12px;"));
-        } else if (!warning.isEmpty()) {
-            m_stitchValidationLabel->setText(QStringLiteral("⚠️ ") + warning);
-            m_stitchValidationLabel->setStyleSheet(
-                QStringLiteral("color: #FFC107; font-size: 12px;"));
-        } else {
-            m_stitchValidationLabel->setText(QStringLiteral("✅ ") + tr("Ready"));
-            m_stitchValidationLabel->setStyleSheet(
-                QStringLiteral("color: #107C10; font-size: 12px;"));
-        }
+    if (m_stitchOutputSection) {
+        if (!error.isEmpty())
+            m_stitchOutputSection->setValidationText(QStringLiteral("🔴 ") + error, true, false);
+        else if (!warning.isEmpty())
+            m_stitchOutputSection->setValidationText(QStringLiteral("⚠️ ") + warning, false, true);
+        else
+            m_stitchOutputSection->setValidationText(QStringLiteral("✅ ") + tr("Ready"), false,
+                                                     false);
     }
 
     m_processBtn->setEnabled(ok);
@@ -2070,13 +2363,15 @@ void PropertyPanel::onCompressModeChanged(int index)
 {
     Q_UNUSED(index)
     CompressMode mode = static_cast<CompressMode>(m_compressMode->currentData().toInt());
-    bool isSizeMode = (mode == CompressMode::Size);
-    bool isQuality = (mode == CompressMode::Quality);
-    m_compressStrength->setEnabled(!isQuality);
-    m_compressQuality->setEnabled(isQuality || mode == CompressMode::Smart);
-    m_compressScale->setEnabled(mode == CompressMode::Size || mode == CompressMode::Smart);
-    m_compressTargetSize->setEnabled(isSizeMode || mode == CompressMode::Smart);
-    m_compressTargetUnit->setEnabled(isSizeMode || mode == CompressMode::Smart);
+    // Quality 模式：Strength 是主控（引擎 quality = 100 − strength），Quality 滑块禁用；
+    // Size/Smart 模式：目标体积 + 缩放生效，Quality 滑块作二分起始质量。
+    const bool isQuality = (mode == CompressMode::Quality);
+    const bool sizeLike = (mode == CompressMode::Size || mode == CompressMode::Smart);
+    m_compressStrength->setEnabled(isQuality);
+    m_compressQuality->setEnabled(!isQuality);
+    m_compressScale->setEnabled(sizeLike);
+    m_compressTargetSize->setEnabled(sizeLike);
+    m_compressTargetUnit->setEnabled(sizeLike);
 }
 
 void PropertyPanel::onConvertFormatChanged(int index)
@@ -2093,6 +2388,13 @@ void PropertyPanel::onConvertEstimateTimeout()
         return;
     }
     qint64 bytes = ConvertEngine::estimateSize(m_lastImage, convertSettings());
+    // 与压缩估算同理：按原图/预览像素比放大，避免大图低估。
+    if (m_lastSourceSize.isValid() && !m_lastImage.isNull()) {
+        const double origPixels = double(m_lastSourceSize.width()) * m_lastSourceSize.height();
+        const double previewPixels = double(m_lastImage.width()) * m_lastImage.height();
+        if (previewPixels > 0 && origPixels > previewPixels)
+            bytes = qRound64(bytes * (origPixels / previewPixels));
+    }
     m_convertEstimateLabel->setText(tr("Estimated size: %1").arg(FileUtils::formatFileSize(bytes)));
 }
 
@@ -2119,6 +2421,13 @@ void PropertyPanel::onWatermarkTypeChanged(int index)
     QWidget* imageRow = m_watermarkImagePath->parentWidget();
     if (imageRow)
         imageRow->setEnabled(!isText);
+    // 图片水印：尺寸可调；位置/平铺/边距引擎现在都支持；旋转仍不支持 → 禁用假控件。
+    m_watermarkImageScale->setEnabled(!isText);
+    m_watermarkPosition->setEnabled(true);
+    m_watermarkTile->setEnabled(true);
+    m_watermarkTileSpacing->setEnabled(true);
+    m_watermarkMargin->setEnabled(true);
+    m_watermarkRotation->setEnabled(isText);
 }
 
 void PropertyPanel::requestDelayedPreview()
@@ -2134,6 +2443,14 @@ void PropertyPanel::onCompressEstimateRequested()
         return;
     }
     qint64 bytes = CompressEngine::estimateSize(m_lastImage, compressSettings());
+    // 估算基于预览图（≤3840 长边）编码 —— 原图更大时按像素数比例放大，
+    // 避免对大图严重低估。体积近似线性于像素数，比例缩放是合理近似。
+    if (m_lastSourceSize.isValid() && !m_lastImage.isNull()) {
+        const double origPixels = double(m_lastSourceSize.width()) * m_lastSourceSize.height();
+        const double previewPixels = double(m_lastImage.width()) * m_lastImage.height();
+        if (previewPixels > 0 && origPixels > previewPixels)
+            bytes = qRound64(bytes * (origPixels / previewPixels));
+    }
     m_compressEstimateLabel->setText(
         tr("Estimated size: %1").arg(FileUtils::formatFileSize(bytes)));
 }
@@ -2161,6 +2478,9 @@ void PropertyPanel::onEditToolChanged(int index)
     m_editFilterType->setEnabled(isFilter);
     if (m_editFilterType->parentWidget())
         m_editFilterType->parentWidget()->setEnabled(isFilter);
+    m_editFilterStrength->setEnabled(isFilter);
+    if (m_editFilterStrength->parentWidget())
+        m_editFilterStrength->parentWidget()->setEnabled(isFilter);
     m_editMosaicStyle->setEnabled(isMosaic);
     if (m_editMosaicStyle->parentWidget())
         m_editMosaicStyle->parentWidget()->setEnabled(isMosaic);
@@ -2180,6 +2500,10 @@ void PropertyPanel::onEditToolChanged(int index)
     if (m_editFontSize->parentWidget())
         m_editFontSize->parentWidget()->setEnabled(isText);
     m_editFontBold->setEnabled(isText);
+    if (m_editTextBackground)
+        m_editTextBackground->setEnabled(isText);
+    if (m_editCropAspectLock)
+        m_editCropAspectLock->setEnabled(tool == EditToolType::Crop);
     if (m_editTextColorBtn && m_editTextColorBtn->parentWidget())
         m_editTextColorBtn->parentWidget()->setEnabled(isText);
     m_editLineWidth->setEnabled(!isFilter && !isMosaic && !isText);

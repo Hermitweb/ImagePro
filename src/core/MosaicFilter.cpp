@@ -151,7 +151,9 @@ QImage applyBlurMosaic(const QImage& src, const QRect& rect, int size)
     QImage region = src.copy(x0, y0, w, h).convertToFormat(QImage::Format_ARGB32);
     QImage blurred(w, h, QImage::Format_ARGB32);
 
-    const int r = qBound(1, size / 2, 20);
+    // 毛玻璃半径上限从 20 放宽到 60：用户调大马赛克块时希望模糊同步加深，
+    // 旧钳制让大块马赛克下毛玻璃效果几乎不可见。
+    const int r = qBound(1, size / 2, 60);
     for (int y = 0; y < h; ++y) {
         QRgb* out = reinterpret_cast<QRgb*>(blurred.scanLine(y));
         for (int x = 0; x < w; ++x) {

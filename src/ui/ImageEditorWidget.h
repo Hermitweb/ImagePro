@@ -33,6 +33,9 @@ public:
     void rotateRight();
     void resetTransform();
 
+    /** 裁剪比例锁：开启后拖拽角部手柄保持宽高比。 */
+    void setCropAspectLocked(bool locked) { m_cropAspectLocked = locked; }
+
     QImage renderedImage() const;
     QList<EditAction> history() const { return m_history; }
 
@@ -71,6 +74,7 @@ private:
     EditAction m_currentTemplate;
     EditAction m_currentAction;
     bool m_drawing = false;
+    bool m_cropAspectLocked = false;
     SelectionState m_selection;
     QList<EditAction> m_history;
     int m_historyIndex = -1;

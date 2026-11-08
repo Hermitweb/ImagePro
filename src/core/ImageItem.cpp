@@ -7,6 +7,25 @@
 
 namespace yingtu {
 
+namespace {
+
+// 每个条目允许缓存的缩略图尺寸数上限。当前全应用只用 240 一种尺寸；
+// 上限是防御性的——若将来出现多尺寸请求（列表/状态栏/导出预览），
+// 缓存也不会随尺寸数量线性膨胀。
+constexpr int kMaxThumbnailSizesPerItem = 3;
+
+template <typename Cache>
+void trimThumbnailCache(Cache& cache, int incomingSize)
+{
+    if (cache.contains(incomingSize) || cache.size() < kMaxThumbnailSizesPerItem)
+        return;
+    // 超限时整体清空重建：多尺寸并存目前只是理论场景，
+    // 与其维护 LRU 结构，不如直接丢弃（重新解码由异步管线兜底）。
+    cache.clear();
+}
+
+} // namespace
+
 ImageItem::ImageItem(const QString& filePath, bool loadInfoImmediately)
     : m_id(QUuid::createUuid().toString(QUuid::WithoutBraces)), m_filePath(filePath),
       m_loadState(LoadState::Loading)
@@ -94,6 +113,7 @@ void ImageItem::setThumbnail(const QPixmap& pixmap)
 
 void ImageItem::setThumbnail(int size, const QPixmap& pixmap)
 {
+    trimThumbnailCache(m_thumbnailCache, size);
     m_thumbnailCache.insert(size, pixmap);
 }
 
@@ -102,6 +122,8 @@ void ImageItem::setDecodedThumbnail(int size, const QImage& image)
     if (image.isNull())
         return;
     // 原始解码结果单独缓存：旋转/翻转后只需重新变换，不必重新解码文件。
+    trimThumbnailCache(m_rawThumbnailCache, size);
+    trimThumbnailCache(m_thumbnailCache, size);
     m_rawThumbnailCache.insert(size, image);
     // 必须先应用旋转/翻转再入缓存：thumbnail() 命中缓存时不会再做变换，
     // 否则对已旋转/翻转的图片，异步加载完成会把未变换的缩略图写进缓存，

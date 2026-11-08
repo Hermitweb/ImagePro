@@ -2,10 +2,17 @@
 #include "utils/ErrorHandler.h"
 #include "utils/FileUtils.h"
 #include "utils/ImageLoader.h"
+#include "utils/ImageTaskPools.h"
 #include <QColorSpace>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QFutureSynchronizer>
+#include <QMutex>
+#include <QThreadPool>
+#include <QtConcurrent/QtConcurrentRun>
+
+#include <atomic>
 
 namespace yingtu {
 
@@ -83,21 +90,28 @@ QStringList ConvertEngine::process(const QStringList& filePaths, bool* ok)
         return QStringList();
     }
 
-    QStringList outputPaths;
-    int total = filePaths.size();
+    const int total = filePaths.size();
+
+    // 阶段 1（串行）：规划输出路径并原子占位。占位必须按输入顺序进行，
+    // 同名文件才能依次拿到 -001/-002 候选名。
+    struct ConvertJob {
+        QString path;
+        QString outputPath;
+        bool reserved = false;
+    };
+    QList<ConvertJob> jobs;
+    jobs.reserve(total);
     for (int i = 0; i < total; ++i) {
         const QString& path = filePaths.at(i);
         QFileInfo fi(path);
 
         if (!fi.exists()) {
             ErrorHandler::instance().report(ErrorCode::FILE_NOT_FOUND, path);
-            emit progress(qRound((i + 1) * 100.0 / total));
+            jobs.append({path, QString(), false});
             continue;
         }
 
         QString outputPath;
-        // reserved 表示该路径由本函数原子占位（而非用户显式指定），
-        // 写入失败时才可以安全地清理占位文件。
         bool reserved = false;
         if (!m_settings.explicitOutputPath.isEmpty() && filePaths.size() == 1) {
             outputPath = m_settings.explicitOutputPath;
@@ -111,18 +125,53 @@ QStringList ConvertEngine::process(const QStringList& filePaths, bool* ok)
             reserved = !outputPath.isEmpty();
         }
 
-        if (outputPath.isEmpty()) {
+        if (outputPath.isEmpty())
             ErrorHandler::instance().report(ErrorCode::PERMISSION_DENIED, fi.absolutePath());
-        } else if (convertSingle(path, outputPath)) {
-            outputPaths.append(outputPath);
+        jobs.append({path, outputPath, reserved});
+    }
+
+    // 阶段 2（受控并行）：文件级并发转换。此前逐个串行，100 张大图时 CPU
+    // 大部分时间在等单条 vips 管线。独立本地池限制并发数，与缩略图/预览互不抢占。
+    QThreadPool batchPool;
+    batchPool.setMaxThreadCount(ImageTaskPools::batchFileConcurrency());
+
+    QList<QString> outputs;
+    for (int i = 0; i < total; ++i)
+        outputs.append(QString());
+    std::atomic<int> completed{0};
+    QMutex progressMutex;
+
+    auto runJob = [this, &jobs, &outputs, &completed, &progressMutex, total](int idx) {
+        const ConvertJob& job = jobs.at(idx);
+        if (job.outputPath.isEmpty() || cancelRequested()) {
+            // 已取消/无效：不计入输出，但仍计入进度让进度条走到 100%。
+        } else if (convertSingle(job.path, job.outputPath)) {
+            outputs[idx] = job.outputPath;
         } else {
             // 写入失败：清理占位文件，避免留下 0 字节的「假成功」产物。
-            if (reserved)
-                FileUtils::discardReservedPath(outputPath);
-            ErrorHandler::instance().report(ErrorCode::WRITE_FAILED, path);
+            if (job.reserved)
+                FileUtils::discardReservedPath(job.outputPath);
+            ErrorHandler::instance().report(ErrorCode::WRITE_FAILED, job.path);
         }
 
-        emit progress(qRound((i + 1) * 100.0 / total));
+        // 锁内发进度：保证事件按完成顺序到达 GUI，百分比不回跳。
+        const int done = ++completed;
+        QMutexLocker lock(&progressMutex);
+        emit progress(qRound(done * 100.0 / total));
+    };
+
+    {
+        QFutureSynchronizer<void> sync;
+        for (int i = 0; i < total; ++i)
+            sync.addFuture(QtConcurrent::run(&batchPool, runJob, i));
+        sync.waitForFinished();
+    }
+
+    QStringList outputPaths;
+    outputPaths.reserve(total);
+    for (const QString& p : outputs) {
+        if (!p.isEmpty())
+            outputPaths.append(p);
     }
 
     if (ok)

@@ -79,3 +79,8 @@ backups/
 
 # ── 第三方依赖（体积大，单独安装）──────────────────────────────
 third_party/
+
+# 本地工具状态与探针临时输出
+.mimosa/
+.zcode/
+probe-result-*.txt

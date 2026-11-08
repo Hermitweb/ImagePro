@@ -2,7 +2,14 @@
 #include "utils/ErrorHandler.h"
 #include "utils/FileUtils.h"
 #include "utils/ImageLoader.h"
+#include "utils/ImageTaskPools.h"
 #include <QFileInfo>
+#include <QFutureSynchronizer>
+#include <QMutex>
+#include <QThreadPool>
+#include <QtConcurrent/QtConcurrentRun>
+
+#include <atomic>
 
 namespace yingtu {
 
@@ -18,23 +25,49 @@ QStringList ResizeEngine::process(const QStringList& filePaths, bool* ok)
         return QStringList();
     }
 
-    QStringList outputPaths;
-    int total = filePaths.size();
-    for (int i = 0; i < total; ++i) {
-        const QString& path = filePaths.at(i);
+    const int total = filePaths.size();
+
+    // 受控并行：独立本地池限并发（说明见 ConvertEngine::process）。
+    QThreadPool batchPool;
+    batchPool.setMaxThreadCount(ImageTaskPools::batchFileConcurrency());
+
+    QList<QString> outputs;
+    for (int i = 0; i < total; ++i)
+        outputs.append(QString());
+    std::atomic<int> completed{0};
+    QMutex progressMutex;
+
+    auto runJob = [this, &filePaths, &outputs, &completed, &progressMutex, total](int idx) {
+        const QString& path = filePaths.at(idx);
         if (!QFileInfo::exists(path)) {
             ErrorHandler::instance().report(ErrorCode::FILE_NOT_FOUND, path);
-            emit progress(qRound((i + 1) * 100.0 / total));
-            continue;
+        } else if (cancelRequested()) {
+            // 已取消：不计入输出，仍计入进度让进度条走完。
+        } else {
+            QString out = processSingle(path);
+            if (!out.isEmpty())
+                outputs[idx] = out;
+            else
+                ErrorHandler::instance().report(ErrorCode::WRITE_FAILED, path);
         }
 
-        QString out = processSingle(path);
-        if (!out.isEmpty()) {
-            outputPaths.append(out);
-        } else {
-            ErrorHandler::instance().report(ErrorCode::WRITE_FAILED, path);
-        }
-        emit progress(qRound((i + 1) * 100.0 / total));
+        const int done = ++completed;
+        QMutexLocker lock(&progressMutex);
+        emit progress(qRound(done * 100.0 / total));
+    };
+
+    {
+        QFutureSynchronizer<void> sync;
+        for (int i = 0; i < total; ++i)
+            sync.addFuture(QtConcurrent::run(&batchPool, runJob, i));
+        sync.waitForFinished();
+    }
+
+    QStringList outputPaths;
+    outputPaths.reserve(total);
+    for (const QString& p : outputs) {
+        if (!p.isEmpty())
+            outputPaths.append(p);
     }
 
     if (ok)

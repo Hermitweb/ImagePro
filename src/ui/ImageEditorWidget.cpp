@@ -188,24 +188,20 @@ void ImageEditorWidget::mousePressEvent(QMouseEvent* event)
 
     QPointF pos = mapToImage(event->pos());
 
-    // Filter tool applies immediately on click
+    // Filter 工具同样走拖拽画框流程（区域滤镜）；在空白处单击（未拖出
+    // 有效矩形）时，finishCurrentAction 会把零尺寸 bounds 解释为全图应用 ——
+    // 保留旧行为，同时新增区域能力。
     if (m_currentTemplate.toolType == EditToolType::Filter) {
         m_selection.selectedActionId.clear();
         emit selectionChanged(QString());
 
-        EditAction filterAction = m_currentTemplate;
-        filterAction.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
-        filterAction.timestamp = QDateTime::currentDateTime();
-        filterAction.bounds = QRectF(pos, QSizeF(0, 0));
-        m_engine.addAction(filterAction);
-        emit actionAdded(filterAction);
-
-        while (m_history.size() > m_historyIndex + 1)
-            m_history.removeLast();
-        m_history.append(filterAction);
-        m_historyIndex = m_history.size() - 1;
-        emit historyChanged(m_history, m_historyIndex);
-        updateCanvas();
+        m_currentAction = m_currentTemplate;
+        m_currentAction.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        m_currentAction.timestamp = QDateTime::currentDateTime();
+        m_currentAction.points.append(pos);
+        m_currentAction.bounds = QRectF(pos, QSizeF(0, 0));
+        m_drawing = true;
+        update();
         return;
     }
 
@@ -259,6 +255,25 @@ void ImageEditorWidget::mouseMoveEvent(QMouseEvent* event)
 
             if (m_selection.activeHandle == -1) {
                 a.bounds = m_selection.originalBounds.translated(delta);
+            } else if (a.toolType == EditToolType::Crop && m_cropAspectLocked &&
+                       (m_selection.activeHandle == 0 || m_selection.activeHandle == 2 ||
+                        m_selection.activeHandle == 5 || m_selection.activeHandle == 7)) {
+                // 角部手柄 + 比例锁：以被拖角为锚，按原 bounds 宽高比重建矩形。
+                const QRectF orig = m_selection.originalBounds;
+                const double aspect =
+                    orig.height() > 0 ? orig.width() / orig.height() : 1.0;
+                const bool topLeftAnchor =
+                    (m_selection.activeHandle == 2 || m_selection.activeHandle == 5);
+                const bool topAnchor =
+                    (m_selection.activeHandle == 2 || m_selection.activeHandle == 0);
+                const bool leftAnchor =
+                    (m_selection.activeHandle == 0 || m_selection.activeHandle == 5);
+                const double w = qMax(8.0, qAbs(pos.x() - (topLeftAnchor ? orig.right() : orig.left())));
+                double h = w / aspect;
+                QRectF b(QPointF(0, 0), QSizeF(w, h));
+                b.moveLeft(leftAnchor ? orig.right() - w : orig.left());
+                b.moveTop(topAnchor ? orig.bottom() - h : orig.top());
+                a.bounds = b;
             } else {
                 QRectF b = m_selection.originalBounds;
                 switch (m_selection.activeHandle) {
@@ -635,6 +650,13 @@ void ImageEditorWidget::finishCurrentAction()
         QRect textRect =
             fm.boundingRect(QRect(), Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap, text);
         m_currentAction.bounds = QRectF(m_currentAction.points.first(), textRect.size());
+    }
+
+    // 区域滤镜：空白处单击（未拖出有效矩形）→ 退回旧行为，作用于全图。
+    if (m_currentAction.toolType == EditToolType::Filter &&
+        (m_currentAction.bounds.width() <= 2 || m_currentAction.bounds.height() <= 2)) {
+        m_currentAction.bounds = QRectF(0, 0, m_engine.baseImage().width(),
+                                        m_engine.baseImage().height());
     }
 
     m_engine.addAction(m_currentAction);

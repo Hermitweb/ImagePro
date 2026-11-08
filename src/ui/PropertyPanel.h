@@ -14,6 +14,8 @@
 #include "utils/StitchPreset.h"
 #include <QWidget>
 
+#include <atomic>
+
 class QAbstractButton;
 class QButtonGroup;
 class QCheckBox;
@@ -36,6 +38,7 @@ class QToolButton;
 namespace yingtu {
 
 class ImageListModel;
+class OutputSettingsSection;
 
 class PropertyPanel : public QWidget
 {
@@ -52,9 +55,19 @@ public:
     CompressSettings compressSettings() const;
     WatermarkSettings watermarkSettings() const;
     EditAction currentEditAction() const;
+    /** 编辑结果的保存质量（编辑面板可调）。 */
+    int editQuality() const;
     ResizeSettings resizeSettings() const;
     PdfSettings pdfSettings() const;
     QString outputFileNameTemplate() const;
+    /** 最近使用的输出目录（跨工具共享历史的第一项；无历史时为空串）。 */
+    QString recentOutputDirectory() const;
+
+    /**
+     * 显示当前选中图片的信息（EXIF 异步读取，过期请求自动丢弃）。
+     * 空路径清空显示。
+     */
+    void showImageInfo(const QString& filePath);
 
     struct BatchSettings {
         ToolType targetTool = ToolType::Convert;
@@ -62,7 +75,7 @@ public:
     };
     BatchSettings batchSettings() const;
 
-    void updatePreview(const QImage& image);
+    void updatePreview(const QImage& image, const QSize& sourceSize = QSize());
     /**
      * 刷新拼接输出文件名的预览标签。
      * 完整文本放进 tooltip，标签内按可用宽度做中间省略。
@@ -79,6 +92,8 @@ signals:
     void settingsChanged();
     void previewRequested();
     void processRequested();
+    /** 裁剪比例锁状态变化（MainWindow 转发给编辑器）。 */
+    void cropAspectLockChanged(bool locked);
     void editUndoRequested();
     void editRedoRequested();
     void editClearRequested();
@@ -101,9 +116,9 @@ private slots:
     void onStitchCategoryChanged(int index);
     void onStitchPresetChanged(int index);
     void onStitchAddPreset();
+    void onStitchDeletePreset();
     void onStitchBgColorClicked();
     void onStitchOutputDirChanged();
-    void onStitchCreateOutputDir();
     void onStitchFileNameTemplateChanged();
     void onStitchOutputFormatChanged(int index);
     void onStitchDirectionChanged(int index);
@@ -153,6 +168,11 @@ private:
     QWidget* createFormRow(const QString& label, QWidget* widget);
     QWidget* createFormRow(const QString& label, QWidget* widget, QWidget*& rowStorage);
 
+    /** 主按钮的文案随工具变化（开始拼接/开始转换/…）。 */
+    QString actionButtonText(ToolType tool) const;
+    /** 批处理参数摘要：实时显示目标工具面板将应用的参数。 */
+    void updateBatchSummary();
+
     void loadResizePresetCategories();
     void loadResizePresetsByCategory();
     void applyResizePreset(const ResizePreset& preset);
@@ -162,6 +182,7 @@ private:
     void applyStitchPreset(const StitchPreset& preset);
     void selectStitchPresetById(const QString& presetId);
     void clearStitchPresetSelection();
+    void updateStitchPresetButtons();
     void refreshStitchPresetAvailability();
     void rebuildStitchPresetDropdown();
     QString stitchPresetDisplayText(const StitchPreset& preset) const;
@@ -207,19 +228,14 @@ private:
 
     QComboBox* m_stitchPresetCategory = nullptr;
     QComboBox* m_stitchPreset = nullptr;
+    QPushButton* m_stitchPresetDeleteBtn = nullptr;
     QList<StitchPreset> m_stitchPresets;
     QString m_currentStitchPresetId;
     bool m_applyingStitchPreset = false;
     bool m_rebuildingStitchPresets = false;
 
-    QComboBox* m_stitchOutputDir = nullptr;
-    QPushButton* m_stitchOutputBrowseBtn = nullptr;
-    QPushButton* m_stitchOutputCreateBtn = nullptr;
-    QLineEdit* m_stitchFileNameTemplate = nullptr;
-    QLabel* m_stitchFileNamePreview = nullptr;
-    // 拼接文件名的完整文本（标签里显示的是按宽度省略后的版本）。
-    QString m_stitchFileNamePreviewFull;
-    QLabel* m_stitchValidationLabel = nullptr;
+    // 拼接输出段（目录+模板+校验统一放在 OutputSettingsSection 里）
+    OutputSettingsSection* m_stitchOutputSection = nullptr;
 
     // Convert
     QComboBox* m_convertFormat = nullptr;
@@ -229,6 +245,7 @@ private:
     QCheckBox* m_convertToSRgb = nullptr;
     QLabel* m_convertEstimateLabel = nullptr;
     QTimer* m_convertEstimateTimer = nullptr;
+    OutputSettingsSection* m_convertOutputSection = nullptr;
 
     // Compress
     QComboBox* m_compressMode = nullptr;
@@ -239,12 +256,14 @@ private:
     QComboBox* m_compressTargetUnit = nullptr;
     QLabel* m_compressEstimateLabel = nullptr;
     QCheckBox* m_compressShowOriginal = nullptr;
+    OutputSettingsSection* m_compressOutputSection = nullptr;
+    QComboBox* m_compressOutputFormat = nullptr;
 
     // Watermark
     QComboBox* m_watermarkType = nullptr;
     QLineEdit* m_watermarkText = nullptr;
     QLineEdit* m_watermarkImagePath = nullptr;
-    QComboBox* m_watermarkFontFamily = nullptr;
+    QSpinBox* m_watermarkImageScale = nullptr;    QComboBox* m_watermarkFontFamily = nullptr;
     QSpinBox* m_watermarkFontSize = nullptr;
     QPushButton* m_watermarkColorBtn = nullptr;
     QColor m_watermarkColor = Qt::white;
@@ -256,11 +275,12 @@ private:
     QSpinBox* m_watermarkMargin = nullptr;
     QComboBox* m_watermarkOutputFormat = nullptr;
     QSlider* m_watermarkQuality = nullptr;
-    QLineEdit* m_watermarkOutputDir = nullptr;
+    OutputSettingsSection* m_watermarkOutputSection = nullptr;
 
     // Edit
     QComboBox* m_editTool = nullptr;
     QComboBox* m_editFilterType = nullptr;
+    QSlider* m_editFilterStrength = nullptr;
     QComboBox* m_editMosaicStyle = nullptr;
     QSpinBox* m_editMosaicSize = nullptr;
     QComboBox* m_editColor = nullptr;
@@ -269,10 +289,13 @@ private:
     QComboBox* m_editFontFamily = nullptr;
     QSpinBox* m_editFontSize = nullptr;
     QCheckBox* m_editFontBold = nullptr;
+    QCheckBox* m_editTextBackground = nullptr;
+    QCheckBox* m_editCropAspectLock = nullptr;
     QPushButton* m_editTextColorBtn = nullptr;
     QColor m_editTextColor = Qt::red;
     QComboBox* m_editFillStyle = nullptr;
     QListWidget* m_editHistoryList = nullptr;
+    QSpinBox* m_editQuality = nullptr;
     QPushButton* m_editUndoBtn = nullptr;
     QPushButton* m_editRedoBtn = nullptr;
     QPushButton* m_editClearBtn = nullptr;
@@ -293,17 +316,21 @@ private:
     QPushButton* m_resizeDeletePresetBtn = nullptr;
     QComboBox* m_resizeOutputFormat = nullptr;
     QSlider* m_resizeQuality = nullptr;
-    QLineEdit* m_resizeOutputDir = nullptr;
+    OutputSettingsSection* m_resizeOutputSection = nullptr;
     QTimer* m_resizeDelayTimer = nullptr;
     QList<ResizePreset> m_resizePresets;
     bool m_resizeUpdating = false;
 
     // Batch
     QComboBox* m_batchTargetTool = nullptr;
-    QLineEdit* m_batchOutputDir = nullptr;
+    OutputSettingsSection* m_batchOutputSection = nullptr;
+    QLabel* m_batchSummary = nullptr;
 
     // PDF
     QComboBox* m_pdfPageSize = nullptr;
+    QWidget* m_pdfCustomSizeRow = nullptr;
+    QDoubleSpinBox* m_pdfCustomWidth = nullptr;
+    QDoubleSpinBox* m_pdfCustomHeight = nullptr;
     QComboBox* m_pdfLayout = nullptr;
     QSpinBox* m_pdfDpi = nullptr;
     QDoubleSpinBox* m_pdfMarginLeft = nullptr;
@@ -314,8 +341,16 @@ private:
 
     // Shared
     QImage m_lastImage;
+    QSize m_lastSourceSize; // 当前预览对应的原图尺寸（估算用，预览图被降采样过）
     ImageListModel* m_imageModel = nullptr;
+    // 图片信息段（EXIF 异步读取）
+    CollapsibleSection* m_infoSection = nullptr;
+    QLabel* m_infoText = nullptr;
+    QString m_infoPath;
+    std::atomic<int> m_infoGeneration{0};
     QStringList m_outputHistory;
+    // 全部工具的输出段：最近目录历史跨工具共享，任一处选择都对其它面板可见。
+    QList<OutputSettingsSection*> m_outputSections;
     bool m_validationEnabled = true;
     bool m_initializing = true;
     bool m_validating = false;

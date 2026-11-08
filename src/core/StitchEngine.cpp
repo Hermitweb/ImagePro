@@ -4,6 +4,7 @@
 #include "utils/ImageLoader.h"
 #include <QDir>
 #include <QPainter>
+#include <QtMath>
 #include <QtConcurrent/QtConcurrentRun>
 
 #ifdef USE_LIBVIPS
@@ -96,8 +97,34 @@ static VipsImage* loadVipsImage(const QString& path)
 {
     // 拼接需要对多张图进行 resize/insert 组合，后续 vips_insert 评估管线时
     // 会多次读取输入；SEQUENTIAL 在此场景下会导致崩溃或读取失败，改用 RANDOM。
-    return vips_image_new_from_file(path.toUtf8().constData(), "access", VIPS_ACCESS_RANDOM,
-                                    nullptr);
+    // EXIF 方向在此转正（vips_thumbnail 路径自带方向处理，无需重复）。
+    VipsImage* image = vips_image_new_from_file(path.toUtf8().constData(), "access",
+                                                VIPS_ACCESS_RANDOM, nullptr);
+    if (!image)
+        return nullptr;
+    VipsImage* rotated = nullptr;
+    if (vips_autorot(image, &rotated, nullptr) == 0 && rotated) {
+        g_object_unref(image);
+        return rotated;
+    }
+    vips_error_clear();
+    return image;
+}
+
+static VipsImage* loadVipsImageShrunk(const QString& path, int targetLongEdge)
+{
+    // 带缩放目标的加载：vips_thumbnail 在解码阶段就缩减（JPEG/WebP 走
+    // shrink-on-load，DCT 域直接跳过大部分系数），输入像素量从「原图全量」
+    // 降到「目标尺寸」——100 张 12MP 纵拼（统一宽度）的解码内存从 GB 级
+    // 降到目标宽度级别。targetLongEdge <= 0 表示该输入不缩放，保持原样。
+    if (targetLongEdge <= 0)
+        return loadVipsImage(path);
+
+    VipsImage* thumb = nullptr;
+    if (vips_thumbnail(path.toUtf8().constData(), &thumb, targetLongEdge, "size",
+                       VIPS_SIZE_DOWN, nullptr))
+        return loadVipsImage(path); // thumbnail 失败回退为全尺寸加载
+    return thumb;
 }
 
 static VipsImage* resizeVipsImage(VipsImage* in, int targetW, int targetH, bool keepAspect)
@@ -239,19 +266,41 @@ static QList<VipsImageInfo> loadAndPrepareImages(const QStringList& filePaths,
     }
 
     for (int i = 0; i < filePaths.size(); ++i) {
-        VipsImage* img = loadVipsImage(filePaths.at(i));
-        if (!img)
-            continue;
-
         const QSize orig = originalSizes.at(i);
         const QSize limited = displaySizes.at(i);
-        if (orig.isEmpty() || limited.isEmpty()) {
-            g_object_unref(img);
+        if (orig.isEmpty() || limited.isEmpty())
             continue;
-        }
 
         int displayW = limited.width();
         int displayH = limited.height();
+
+        // 该输入的最终长边（在解码前就能从头信息算出）：据此用
+        // vips_thumbnail 做 shrink-on-load，避免「全量解码 → 立刻缩小」
+        // 的内存浪费。0 表示这条输入不会缩放。
+        int targetLongEdge = 0;
+        if (settings.direction == StitchSettings::Vertical && settings.uniformWidth &&
+            targetCellW > 0) {
+            const int finalH =
+                qRound(orig.height() * (static_cast<double>(targetCellW) / orig.width()));
+            targetLongEdge = qMax(targetCellW, finalH);
+        } else if (settings.direction == StitchSettings::Horizontal && settings.uniformHeight &&
+                   targetCellH > 0) {
+            const int finalW =
+                qRound(orig.width() * (static_cast<double>(targetCellH) / orig.height()));
+            targetLongEdge = qMax(finalW, targetCellH);
+        } else if (settings.direction == StitchSettings::Grid && targetCellW > 0 &&
+                   targetCellH > 0) {
+            const double scale =
+                qMin(static_cast<double>(targetCellW) / orig.width(),
+                     static_cast<double>(targetCellH) / orig.height());
+            targetLongEdge = qRound(qMax(orig.width(), orig.height()) * scale);
+        } else if (maxLongEdge > 0 && (orig.width() != displayW || orig.height() != displayH)) {
+            targetLongEdge = qMax(displayW, displayH);
+        }
+
+        VipsImage* img = loadVipsImageShrunk(filePaths.at(i), targetLongEdge);
+        if (!img)
+            continue;
 
         VipsImage* scaled = img;
         if (settings.direction == StitchSettings::Vertical && settings.uniformWidth &&
@@ -503,6 +552,25 @@ static QImage vipsStitchPreview(const QStringList& filePaths, const StitchSettin
     if (!stitched)
         return QImage();
 
+    // 输出像素护栏：maxLongEdge 只限制单张输入，100 张纵拼的输出仍可达
+    // 数亿像素（3840 × N×高）。stitched 是惰性管线，求值前就能读到宽高 ——
+    // 超限先整体降采样，再物化为 QImage（上限 64MP ≈ 256MB ARGB）。
+    constexpr qint64 kMaxPreviewOutputPixels = 64'000'000LL;
+    const qint64 outPixels = static_cast<qint64>(vips_image_get_width(stitched)) *
+                             static_cast<qint64>(vips_image_get_height(stitched));
+    if (outPixels > kMaxPreviewOutputPixels) {
+        const double scale = qSqrt(static_cast<double>(kMaxPreviewOutputPixels) /
+                                   static_cast<double>(outPixels));
+        VipsImage* smaller = nullptr;
+        if (vips_resize(stitched, &smaller, scale, nullptr) == 0 && smaller) {
+            g_object_unref(stitched);
+            stitched = smaller;
+            // 降采样后输入矩形坐标失效，与 autoCropEdges 同款处理。
+            if (outRects)
+                outRects->clear();
+        }
+    }
+
     QImage result = ImageLoader::vipsImageToQImage(stitched);
     g_object_unref(stitched);
 
@@ -575,6 +643,13 @@ QString StitchEngine::process(const QStringList& filePaths, bool* ok)
     }
 
 #ifdef USE_LIBVIPS
+    // 已请求取消（极快路径）：在加载 100 张输入前就退出。
+    if (cancelRequested()) {
+        if (reserved)
+            FileUtils::discardReservedPath(outputPath);
+        return QString();
+    }
+
     // removeWhiteEdges 需要对单张输入图做白边裁剪，仍走 QImage 路径；
     // autoCropEdges 只需对最终结果裁剪，先走 libvips 拼接再转 QImage 裁剪；
     // 正常情况直接走 libvips 写出文件，不经过 QImage，内存最优。

@@ -23,6 +23,17 @@ struct ImageInfo {
     bool valid = false;
 };
 
+/** 常用拍摄参数摘要（图片信息面板用）。libvips 把 EXIF 平铺成 exif-ifdN-* 字段。 */
+struct ExifSummary {
+    QString camera;       // 相机型号
+    QString dateTime;     // 拍摄时间
+    QString iso;          // 感光度
+    QString exposure;     // 快门速度
+    QString aperture;     // 光圈
+    QString focalLength;  // 焦距
+    bool valid = false;   // 是否读到任何 EXIF
+};
+
 class ImageLoader
 {
 public:
@@ -33,6 +44,9 @@ public:
     static bool initialize();
 
     static ImageInfo loadInfo(const QString& filePath);
+
+    /** 读取常用 EXIF 拍摄参数（无 EXIF 或读取失败时 valid=false）。 */
+    static ExifSummary readExifSummary(const QString& filePath);
 
     /**
      * 读取图片信息，**不上报**错误码。

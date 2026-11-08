@@ -6,19 +6,30 @@
 #include <QString>
 #include <QWidget>
 
+#include <functional>
+
 namespace yingtu {
+
+/** 轻提示上的可选动作按钮（如「打开文件夹」「查看结果」）。 */
+struct ToastAction {
+    QString text;
+    std::function<void()> triggered;
+};
 
 class ToastWidget : public QWidget
 {
     Q_OBJECT
 public:
-    ToastWidget(ErrorLevel level, const QString& message, int timeoutMs, QWidget* parent = nullptr);
+    explicit ToastWidget(ErrorLevel level, const QString& message, int timeoutMs,
+                         QWidget* parent = nullptr, const ToastAction& action = {});
 
 signals:
     void closed();
 
 protected:
     void mousePressEvent(QMouseEvent* event) override;
+    void enterEvent(QEvent* event) override;
+    void leaveEvent(QEvent* event) override;
 
 private:
     void setupUI();
@@ -26,6 +37,8 @@ private:
     ErrorLevel m_level;
     QString m_message;
     int m_timeoutMs;
+    ToastAction m_action;
+    class QTimer* m_timeoutTimer = nullptr;
 };
 
 class ToastManager : public QObject
@@ -35,7 +48,10 @@ public:
     static ToastManager& instance();
 
     void show(ErrorLevel level, const QString& message, QWidget* parent = nullptr);
+    void show(ErrorLevel level, const QString& message, const ToastAction& action,
+              QWidget* parent = nullptr);
     void showInfo(const QString& message, QWidget* parent = nullptr);
+    void showInfo(const QString& message, const ToastAction& action, QWidget* parent = nullptr);
     void showWarning(const QString& message, QWidget* parent = nullptr);
     void showError(const QString& message, QWidget* parent = nullptr);
 

@@ -18,6 +18,8 @@ public:
 
     void setEmptyHint(const QString& hint);
     QModelIndexList selectedIndexes() const;
+    /** 选中并滚动到指定行（←/→ 切图用）。 */
+    void selectRow(int row);
 
     // 拼接模式：单击 toggle 选中（参与拼接），双击单张预览。
     void setStitchSelectionMode(bool enabled);
@@ -45,6 +47,8 @@ signals:
     void moveDownRequested(int row);
     void addImagesRequested();
     void clearRequested();
+    /** Ctrl+V 粘贴剪贴板图片。 */
+    void pasteRequested();
 
 protected:
     void dragEnterEvent(QDragEnterEvent* event) override;
@@ -59,11 +63,15 @@ protected:
 private slots:
     void showContextMenu(const QPoint& pos);
     void onLoadingTick();
+    /** 有加载任务时确保动画定时器在跑（thumbnailLoadStarted 触发）。 */
+    void ensureLoadingTimerRunning();
     void onScrollOrResize();
     void onModelCountChanged(int count);
 
 private:
     void updateEmptyState();
+    /** 拼接模式的语义提示条显隐与文本。 */
+    void updateStitchHint();
     void retranslateUi();
     void buildMenu(QMenu& menu, const QModelIndex& index);
     void updatePanelWidth();
@@ -73,6 +81,7 @@ private:
     ImageListModel* m_model = nullptr;
     QListView* m_view = nullptr;
     QLabel* m_emptyLabel = nullptr;
+    QLabel* m_stitchHintLabel = nullptr;
     QTimer* m_loadingTimer = nullptr;
     int m_loadingAngle = 0;
     bool m_windowFilterInstalled = false;

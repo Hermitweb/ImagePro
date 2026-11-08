@@ -1,10 +1,13 @@
 #include "FileUtils.h"
+#include <QDateTime>
 #include <QDir>
+#include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
 #include <QImageReader>
 #include <QImageWriter>
 #include <QPainter>
+#include <QRegularExpression>
 
 namespace yingtu {
 
@@ -63,6 +66,56 @@ bool FileUtils::isSupportedImage(const QString& filePath)
         return false;
     QString suffix = QFileInfo(filePath).suffix().toLower();
     return supportedImageFormats().contains(suffix);
+}
+
+QStringList FileUtils::expandToImageFiles(const QStringList& paths)
+{
+    QStringList result;
+    for (const QString& path : paths) {
+        QFileInfo info(path);
+        if (info.isDir()) {
+            // 目录递归展开（拖入文件夹此前只按文件过滤，整个目录被静默丢弃）
+            QDirIterator it(path, QDir::Files | QDir::Readable, QDirIterator::Subdirectories);
+            while (it.hasNext()) {
+                const QString f = it.next();
+                if (isSupportedImage(f))
+                    result.append(f);
+            }
+        } else if (info.isFile() && isSupportedImage(path)) {
+            result.append(path);
+        }
+    }
+    result.removeDuplicates();
+    return result;
+}
+
+QString FileUtils::applyFileNameTemplate(const QString& templ, const QString& sourceFileName,
+                                         int index, const QSize& size,
+                                         const QString& fallbackBase)
+{
+    QString result = templ;
+    const QDateTime now = QDateTime::currentDateTime();
+    result.replace(QStringLiteral("{name}"), QFileInfo(sourceFileName).completeBaseName());
+    result.replace(QStringLiteral("{ext}"), QFileInfo(sourceFileName).suffix());
+    result.replace(QStringLiteral("{time}"), now.toString(QStringLiteral("yyyyMMdd_HHmmss")));
+    result.replace(QStringLiteral("{date}"), now.toString(QStringLiteral("yyyy-MM-dd")));
+    result.replace(QStringLiteral("{index}"), QString::number(index));
+    result.replace(QStringLiteral("{size}"),
+                   QStringLiteral("%1x%2").arg(size.width()).arg(size.height()));
+    // 兼容旧中文占位符
+    result.replace(QStringLiteral("{原名}"), QFileInfo(sourceFileName).completeBaseName());
+    result.replace(QStringLiteral("{扩展}"), QFileInfo(sourceFileName).suffix());
+    result.replace(QStringLiteral("{时间}"), now.toString(QStringLiteral("yyyyMMdd_HHmmss")));
+    result.replace(QStringLiteral("{日期}"), now.toString(QStringLiteral("yyyy-MM-dd")));
+    result.replace(QStringLiteral("{序号}"), QString::number(index));
+    result.replace(QStringLiteral("{尺寸}"),
+                   QStringLiteral("%1x%2").arg(size.width()).arg(size.height()));
+    // 清理文件名非法字符
+    result.replace(QRegularExpression(QStringLiteral("[\\\\/:*?\"<>|]")), QStringLiteral("_"));
+    result = result.trimmed();
+    if (result.isEmpty())
+        result = fallbackBase;
+    return result;
 }
 
 QString FileUtils::generateUniqueOutputPath(const QString& dir, const QString& baseName,

@@ -1,67 +1,52 @@
 #include "ToolBarWidget.h"
 #include "app/ImageProApp.h"
+#include "app/ThemeManager.h"
 #include <QButtonGroup>
 #include <QCoreApplication>
 #include <QEvent>
+#include <QFile>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QPainter>
 #include <QPixmap>
 #include <QStyle>
+#include <QSvgRenderer>
 #include <QToolButton>
 #include <QVariant>
 
 namespace yingtu {
 
-static QIcon createTextIcon(const QString& text, const QColor& color = QColor(64, 158, 255))
-{
-    QPixmap pixmap(20, 20);
-    pixmap.fill(Qt::transparent);
-    QPainter painter(&pixmap);
-    painter.setRenderHint(QPainter::Antialiasing);
-    painter.setPen(color);
-    painter.setFont(QFont(QStringLiteral("Microsoft YaHei"), 12, QFont::Bold));
-    painter.drawText(pixmap.rect(), Qt::AlignCenter, text);
-    return QIcon(pixmap);
-}
-
 /**
- * 工具按钮的图标字形。
+ * 把 resources/icons/tools/ 下的线性 SVG 渲染为主题色图标。
  *
- * 中文界面用汉字（拼/转/压/水/编/尺/批），英文界面用首字母。
- * 字形本身是「图标」而不是正文，所以单独用一组 "Icon: xxx" 翻译键，
- * 源语言仍统一为英文。
+ * SVG 里用 @COLOR@ 占位（Qt 的 SVG 渲染器不支持 currentColor），
+ * 渲染时按当前主题替换为前景色；多个尺寸一次生成，保证高分屏清晰。
+ * 主题切换时由 updateToolIcons() 统一重刷。
  */
-QString ToolBarWidget::toolGlyph(ToolType tool) const
+static QIcon themedIcon(const QString& baseName)
 {
-    switch (tool) {
-    case ToolType::Stitch:
-        return tr("Icon: Stitch");
-    case ToolType::Convert:
-        return tr("Icon: Convert");
-    case ToolType::Compress:
-        return tr("Icon: Compress");
-    case ToolType::Watermark:
-        return tr("Icon: Watermark");
-    case ToolType::Edit:
-        return tr("Icon: Edit");
-    case ToolType::Resize:
-        return tr("Icon: Resize");
-    case ToolType::Batch:
-        return tr("Icon: Batch");
-    case ToolType::Pdf:
-        return tr("Icon: PDF");
-    default:
-        return QString();
-    }
-}
-
-QIcon ToolBarWidget::toolIcon(ToolType tool) const
-{
-    const QString glyph = toolGlyph(tool);
-    if (glyph.isEmpty())
+    QFile file(QStringLiteral(":/icons/icons/tools/%1.svg").arg(baseName));
+    if (!file.open(QIODevice::ReadOnly))
         return QIcon();
-    return createTextIcon(glyph);
+    const QColor color = ThemeManager::instance().isDark() ? QColor(0xE6, 0xE6, 0xE6)
+                                                           : QColor(0x1A, 0x1A, 0x1A);
+    QByteArray data = file.readAll();
+    data.replace("@COLOR@", color.name().toUtf8());
+
+    QSvgRenderer renderer(data);
+    if (!renderer.isValid())
+        return QIcon();
+
+    QIcon icon;
+    for (int size : {16, 20, 24, 32, 48}) {
+        QPixmap pixmap(size, size);
+        pixmap.fill(Qt::transparent);
+        QPainter painter(&pixmap);
+        painter.setRenderHint(QPainter::Antialiasing);
+        renderer.render(&painter, QRect(0, 0, size, size));
+        icon.addPixmap(pixmap);
+    }
+    return icon;
 }
 
 ToolBarWidget::ToolBarWidget(QWidget* parent) : QWidget(parent)
@@ -78,7 +63,7 @@ ToolBarWidget::ToolBarWidget(QWidget* parent) : QWidget(parent)
     m_addButton = new QToolButton(this);
     m_addButton->setText(tr("Add Images"));
     m_addButton->setToolTip(tr("Add Images"));
-    m_addButton->setIcon(style()->standardIcon(QStyle::SP_DialogOpenButton));
+    m_addButton->setIcon(themedIcon(QStringLiteral("tool-add")));
     m_addButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     connect(m_addButton, &QToolButton::clicked, this, &ToolBarWidget::addImagesClicked);
     layout->addWidget(m_addButton);
@@ -86,14 +71,14 @@ ToolBarWidget::ToolBarWidget(QWidget* parent) : QWidget(parent)
     m_removeButton = new QToolButton(this);
     m_removeButton->setText(tr("Remove"));
     m_removeButton->setToolTip(tr("Remove"));
-    m_removeButton->setIcon(style()->standardIcon(QStyle::SP_TrashIcon));
+    m_removeButton->setIcon(themedIcon(QStringLiteral("tool-remove")));
     connect(m_removeButton, &QToolButton::clicked, this, &ToolBarWidget::removeImageClicked);
     layout->addWidget(m_removeButton);
 
     m_clearButton = new QToolButton(this);
     m_clearButton->setText(tr("Clear"));
     m_clearButton->setToolTip(tr("Clear"));
-    m_clearButton->setIcon(style()->standardIcon(QStyle::SP_DialogResetButton));
+    m_clearButton->setIcon(themedIcon(QStringLiteral("tool-clear")));
     connect(m_clearButton, &QToolButton::clicked, this, &ToolBarWidget::clearImagesClicked);
     layout->addWidget(m_clearButton);
 
@@ -112,6 +97,51 @@ ToolBarWidget::ToolBarWidget(QWidget* parent) : QWidget(parent)
     setLayout(layout);
 
     setCurrentTool(ToolType::Stitch);
+
+    // 主题切换：所有图标按新主题前景色重新渲染。
+    connect(&ThemeManager::instance(), &ThemeManager::themeChanged, this,
+            &ToolBarWidget::updateToolIcons);
+}
+
+void ToolBarWidget::updateToolIcons()
+{
+    m_addButton->setIcon(themedIcon(QStringLiteral("tool-add")));
+    m_removeButton->setIcon(themedIcon(QStringLiteral("tool-remove")));
+    m_clearButton->setIcon(themedIcon(QStringLiteral("tool-clear")));
+    for (auto it = m_toolButtons.constBegin(); it != m_toolButtons.constEnd(); ++it)
+        it.value()->setIcon(toolIcon(static_cast<ToolType>(it.key())));
+}
+
+QString ToolBarWidget::toolIconName(ToolType tool)
+{
+    switch (tool) {
+    case ToolType::Stitch:
+        return QStringLiteral("tool-stitch");
+    case ToolType::Convert:
+        return QStringLiteral("tool-convert");
+    case ToolType::Compress:
+        return QStringLiteral("tool-compress");
+    case ToolType::Watermark:
+        return QStringLiteral("tool-watermark");
+    case ToolType::Edit:
+        return QStringLiteral("tool-edit");
+    case ToolType::Resize:
+        return QStringLiteral("tool-resize");
+    case ToolType::Batch:
+        return QStringLiteral("tool-batch");
+    case ToolType::Pdf:
+        return QStringLiteral("tool-pdf");
+    default:
+        return QString();
+    }
+}
+
+QIcon ToolBarWidget::toolIcon(ToolType tool) const
+{
+    const QString name = toolIconName(tool);
+    if (name.isEmpty())
+        return QIcon();
+    return themedIcon(name);
 }
 
 void ToolBarWidget::changeEvent(QEvent* event)

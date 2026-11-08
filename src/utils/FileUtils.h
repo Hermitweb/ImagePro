@@ -14,8 +14,26 @@ public:
     static QStringList supportedImageFormats();
     static QString imageFileFilter();
     static bool isSupportedImage(const QString& filePath);
+
+    /**
+     * 把路径列表展开为受支持的图片文件列表：目录递归展开，
+     * 文件按扩展名过滤。拖拽与「添加文件夹」共用。
+     */
+    static QStringList expandToImageFiles(const QStringList& paths);
     static QString generateUniqueOutputPath(const QString& dir, const QString& baseName,
                                             const QString& suffix);
+
+    /**
+     * 展开输出文件名模板（不含扩展名）。
+     *
+     * 占位符：{name} 源文件名 / {time} yyyyMMdd_HHmmss / {date} yyyy-MM-dd /
+     * {index} 序号 / {size} WxH / {ext} 扩展名；兼容旧中文占位符。
+     * 模板为空时回退 fallbackBase。
+     * 此前拼接面板的文件名模板只喂给预览标签，实际输出名从不使用——纯装饰。
+     */
+    static QString applyFileNameTemplate(const QString& templ, const QString& sourceFileName,
+                                         int index, const QSize& size,
+                                         const QString& fallbackBase = QStringLiteral("output"));
 
     /**
      * 原子地预留一个唯一的输出路径。

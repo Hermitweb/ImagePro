@@ -2,25 +2,43 @@
 #include "utils/ErrorHandler.h"
 #include "utils/FileUtils.h"
 #include "utils/ImageLoader.h"
+#include "utils/ImageTaskPools.h"
 #include <QDataStream>
 #include <QFileInfo>
+#include <QMutexLocker>
 #include <QMimeData>
-#include <QtConcurrent>
+#include <QPointer>
+#include <QRunnable>
+#include <QThreadPool>
 #include <QUrl>
 #include <algorithm>
 
 namespace yingtu {
+
+namespace {
+
+// 单个缩略图解码任务（工作共享：worker 从模型队列拉活直到排空）。
+class ThumbnailWorker : public QRunnable
+{
+public:
+    explicit ThumbnailWorker(ImageListModel* model) : m_model(model) { setAutoDelete(true); }
+    void run() override
+    {
+        if (auto* model = m_model.data())
+            model->drainThumbnailQueue();
+    }
+
+private:
+    QPointer<ImageListModel> m_model;
+};
+
+} // namespace
 
 ImageListModel::ImageListModel(QObject* parent) : QAbstractListModel(parent)
 {
     // 缩略图尺寸与列表单元格实际尺寸匹配（见 ImageDataTask::thumbnailSize 的说明）。
     // 原先在此硬编码 120，会让每张缩略图在绘制时被放大、列表明显模糊。
     m_thumbnailSize = 240;
-    m_imageDataWatcher = new QFutureWatcher<ImageLoadResult>(this);
-    connect(m_imageDataWatcher, &QFutureWatcher<ImageLoadResult>::resultReadyAt, this,
-            &ImageListModel::onImageDataLoaded);
-    connect(m_imageDataWatcher, &QFutureWatcher<ImageLoadResult>::finished, this,
-            &ImageListModel::processImageDataQueue);
 }
 
 int ImageListModel::rowCount(const QModelIndex& parent) const
@@ -160,30 +178,73 @@ bool ImageListModel::dropMimeData(const QMimeData* data, Qt::DropAction action, 
     if (data->hasFormat(QStringLiteral("application/x-imagepro-row"))) {
         QByteArray encoded = data->data(QStringLiteral("application/x-imagepro-row"));
         QDataStream stream(&encoded, QIODevice::ReadOnly);
-        int fromRow = -1;
-        QString id;
-        stream >> fromRow >> id;
-        if (fromRow < 0 || fromRow >= m_items.size() || m_items.at(fromRow).id() != id)
+        // 逐行读出全部被拖拽的行：此前只读第一行，多选拖动只会移动一张。
+        struct DragRow
+        {
+            int fromRow = -1;
+            QString id;
+        };
+        QList<DragRow> rows;
+        while (!stream.atEnd()) {
+            DragRow dr;
+            stream >> dr.fromRow >> dr.id;
+            if (dr.fromRow < 0 || dr.fromRow >= m_items.size() ||
+                m_items.at(dr.fromRow).id() != dr.id)
+                return false;
+            rows.append(dr);
+        }
+        if (rows.isEmpty())
             return false;
 
         int toRow = row;
         if (toRow < 0 || toRow > m_items.size())
             toRow = m_items.size();
-        if (toRow == fromRow || toRow == fromRow + 1)
-            return false;
 
-        moveItem(fromRow, toRow > fromRow ? toRow - 1 : toRow);
+        if (rows.size() == 1) {
+            const int fromRow = rows.first().fromRow;
+            if (toRow == fromRow || toRow == fromRow + 1)
+                return false;
+            moveItem(fromRow, toRow > fromRow ? toRow - 1 : toRow);
+            return true;
+        }
+
+        // 多选：按列表内的现有顺序整体搬到目标位置。
+        // 逐条 moveItem 会因行号随移动漂移而出错，直接重排一次。
+        QList<int> currentRows;
+        for (const DragRow& dr : rows) {
+            for (int i = 0; i < m_items.size(); ++i) {
+                if (m_items.at(i).id() == dr.id) {
+                    currentRows.append(i);
+                    break;
+                }
+            }
+        }
+        std::sort(currentRows.begin(), currentRows.end());
+
+        beginResetModel();
+        QList<ImageItem> moved;
+        for (int r : currentRows)
+            moved.append(m_items.at(r));
+        for (int i = currentRows.size() - 1; i >= 0; --i)
+            m_items.removeAt(currentRows.at(i));
+        int adjustedTo = toRow;
+        for (int r : currentRows) {
+            if (r < toRow)
+                --adjustedTo;
+        }
+        adjustedTo = qBound(0, adjustedTo, m_items.size());
+        for (int i = 0; i < moved.size(); ++i)
+            m_items.insert(qMin(adjustedTo + i, m_items.size()), moved.at(i));
+        endResetModel();
         return true;
     }
 
     // 外部文件拖入
     if (data->hasUrls()) {
         QStringList paths;
-        for (const QUrl& url : data->urls()) {
-            QString path = url.toLocalFile();
-            if (FileUtils::isSupportedImage(path))
-                paths.append(path);
-        }
+        for (const QUrl& url : data->urls())
+            paths.append(url.toLocalFile());
+        paths = FileUtils::expandToImageFiles(paths);
         if (!paths.isEmpty()) {
             addImages(paths);
             return true;
@@ -205,7 +266,7 @@ void ImageListModel::addImage(const QString& filePath)
     emit countChanged(m_items.size());
 
     if (m_items.size() <= s_lazyLoadThreshold)
-        loadImageDataAsync({row});
+        loadImageDataAsync({row}, false);
 }
 
 void ImageListModel::addImages(const QStringList& filePaths)
@@ -234,7 +295,7 @@ void ImageListModel::addImages(const QStringList& filePaths)
     emit countChanged(m_items.size());
 
     if (m_items.size() <= s_lazyLoadThreshold)
-        loadImageDataAsync(newRows);
+        loadImageDataAsync(newRows, false);
 }
 
 void ImageListModel::removeImage(int row)
@@ -265,11 +326,20 @@ void ImageListModel::clear()
 {
     if (m_items.isEmpty())
         return;
+    {
+        QMutexLocker lock(&m_queueMutex);
+        m_imageDataQueue.clear();
+        m_queuedIds.clear();
+        m_wantedIds.clear();
+    }
+    m_loadFailurePaths.clear();
     beginResetModel();
     m_items.clear();
     endResetModel();
     emit countChanged(0);
     emit selectionChanged();
+    // 在途 worker 会发现队列已空而退出，其结果因 id 找不到行而被丢弃，
+    // 会话随后由 onThumbnailWorkerExited 正常收尾。
 }
 
 void ImageListModel::setHidden(int row, bool hidden)
@@ -370,7 +440,7 @@ void ImageListModel::reloadItem(int row)
     m_items[row].setLoadState(ImageItem::LoadState::Loading);
     m_items[row].setThumbnail(m_thumbnailSize, QPixmap());
     emit dataChanged(index(row), index(row), {LoadStateRole, ThumbnailRole});
-    loadImageDataAsync({row});
+    loadImageDataAsync({row}, false);
 }
 
 void ImageListModel::loadVisibleRange(int firstRow, int lastRow, int buffer)
@@ -380,14 +450,69 @@ void ImageListModel::loadVisibleRange(int firstRow, int lastRow, int buffer)
     int first = qMax(0, firstRow - buffer);
     int last = qMin(m_items.size() - 1, lastRow + buffer);
     QList<int> rows;
-    for (int i = first; i <= last; ++i) {
-        if (!m_items.at(i).isValid() &&
-            m_items.at(i).loadState() == ImageItem::LoadState::Loading &&
-            !m_imageDataQueue.contains(i)) {
-            rows.append(i);
+    {
+        QMutexLocker lock(&m_queueMutex);
+        // 整体重算「想要集合」：只有当前可视窗口（+buffer）内的待加载图片
+        // 才值得解码。快速滚动时，上一窗口排队的任务开工前会发现 id 不在
+        // 集合内而跳过 —— 滚过 100 行不再产生 100 次无效解码。
+        m_wantedIds.clear();
+        for (int i = first; i <= last; ++i) {
+            if (!m_items.at(i).isValid() &&
+                m_items.at(i).loadState() == ImageItem::LoadState::Loading) {
+                m_wantedIds.insert(m_items.at(i).id());
+                rows.append(i);
+            }
         }
     }
-    loadImageDataAsync(rows);
+    loadImageDataAsync(rows, true);
+}
+
+void ImageListModel::sortByField(SortField field, Qt::SortOrder order)
+{
+    if (m_items.size() < 2)
+        return;
+
+    // 先取 key 再排序：日期字段需要现场 stat 文件，排序中不做磁盘 IO。
+    const int n = m_items.size();
+    QVector<qint64> numKeys(n, 0);
+    QVector<QString> strKeys(n);
+    for (int i = 0; i < n; ++i) {
+        const ImageItem& item = m_items.at(i);
+        switch (field) {
+        case SortField::Name:
+            strKeys[i] = item.displayName().toLower();
+            break;
+        case SortField::FileSize:
+            numKeys[i] = item.fileSize();
+            break;
+        case SortField::Date:
+            numKeys[i] = QFileInfo(item.filePath()).lastModified().toMSecsSinceEpoch();
+            break;
+        case SortField::Dimensions:
+            numKeys[i] = qint64(item.width()) * qint64(item.height());
+            break;
+        }
+    }
+
+    QVector<int> order_(n);
+    for (int i = 0; i < n; ++i)
+        order_[i] = i;
+    const bool ascending = (order == Qt::AscendingOrder);
+    std::stable_sort(order_.begin(), order_.end(),
+                     [field, ascending, &numKeys, &strKeys](int a, int b) {
+                         if (field == SortField::Name)
+                             return ascending ? strKeys[a] < strKeys[b] : strKeys[a] > strKeys[b];
+                         return ascending ? numKeys[a] < numKeys[b] : numKeys[a] > numKeys[b];
+                     });
+
+    beginResetModel();
+    QList<ImageItem> sorted;
+    sorted.reserve(n);
+    for (int idx : order_)
+        sorted.append(m_items.at(idx));
+    m_items = sorted;
+    endResetModel();
+    emit selectionChanged();
 }
 
 ImageItem* ImageListModel::itemAt(int row)
@@ -553,78 +678,101 @@ static ImageLoadResult loadImageDataTask(const ImageDataTask& task)
     return result;
 }
 
-void ImageListModel::loadImageDataAsync(const QList<int>& rows)
+void ImageListModel::loadImageDataAsync(const QList<int>& rows, bool cancelable)
 {
     if (rows.isEmpty())
         return;
 
-    // 去重合并到队列
-    for (int row : rows) {
-        if (row >= 0 && row < m_items.size() && !m_items.at(row).isValid() &&
-            m_items.at(row).loadState() == ImageItem::LoadState::Loading &&
-            !m_imageDataQueue.contains(row)) {
-            m_imageDataQueue.append(row);
-        }
-    }
-
-    if (m_imageDataWatcher->isRunning())
-        return;
-
-    processImageDataQueue();
-}
-
-void ImageListModel::processImageDataQueue()
-{
-    if (m_imageDataQueue.isEmpty()) {
-        // 队列已空且当前批次的结果都已投递（resultReadyAt 先于 finished 触发），
-        // 此时汇总上报本批次的读取失败项。
-        // 注意时机：finished 回调里 m_pendingImageDataTasks 仍持有刚完成的那一批，
-        // 不能拿它是否为空来判断「批次结束」。
-        reportCollectedLoadFailures();
-
-        if (m_pendingImageDataTasks.isEmpty()) {
-            m_imageDataLoadTotal = 0;
-            m_imageDataLoadDone = 0;
-            emit thumbnailLoadFinished();
-        }
-        return;
-    }
-
-    m_pendingImageDataTasks.clear();
-    for (int row : m_imageDataQueue) {
-        if (row >= 0 && row < m_items.size() && !m_items.at(row).isValid()) {
+    const bool sessionWasIdle = (m_imageDataLoadTotal == 0);
+    int added = 0;
+    {
+        QMutexLocker lock(&m_queueMutex);
+        for (int row : rows) {
+            if (row < 0 || row >= m_items.size() || m_items.at(row).isValid() ||
+                m_items.at(row).loadState() != ImageItem::LoadState::Loading)
+                continue;
+            const QString id = m_items.at(row).id();
+            if (m_queuedIds.contains(id))
+                continue;
             ImageDataTask task;
             task.row = row;
-            task.id = m_items.at(row).id();
+            task.id = id;
             task.path = m_items.at(row).filePath();
             task.thumbnailSize = m_thumbnailSize;
-            m_pendingImageDataTasks.append(task);
+            task.cancelable = cancelable;
+            m_imageDataQueue.append(task);
+            m_queuedIds.insert(id);
+            if (cancelable)
+                m_wantedIds.insert(id);
+            ++added;
         }
     }
-    m_imageDataQueue.clear();
-
-    if (m_pendingImageDataTasks.isEmpty()) {
-        reportCollectedLoadFailures();
-        emit thumbnailLoadFinished();
+    if (added == 0)
         return;
-    }
 
-    if (m_imageDataLoadTotal == 0)
-        m_imageDataLoadTotal = m_pendingImageDataTasks.size();
-    m_imageDataLoadDone = 0;
-    emit thumbnailLoadStarted(m_imageDataLoadTotal);
+    // total 在会话内累积：滚动期间新入队的任务也计入进度分母，
+    // 进度条随每次 progress(done,total) 自适应。
+    m_imageDataLoadTotal += added;
+    if (sessionWasIdle)
+        emit thumbnailLoadStarted(m_imageDataLoadTotal);
 
-    QFuture<ImageLoadResult> future =
-        QtConcurrent::mapped(m_pendingImageDataTasks, loadImageDataTask);
-    m_imageDataWatcher->setFuture(future);
+    pumpThumbnailQueue();
 }
 
-void ImageListModel::onImageDataLoaded(int index)
+void ImageListModel::pumpThumbnailQueue()
 {
-    if (index < 0 || index >= m_pendingImageDataTasks.size())
-        return;
+    QMutexLocker lock(&m_queueMutex);
+    const int maxWorkers = ImageTaskPools::thumbnailPool()->maxThreadCount();
+    const int want = qMin(m_imageDataQueue.size(), maxWorkers - m_activeWorkers);
+    for (int i = 0; i < want; ++i) {
+        ++m_activeWorkers;
+        ImageTaskPools::thumbnailPool()->start(new ThumbnailWorker(this));
+    }
+}
 
-    ImageLoadResult result = m_imageDataWatcher->resultAt(index);
+void ImageListModel::drainThumbnailQueue()
+{
+    // 工作共享：每个 worker 循环从队列拉活，直到排空。
+    // 并发度由 thumbnailPool 的 maxThreadCount 限制，与 libvips 内部线程
+    // 相加后总量受控（此前是 N 个 QtConcurrent worker × N/2 个 vips 线程）。
+    for (;;) {
+        ImageDataTask task;
+        bool decode = false;
+        {
+            QMutexLocker lock(&m_queueMutex);
+            if (m_imageDataQueue.isEmpty()) {
+                --m_activeWorkers;
+                QMetaObject::invokeMethod(this, &ImageListModel::onThumbnailWorkerExited,
+                                          Qt::QueuedConnection);
+                return;
+            }
+            task = m_imageDataQueue.takeFirst();
+            m_queuedIds.remove(task.id);
+            // 想要集合作废：可视范围懒加载任务已滚出窗口 → 跳过解码。
+            decode = !task.cancelable || m_wantedIds.contains(task.id);
+            if (decode)
+                ++m_inFlight;
+        }
+
+        if (decode) {
+            const ImageLoadResult result = loadImageDataTask(task);
+            QMetaObject::invokeMethod(
+                this,
+                [this, result]() { onThumbnailTaskDone(result); },
+                Qt::QueuedConnection);
+        } else {
+            QMetaObject::invokeMethod(this, &ImageListModel::onThumbnailTaskSkipped,
+                                      Qt::QueuedConnection);
+        }
+    }
+}
+
+void ImageListModel::onThumbnailTaskDone(const ImageLoadResult& result)
+{
+    {
+        QMutexLocker lock(&m_queueMutex);
+        --m_inFlight;
+    }
 
     // 按 id 而非行号定位：加载期间用户可能删除/重排图片，task 里记录的 row
     // 会失效，直接按 row 回写会把缩略图/信息写到错误的图片上。
@@ -639,31 +787,70 @@ void ImageListModel::onImageDataLoaded(int index)
     } else if (result.row >= 0 && result.row < m_items.size()) {
         row = result.row;
     }
-    if (row < 0)
-        return; // 对应图片已被移除
 
-    ImageItem& item = m_items[row];
-    // 先写缩略图再写 info：setInfo 会把条目标记为「有效」，
-    // 反过来则会出现「已有效但还没有缩略图」的中间态，
-    // 那一瞬间界面会闪出一个占位符。
-    // 用 setDecodedThumbnail：它会把旋转/翻转应用到解码结果上再入缓存，
-    // 与 ImageItem::thumbnail() 的缓存语义一致（直接存原始 pixmap 会导致
-    // 已旋转/翻转的图片显示未变换的缩略图）。
-    item.setDecodedThumbnail(m_thumbnailSize, result.thumbnail);
-    item.setInfo(result.info);
-    // 记录读取失败的项，待本轮加载结束时汇总上报（避免批量失败刷屏）。
-    if (!result.info.valid) {
-        const QString& path = item.filePath();
-        if (!path.isEmpty() && !m_loadFailurePaths.contains(path))
-            m_loadFailurePaths.append(path);
+    if (row >= 0) {
+        ImageItem& item = m_items[row];
+        // 先写缩略图再写 info：setInfo 会把条目标记为「有效」，
+        // 反过来则会出现「已有效但还没有缩略图」的中间态，
+        // 那一瞬间界面会闪出一个占位符。
+        // 用 setDecodedThumbnail：它会把旋转/翻转应用到解码结果上再入缓存，
+        // 与 ImageItem::thumbnail() 的缓存语义一致（直接存原始 pixmap 会导致
+        // 已旋转/翻转的图片显示未变换的缩略图）。
+        item.setDecodedThumbnail(m_thumbnailSize, result.thumbnail);
+        item.setInfo(result.info);
+        // 记录读取失败的项，待本轮加载结束时汇总上报（避免批量失败刷屏）。
+        if (!result.info.valid) {
+            const QString& path = item.filePath();
+            if (!path.isEmpty() && !m_loadFailurePaths.contains(path))
+                m_loadFailurePaths.append(path);
+        }
+
+        emit dataChanged(this->index(row), this->index(row),
+                         {WidthRole, HeightRole, FileSizeRole, FormatRole, ValidRole,
+                          ThumbnailRole, ResolutionRole, LoadStateRole});
     }
+    // row < 0：对应图片已被移除 —— 结果丢弃（跳过也计入进度，进度条能走完）。
+    onThumbnailTaskSettled();
+}
 
-    emit dataChanged(this->index(row), this->index(row),
-                     {WidthRole, HeightRole, FileSizeRole, FormatRole, ValidRole, ThumbnailRole,
-                      ResolutionRole, LoadStateRole});
+void ImageListModel::onThumbnailTaskSkipped()
+{
+    onThumbnailTaskSettled();
+}
 
+void ImageListModel::onThumbnailWorkerExited()
+{
+    onThumbnailTaskSettled();
+}
+
+void ImageListModel::onThumbnailTaskSettled()
+{
     ++m_imageDataLoadDone;
     emit thumbnailLoadProgress(m_imageDataLoadDone, m_imageDataLoadTotal);
+    settleThumbnailSession();
+}
+
+void ImageListModel::settleThumbnailSession()
+{
+    bool finished = false;
+    {
+        QMutexLocker lock(&m_queueMutex);
+        finished = m_imageDataQueue.isEmpty() && m_inFlight == 0 && m_activeWorkers == 0;
+    }
+    if (!finished)
+        return;
+
+    // 队列已空且所有结果都已投递：汇总上报本批次读取失败项并收尾。
+    reportCollectedLoadFailures();
+    m_imageDataLoadTotal = 0;
+    m_imageDataLoadDone = 0;
+    emit thumbnailLoadFinished();
+}
+
+bool ImageListModel::hasPendingLoads() const
+{
+    QMutexLocker lock(&m_queueMutex);
+    return !m_imageDataQueue.isEmpty() || m_inFlight > 0 || m_activeWorkers > 0;
 }
 
 void ImageListModel::reportCollectedLoadFailures()

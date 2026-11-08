@@ -134,6 +134,50 @@
         <source>Clear List</source>
         <translation>清空列表</translation>
     </message>
+    <message>
+        <source>Click images to include them in the stitch</source>
+        <translation>单击勾选参与拼接的图片</translation>
+    </message>
+    <message>
+        <source>Sort</source>
+        <translation>排序</translation>
+    </message>
+    <message>
+        <source>Name (A→Z)</source>
+        <translation>名称（A→Z）</translation>
+    </message>
+    <message>
+        <source>Name (Z→A)</source>
+        <translation>名称（Z→A）</translation>
+    </message>
+    <message>
+        <source>Size (largest first)</source>
+        <translation>大小（从大到小）</translation>
+    </message>
+    <message>
+        <source>Size (smallest first)</source>
+        <translation>大小（从小到大）</translation>
+    </message>
+    <message>
+        <source>Date (newest first)</source>
+        <translation>日期（从新到旧）</translation>
+    </message>
+    <message>
+        <source>Date (oldest first)</source>
+        <translation>日期（从旧到新）</translation>
+    </message>
+    <message>
+        <source>Dimensions (largest first)</source>
+        <translation>尺寸（从大到小）</translation>
+    </message>
+    <message>
+        <source>Dimensions (smallest first)</source>
+        <translation>尺寸（从小到大）</translation>
+    </message>
+    <message>
+        <source>Add Folder</source>
+        <translation>添加文件夹</translation>
+    </message>
 </context>
 <context>
     <name>yingtu::ImageProApp</name>
@@ -265,10 +309,6 @@ Please verify the application was deployed correctly.</source>
     <message>
         <source>Delete Current Image</source>
         <translation>删除当前图片</translation>
-    </message>
-    <message>
-        <source>Select Images</source>
-        <translation>选择图片</translation>
     </message>
     <message>
         <source>Warning</source>
@@ -560,6 +600,145 @@ Size: %2x%3</source>
         <source>About ImagePro</source>
         <translation>关于影图</translation>
     </message>
+    <message>
+        <source>Results</source>
+        <translation>结果</translation>
+    </message>
+    <message>
+        <source>Show the result of the last operation</source>
+        <translation>查看上次操作的结果</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation>取消</translation>
+    </message>
+    <message>
+        <source>%1 similar notifications were grouped</source>
+        <translation>已合并 %1 条同类提示</translation>
+    </message>
+    <message>
+        <source>Add Fol&amp;der...</source>
+        <translation>添加文件夹(&amp;D)...</translation>
+    </message>
+    <message>
+        <source>Recent &amp;Files</source>
+        <translation>最近打开(&amp;F)</translation>
+    </message>
+    <message>
+        <source>Zoom &amp;In</source>
+        <translation>放大(&amp;I)</translation>
+    </message>
+    <message>
+        <source>Zoom &amp;Out</source>
+        <translation>缩小(&amp;O)</translation>
+    </message>
+    <message>
+        <source>&amp;Actual Size</source>
+        <translation>实际大小(&amp;A)</translation>
+    </message>
+    <message>
+        <source>&amp;Fit to Window</source>
+        <translation>适应窗口(&amp;F)</translation>
+    </message>
+    <message>
+        <source>&amp;Full Screen</source>
+        <translation>全屏(&amp;F)</translation>
+    </message>
+    <message>
+        <source>Rotate &amp;Left</source>
+        <translation>向左旋转(&amp;L)</translation>
+    </message>
+    <message>
+        <source>Rotate &amp;Right</source>
+        <translation>向右旋转(&amp;R)</translation>
+    </message>
+    <message>
+        <source>Flip &amp;Horizontal</source>
+        <translation>水平翻转(&amp;H)</translation>
+    </message>
+    <message>
+        <source>Flip &amp;Vertical</source>
+        <translation>垂直翻转(&amp;V)</translation>
+    </message>
+    <message>
+        <source>&amp;Previous Image</source>
+        <translation>上一张(&amp;P)</translation>
+    </message>
+    <message>
+        <source>&amp;Next Image</source>
+        <translation>下一张(&amp;N)</translation>
+    </message>
+    <message>
+        <source>Add Images</source>
+        <translation>添加图片</translation>
+    </message>
+    <message>
+        <source>Add Folder</source>
+        <translation>添加文件夹</translation>
+    </message>
+    <message>
+        <source>No supported images found in the folder</source>
+        <translation>文件夹中未找到受支持的图片</translation>
+    </message>
+    <message>
+        <source>(empty)</source>
+        <translation>（空）</translation>
+    </message>
+    <message>
+        <source>Compare</source>
+        <translation>对比</translation>
+    </message>
+    <message>
+        <source>Show the original image side by side</source>
+        <translation>并排显示原图与处理效果</translation>
+    </message>
+    <message>
+        <source>Open</source>
+        <translation>打开</translation>
+    </message>
+    <message>
+        <source>View Results</source>
+        <translation>查看结果</translation>
+    </message>
+    <message>
+        <source>Add Folder...</source>
+        <translation>添加文件夹...</translation>
+    </message>
+</context>
+<context>
+    <name>yingtu::OutputSettingsSection</name>
+    <message>
+        <source>e.g. {name}_{index}</source>
+        <translation>例如 {name}_{index}</translation>
+    </message>
+    <message>
+        <source>File Name:</source>
+        <translation>文件名：</translation>
+    </message>
+    <message>
+        <source>Output Dir:</source>
+        <translation>输出目录：</translation>
+    </message>
+    <message>
+        <source>Browse...</source>
+        <translation>浏览...</translation>
+    </message>
+    <message>
+        <source>Select Output Directory</source>
+        <translation>选择输出目录</translation>
+    </message>
+    <message>
+        <source>Create</source>
+        <translation>创建</translation>
+    </message>
+    <message>
+        <source>Error</source>
+        <translation>错误</translation>
+    </message>
+    <message>
+        <source>Failed to create output directory.</source>
+        <translation>创建输出目录失败。</translation>
+    </message>
 </context>
 <context>
     <name>yingtu::PdfEngine</name>
@@ -570,6 +749,10 @@ Size: %2x%3</source>
     <message>
         <source>Failed to write PDF: %1</source>
         <translation>写入 PDF 失败：%1</translation>
+    </message>
+    <message>
+        <source>Export cancelled</source>
+        <translation>导出已取消</translation>
     </message>
 </context>
 <context>
@@ -633,10 +816,6 @@ Size: %2x%3</source>
 </context>
 <context>
     <name>yingtu::PropertyPanel</name>
-    <message>
-        <source>Save</source>
-        <translation>保存</translation>
-    </message>
     <message>
         <source>Vertical</source>
         <translation>纵向</translation>
@@ -702,10 +881,6 @@ Size: %2x%3</source>
         <translation>质量：</translation>
     </message>
     <message>
-        <source>&lt;b&gt;Convert Settings&lt;/b&gt;</source>
-        <translation>&lt;b&gt;转换设置&lt;/b&gt;</translation>
-    </message>
-    <message>
         <source>Target Format:</source>
         <translation>目标格式：</translation>
     </message>
@@ -716,10 +891,6 @@ Size: %2x%3</source>
     <message>
         <source>Convert to sRGB</source>
         <translation>转换为 sRGB</translation>
-    </message>
-    <message>
-        <source>&lt;b&gt;Compress Settings&lt;/b&gt;</source>
-        <translation>&lt;b&gt;压缩设置&lt;/b&gt;</translation>
     </message>
     <message>
         <source>Quality</source>
@@ -760,10 +931,6 @@ Size: %2x%3</source>
     <message>
         <source>Show Original</source>
         <translation>显示原图</translation>
-    </message>
-    <message>
-        <source>&lt;b&gt;Watermark Settings&lt;/b&gt;</source>
-        <translation>&lt;b&gt;水印设置&lt;/b&gt;</translation>
     </message>
     <message>
         <source>Text</source>
@@ -872,18 +1039,6 @@ Size: %2x%3</source>
     <message>
         <source>Output Format:</source>
         <translation>输出格式：</translation>
-    </message>
-    <message>
-        <source>Output Dir:</source>
-        <translation>输出目录：</translation>
-    </message>
-    <message>
-        <source>Select Output Directory</source>
-        <translation>选择输出目录</translation>
-    </message>
-    <message>
-        <source>&lt;b&gt;Edit Tools&lt;/b&gt;</source>
-        <translation>&lt;b&gt;编辑工具&lt;/b&gt;</translation>
     </message>
     <message>
         <source>Rectangle</source>
@@ -998,10 +1153,6 @@ Size: %2x%3</source>
         <translation>清空</translation>
     </message>
     <message>
-        <source>&lt;b&gt;Resize Settings&lt;/b&gt;</source>
-        <translation>&lt;b&gt;尺寸设置&lt;/b&gt;</translation>
-    </message>
-    <message>
         <source>Percentage</source>
         <translation>百分比</translation>
     </message>
@@ -1102,10 +1253,6 @@ Size: %2x%3</source>
         <translation>估计大小：%1</translation>
     </message>
     <message>
-        <source>&lt;b&gt;Batch Processing&lt;/b&gt;</source>
-        <translation>&lt;b&gt;批处理&lt;/b&gt;</translation>
-    </message>
-    <message>
         <source>Convert</source>
         <translation>转换</translation>
     </message>
@@ -1150,14 +1297,6 @@ Size: %2x%3</source>
         <translation>输出设置</translation>
     </message>
     <message>
-        <source>Create</source>
-        <translation>创建</translation>
-    </message>
-    <message>
-        <source>File Name:</source>
-        <translation>文件名：</translation>
-    </message>
-    <message>
         <source>Filter</source>
         <translation>滤镜</translation>
     </message>
@@ -1188,10 +1327,6 @@ Size: %2x%3</source>
     <message>
         <source>Filter:</source>
         <translation>滤镜：</translation>
-    </message>
-    <message>
-        <source>&lt;b&gt;PDF Export&lt;/b&gt;</source>
-        <translation>&lt;b&gt;PDF 导出&lt;/b&gt;</translation>
     </message>
     <message>
         <source>A4</source>
@@ -1254,14 +1389,6 @@ Size: %2x%3</source>
         <translation> [需 %1 张]</translation>
     </message>
     <message>
-        <source>Error</source>
-        <translation>错误</translation>
-    </message>
-    <message>
-        <source>Failed to create output directory.</source>
-        <translation>创建输出目录失败。</translation>
-    </message>
-    <message>
         <source>Preview: %1</source>
         <translation>预览：%1</translation>
     </message>
@@ -1300,10 +1427,6 @@ Size: %2x%3</source>
     <message>
         <source>Ready</source>
         <translation>就绪</translation>
-    </message>
-    <message>
-        <source>e.g. {name}_{index}</source>
-        <translation>例如：{name}_{index}</translation>
     </message>
     <message>
         <source>Bold</source>
@@ -1369,6 +1492,166 @@ Size: %2x%3</source>
         <source>Invert Selection</source>
         <translation>反选</translation>
     </message>
+    <message>
+        <source>Start Stitching</source>
+        <translation>开始拼接</translation>
+    </message>
+    <message>
+        <source>Start Conversion</source>
+        <translation>开始转换</translation>
+    </message>
+    <message>
+        <source>Start Compression</source>
+        <translation>开始压缩</translation>
+    </message>
+    <message>
+        <source>Add Watermark</source>
+        <translation>添加水印</translation>
+    </message>
+    <message>
+        <source>Save Edits</source>
+        <translation>保存编辑</translation>
+    </message>
+    <message>
+        <source>Start Resizing</source>
+        <translation>开始缩放</translation>
+    </message>
+    <message>
+        <source>Start Batch</source>
+        <translation>开始批处理</translation>
+    </message>
+    <message>
+        <source>Export PDF</source>
+        <translation>导出 PDF</translation>
+    </message>
+    <message>
+        <source>Start</source>
+        <translation>开始</translation>
+    </message>
+    <message>
+        <source>Convert Settings</source>
+        <translation>转换设置</translation>
+    </message>
+    <message>
+        <source>Advanced</source>
+        <translation>高级选项</translation>
+    </message>
+    <message>
+        <source>Compress Settings</source>
+        <translation>压缩设置</translation>
+    </message>
+    <message>
+        <source>Watermark Settings</source>
+        <translation>水印设置</translation>
+    </message>
+    <message>
+        <source>Edit Tools</source>
+        <translation>编辑工具</translation>
+    </message>
+    <message>
+        <source>History</source>
+        <translation>编辑历史</translation>
+    </message>
+    <message>
+        <source>Resize Settings</source>
+        <translation>缩放设置</translation>
+    </message>
+    <message>
+        <source>Resize Presets</source>
+        <translation>缩放预设</translation>
+    </message>
+    <message>
+        <source>Batch Processing</source>
+        <translation>批处理</translation>
+    </message>
+    <message>
+        <source>PDF Export</source>
+        <translation>PDF 导出</translation>
+    </message>
+    <message>
+        <source>Convert to %1, quality %2</source>
+        <translation>转换为 %1，质量 %2</translation>
+    </message>
+    <message>
+        <source>Compress (%1), target %2 KB</source>
+        <translation>压缩（%1），目标 %2 KB</translation>
+    </message>
+    <message>
+        <source>Watermark: %1</source>
+        <translation>水印：%1</translation>
+    </message>
+    <message>
+        <source>image watermark</source>
+        <translation>图片水印</translation>
+    </message>
+    <message>
+        <source>Resize to %1%</source>
+        <translation>缩放到 %1%</translation>
+    </message>
+    <message>
+        <source>Resize to %1x%2</source>
+        <translation>缩放到 %1×%2</translation>
+    </message>
+    <message>
+        <source>Parameters follow the corresponding tool panel</source>
+        <translation>参数跟随对应工具面板</translation>
+    </message>
+    <message>
+        <source>Delete Preset</source>
+        <translation>删除预设</translation>
+    </message>
+    <message>
+        <source>Watermark Size:</source>
+        <translation>水印大小：</translation>
+    </message>
+    <message>
+        <source>Save Quality:</source>
+        <translation>保存质量：</translation>
+    </message>
+    <message>
+        <source>Size (mm):</source>
+        <translation>尺寸 (mm)：</translation>
+    </message>
+    <message>
+        <source>Error</source>
+        <translation>错误</translation>
+    </message>
+    <message>
+        <source>Built-in presets cannot be deleted.</source>
+        <translation>内置预设无法删除。</translation>
+    </message>
+    <message>
+        <source>Image Info</source>
+        <translation>图片信息</translation>
+    </message>
+    <message>
+        <source>No camera information (EXIF) in this image</source>
+        <translation>此图片没有相机拍摄信息（EXIF）</translation>
+    </message>
+    <message>
+        <source>Camera: %1</source>
+        <translation>相机：%1</translation>
+    </message>
+    <message>
+        <source>Taken: %1</source>
+        <translation>拍摄时间：%1</translation>
+    </message>
+    <message>
+        <source>Exposure: %1 s  ·  f/%2  ·  ISO %3</source>
+        <translation>曝光：%1 秒 · f/%2 · ISO %3</translation>
+    </message>
+    <message>
+        <source>Focal length: %1 mm</source>
+        <translation>焦距：%1 mm</translation>
+    </message>
+    <message>
+        <source>Text Background</source>
+        <translation>文字背景框</translation>
+    </message>
+    <message>
+        <source>Lock Crop Aspect</source>
+        <translation>锁定裁剪比例</translation>
+    </message>
 </context>
 <context>
     <name>yingtu::ResizeEngine</name>
@@ -1398,6 +1681,10 @@ Size: %2x%3</source>
     <message>
         <source>Close</source>
         <translation>关闭</translation>
+    </message>
+    <message>
+        <source>Open File</source>
+        <translation>打开文件</translation>
     </message>
 </context>
 <context>
@@ -1528,38 +1815,6 @@ Size: %2x%3</source>
         <translation>清空</translation>
     </message>
     <message>
-        <source>Icon: Stitch</source>
-        <translation>拼</translation>
-    </message>
-    <message>
-        <source>Icon: Convert</source>
-        <translation>转</translation>
-    </message>
-    <message>
-        <source>Icon: Compress</source>
-        <translation>压</translation>
-    </message>
-    <message>
-        <source>Icon: Watermark</source>
-        <translation>水</translation>
-    </message>
-    <message>
-        <source>Icon: Edit</source>
-        <translation>编</translation>
-    </message>
-    <message>
-        <source>Icon: Resize</source>
-        <translation>尺</translation>
-    </message>
-    <message>
-        <source>Icon: Batch</source>
-        <translation>批</translation>
-    </message>
-    <message>
-        <source>Icon: PDF</source>
-        <translation>P</translation>
-    </message>
-    <message>
         <source>Stitch</source>
         <translation>拼接</translation>
     </message>
@@ -1590,6 +1845,38 @@ Size: %2x%3</source>
     <message>
         <source>PDF</source>
         <translation>PDF</translation>
+    </message>
+    <message>
+        <source>Icon: Stitch</source>
+        <translation>拼</translation>
+    </message>
+    <message>
+        <source>Icon: Convert</source>
+        <translation>转</translation>
+    </message>
+    <message>
+        <source>Icon: Compress</source>
+        <translation>压</translation>
+    </message>
+    <message>
+        <source>Icon: Watermark</source>
+        <translation>水</translation>
+    </message>
+    <message>
+        <source>Icon: Edit</source>
+        <translation>编</translation>
+    </message>
+    <message>
+        <source>Icon: Resize</source>
+        <translation>尺</translation>
+    </message>
+    <message>
+        <source>Icon: Batch</source>
+        <translation>批</translation>
+    </message>
+    <message>
+        <source>Icon: PDF</source>
+        <translation>P</translation>
     </message>
 </context>
 <context>

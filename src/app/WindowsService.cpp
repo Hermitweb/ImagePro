@@ -61,8 +61,16 @@ void WINAPI serviceMain(DWORD, LPWSTR*)
 
     g_service.handle = RegisterServiceCtrlHandlerExW(
         QStringLiteral("ImageProService").toStdWString().c_str(), serviceControlHandler, nullptr);
-    if (!g_service.handle)
+    if (!g_service.handle) {
+        // 注册失败必须上报 STOPPED：SCM 不会替我们兜底，缺了这一步
+        // 服务会按默认超时报 1053（服务未及时响应），排障时看到的是
+        // 「启动超时」而不是真实的注册失败。
+        g_service.status.dwCurrentState = SERVICE_STOPPED;
+        g_service.status.dwWin32ExitCode = ERROR_SERVICE_SPECIFIC_ERROR;
+        g_service.status.dwServiceSpecificExitCode = GetLastError();
+        SetServiceStatus(g_service.handle, &g_service.status);
         return;
+    }
 
     g_service.status.dwCurrentState = SERVICE_RUNNING;
     g_service.status.dwWaitHint = 0;
@@ -212,19 +220,31 @@ bool WindowsService::uninstall(const QString& serviceName, QString* errorMessage
         // ControlService 只是「请求」停止，服务进程随后才会真正退出。
         // 必须等到状态变成 SERVICE_STOPPED 再删：否则 exe 与运行库仍被占用，
         // 卸载器删不掉，$INSTDIR 整个残留。
-        const DWORD deadline = GetTickCount() + 15000;
+        //
+        // 用无符号减法判断超时：GetTickCount() 约 49.7 天回绕一次，
+        // 「deadline = now + 15000」的写法在回绕点附近会溢出，
+        // 等待循环最长要挂 49.7 天。
+        const DWORD startTick = GetTickCount();
         for (;;) {
             SERVICE_STATUS current;
             if (!QueryServiceStatus(service, &current))
                 break;
             if (current.dwCurrentState == SERVICE_STOPPED)
                 break;
-            if (GetTickCount() > deadline)
+            if (GetTickCount() - startTick >= 15000)
                 break;
             Sleep(100);
         }
     }
-    DeleteService(service);
+    if (!DeleteService(service)) {
+        // 失败要传导出去：安装器/卸载流程靠返回值判断，吞掉会把
+        // 「卸载失败」伪装成「已卸载」，残留的服务仍会随系统自启。
+        if (errorMessage)
+            *errorMessage = QStringLiteral("删除服务失败：%1").arg(lastErrorMessage());
+        CloseServiceHandle(service);
+        CloseServiceHandle(manager);
+        return false;
+    }
     CloseServiceHandle(service);
     CloseServiceHandle(manager);
 

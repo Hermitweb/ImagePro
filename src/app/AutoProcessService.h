@@ -1,12 +1,11 @@
 #pragma once
 
+#include <QHash>
 #include <QObject>
 #include <QSet>
 #include <QString>
-#include <QStringList>
 
-class QFileSystemWatcher;
-class QTimer;
+#include <atomic>
 
 namespace yingtu {
 
@@ -25,8 +24,13 @@ namespace yingtu {
  *   "deleteSource": false
  * }
  *
- * 服务用「事件 + 轮询」双通道发现新文件：QFileSystemWatcher 负责实时性，
- * 轮询负责补上服务停止期间落盘的文件。
+ * 服务用「轮询」发现新文件：每 5 秒扫描一次监视目录，文件大小连续两轮
+ * 一致才认为落盘完成（正在复制中的大文件不会被立即处理而产出损坏结果）。
+ *
+ * 为什么不用 QFileSystemWatcher + QTimer 双通道：run() 由 SCM 在
+ * ServiceMain 线程上调用，而 QObject 的事件投递只发生在对象所属线程的
+ * 事件循环里——服务模式下事件循环从未运转，定时器与目录事件全部不可达。
+ * 轮询是唯一可靠的方式，且 `enabled: false` 会直接停用处理逻辑。
  */
 class AutoProcessService : public QObject
 {
@@ -37,7 +41,7 @@ public:
     /** 运行主循环，直到收到停止请求。返回进程退出码。 */
     int run();
 
-    /** 请求停止主循环（由服务控制处理器调用）。 */
+    /** 请求停止主循环（由服务控制处理器调用，跨线程安全）。 */
     void requestStop();
 
     /** 配置文件路径。 */
@@ -60,7 +64,6 @@ private:
     Config loadConfig() const;
     void saveConfig(const Config& config) const;
 
-    void setupWatcher();
     void scanOnce();
 
     /** 处理单个文件；返回是否成功产出结果。 */
@@ -68,11 +71,11 @@ private:
 
     QString outputPathFor(const QString& path) const;
 
-    QFileSystemWatcher* m_watcher = nullptr;
-    QTimer* m_timer = nullptr;
-    QSet<QString> m_seen;
+    QSet<QString> m_seen;              // 已成功处理过的文件
+    QHash<QString, qint64> m_sizes;    // 上一轮观测到的文件大小（判断落盘稳定）
+    QHash<QString, int> m_failures;    // 连续失败次数（有上限，避免死循环刷日志）
     Config m_config;
-    bool m_stopRequested = false;
+    std::atomic<bool> m_stopRequested{false};
 };
 
 } // namespace yingtu

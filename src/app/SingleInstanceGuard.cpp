@@ -1,9 +1,11 @@
 #include "SingleInstanceGuard.h"
 #include "utils/Logger.h"
 
+#include <QFileInfo>
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QLockFile>
+#include <QMessageBox>
 #include <QStandardPaths>
 #include <QThread>
 
@@ -83,13 +85,28 @@ bool SingleInstanceGuard::tryBecomePrimary()
     m_lockFile->setStaleLockTime(0); // 只按「进程是否还活着」判定陈旧
 
     if (!m_lockFile->tryLock(0)) {
-        // 已有实例在运行：把「显示窗口」的请求发过去，然后本进程退出。
-        const bool notified = notifyExistingInstance(serverName());
-        Logger::info(
-            QStringLiteral("Another instance is already running; "
-                           "activation request %1.")
-                .arg(notified ? QStringLiteral("sent") : QStringLiteral("could not be delivered")),
-            QStringLiteral("SingleInstance"));
+        // tryLock 返回 false 的原因不止「已有实例」：Temp 目录不可写、锁文件
+        // 无权限同样返回 false。只有 LockFailedError 才能断定锁被占用；
+        // 其它错误必须让用户看到，否则应用会无提示退出、看似「点不开」。
+        if (m_lockFile->error() == QLockFile::LockFailedError) {
+            const bool notified = notifyExistingInstance(serverName());
+            Logger::info(
+                QStringLiteral("Another instance is already running; "
+                               "activation request %1.")
+                    .arg(notified ? QStringLiteral("sent") : QStringLiteral("could not be delivered")),
+                QStringLiteral("SingleInstance"));
+            return false;
+        }
+
+        // QLockFile 只提供 error() 枚举（没有 errorString），按枚举给出可读原因。
+        const QString reason = m_lockFile->error() == QLockFile::PermissionError
+                                   ? QStringLiteral("锁文件无写入权限")
+                                   : QStringLiteral("未知错误（错误码 %1）").arg(int(m_lockFile->error()));
+        const QString message = QStringLiteral("无法确认程序是否已在运行（%1）。\n"
+                                               "锁文件位置：%2")
+                                    .arg(reason, lockFilePath());
+        Logger::error(message, QStringLiteral("SingleInstance"));
+        QMessageBox::critical(nullptr, QStringLiteral("影图"), message);
         return false;
     }
     m_hasLock = true;

@@ -2,35 +2,76 @@
 #include "utils/ErrorHandler.h"
 #include "utils/FileUtils.h"
 #include "utils/ImageLoader.h"
+#include "utils/ImageTaskPools.h"
 #include "utils/Logger.h"
 #include <QBuffer>
 #include <QFileInfo>
+#include <QFutureSynchronizer>
+#include <QMutex>
+#include <QThreadPool>
+#include <QtConcurrent/QtConcurrentRun>
+
+#include <atomic>
 
 namespace yingtu {
 
 CompressEngine::CompressEngine(QObject* parent) : QObject(parent) {}
 
+int CompressEngine::effectiveQuality(const CompressSettings& settings)
+{
+    if (settings.mode == CompressMode::Quality)
+        return qBound(1, 100 - settings.strength, 100);
+    return settings.quality;
+}
+
 QList<CompressResult> CompressEngine::process(const QStringList& filePaths)
 {
-    QList<CompressResult> results;
-    int total = filePaths.size();
+    const int total = filePaths.size();
     if (total == 0) {
         ErrorHandler::instance().report(ErrorCode::EMPTY_FOLDER, tr("No images to compress"));
-        emit finished(results);
-        return results;
+        emit finished(QList<CompressResult>());
+        return QList<CompressResult>();
     }
-    for (int i = 0; i < total; ++i) {
-        CompressResult result = compressSingle(filePaths.at(i));
-        if (!result.success) {
-            // 压缩引擎没有 error 信号，结果里的 errorString 是唯一的失败出口。
-            // 这里补上统一错误上报，使失败在日志与错误码表中都可追溯。
-            ErrorHandler::instance().report(ErrorCode::WRITE_FAILED, filePaths.at(i) +
-                                                                         QStringLiteral(": ") +
-                                                                         result.errorString);
+
+    // 受控并行：独立本地池限并发（说明见 ConvertEngine::process）。
+    // 结果按下标归位，保持与输入一致的顺序。
+    QThreadPool batchPool;
+    batchPool.setMaxThreadCount(ImageTaskPools::batchFileConcurrency());
+
+    QList<CompressResult> results;
+    for (int i = 0; i < total; ++i)
+        results.append(CompressResult());
+    std::atomic<int> completed{0};
+    QMutex progressMutex;
+
+    auto runJob = [this, &filePaths, &results, &completed, &progressMutex, total](int idx) {
+        CompressResult result;
+        if (cancelRequested()) {
+            result.errorString = QStringLiteral("cancelled");
+        } else {
+            result = compressSingle(filePaths.at(idx));
+            if (!result.success) {
+                // 压缩引擎没有 error 信号，结果里的 errorString 是唯一的失败出口。
+                // 这里补上统一错误上报，使失败在日志与错误码表中都可追溯。
+                ErrorHandler::instance().report(ErrorCode::WRITE_FAILED,
+                                                filePaths.at(idx) + QStringLiteral(": ") +
+                                                    result.errorString);
+            }
         }
-        results.append(result);
-        emit progress(qRound((i + 1) * 100.0 / total));
+        results[idx] = result;
+
+        const int done = ++completed;
+        QMutexLocker lock(&progressMutex);
+        emit progress(qRound(done * 100.0 / total));
+    };
+
+    {
+        QFutureSynchronizer<void> sync;
+        for (int i = 0; i < total; ++i)
+            sync.addFuture(QtConcurrent::run(&batchPool, runJob, i));
+        sync.waitForFinished();
     }
+
     emit finished(results);
     return results;
 }
@@ -66,7 +107,11 @@ CompressResult CompressEngine::compressSingle(const QString& filePath)
         return result;
     }
 
-    bool needIterativeSize = (m_settings.mode == CompressMode::Size && m_settings.targetSize > 0);
+    // Smart 模式与 Size 同语义：目标体积二分逼近。此前 Smart 引擎忽略
+    // targetSize（UI 却启用了目标体积控件），承诺与行为不符。
+    bool needIterativeSize =
+        (m_settings.mode == CompressMode::Size || m_settings.mode == CompressMode::Smart) &&
+        m_settings.targetSize > 0;
 
     // Size 模式目标大小压缩优先走 libvips 流式管道，避免大图全载入内存
     if (needIterativeSize && (fmt.compare(QStringLiteral("jpeg"), Qt::CaseInsensitive) == 0 ||
@@ -79,7 +124,7 @@ CompressResult CompressEngine::compressSingle(const QString& filePath)
                                info.height * m_settings.scalePercent / 100);
         }
         if (ImageLoader::compressToTargetSize(filePath, outputPath, target, m_settings.targetSize,
-                                              fmt, m_settings.quality)) {
+                                              fmt, effectiveQuality(m_settings))) {
             result.outputPath = outputPath;
             result.compressedSize = QFileInfo(outputPath).size();
             result.success = true;
@@ -97,7 +142,8 @@ CompressResult CompressEngine::compressSingle(const QString& filePath)
                 target = QSize(info.width * m_settings.scalePercent / 100,
                                info.height * m_settings.scalePercent / 100);
         }
-        if (ImageLoader::saveThumbnail(filePath, outputPath, target, fmt, m_settings.quality)) {
+        if (ImageLoader::saveThumbnail(filePath, outputPath, target, fmt,
+                                       effectiveQuality(m_settings))) {
             result.outputPath = outputPath;
             result.compressedSize = QFileInfo(outputPath).size();
             result.success = true;
@@ -125,7 +171,7 @@ CompressResult CompressEngine::compressSingle(const QString& filePath)
     }
 
     QImage out = preview(img, m_settings);
-    int q = m_settings.quality;
+    int q = effectiveQuality(m_settings);
     if (needIterativeSize) {
         // 简单迭代逼近目标大小
         for (int attempt = 0; attempt < 8; ++attempt) {
@@ -196,8 +242,8 @@ qint64 CompressEngine::estimateSize(const QImage& image, const CompressSettings&
     if (fmt.compare(QStringLiteral("jpg"), Qt::CaseInsensitive) == 0)
         fmt = QStringLiteral("jpeg");
 
-    int q = settings.quality;
-    if (settings.mode == CompressMode::Size && settings.targetSize > 0) {
+    int q = effectiveQuality(settings);
+    if (settings.mode == CompressMode::Size || settings.mode == CompressMode::Smart) {
         for (int attempt = 0; attempt < 8; ++attempt) {
             data.clear();
             QBuffer inner(&data);
